@@ -1,0 +1,9 @@
+{
+    "name": "@step13/bot",
+    "version": "0.1.0",
+    "private": true,
+    "scripts": {
+        "build": "echo 'No build step for bot yet'",
+        "dev": "echo 'No dev step for bot yet'"
+    }
+}

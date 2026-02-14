@@ -1,0 +1,9 @@
+{
+    "name": "@step13/assets",
+    "version": "0.1.0",
+    "private": true,
+    "scripts": {
+        "build": "echo 'No build step for assets yet'",
+        "dev": "echo 'No dev step for assets yet'"
+    }
+}

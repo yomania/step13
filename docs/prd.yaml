@@ -1,0 +1,129 @@
+product:
+  name: "17보 웹게임"
+  genre: "2-player riichi mahjong variant"
+  modes:
+    - solo_ai
+    - pvp_2p
+  must_have:
+    - solo_ai
+    - pvp_2p
+    - replay_with_guide
+    - realistic_tile_design
+    - auto_round_and_scoring_guidance
+
+ruleset:
+  base: "RiichiCity_Duel_17Steps"
+  match:
+    hands_per_match: 4
+    starting_points: 50000
+    renchan: false
+    round_wind: "EAST_FIXED"
+    seat_assignment: "RANDOM_AT_MATCH_START" # E/W fixed within match
+  timers:
+    build_time_sec: 120
+    turn_time_sec: 5
+    time_bank_sec: 10
+  actions:
+    allow_tsumo: false
+    allow_calls: false # chi/pon/kan
+    auto_ron: true
+    riichi:
+      first_turn_required: true
+      double_riichi: false
+      stick_deposit: false
+      noten_riichi_allowed: true
+  tiles:
+    deal:
+      tiles_per_player: 34
+      choose_for_hand: 13
+      discard_pool: 21
+      discards_per_player: 17
+    dora:
+      enabled: true
+      count: 1
+      red_dora: false
+      kan_dora: false
+  win_conditions:
+    ron_only: true
+    mangan_minimum: true
+    include_omote_dora_in_minimum: true
+    kiriage_mangan: true
+    local_yaku:
+      enabled: true
+      set: "riichi_city"
+  draw:
+    condition: "AFTER_17_DISCARDS_EACH"
+    noten_bappu:
+      enabled: true
+      amount: 3000 # configurable
+  bans:
+    nagashi_mangan: false
+    abortive_draw: false
+    renhou: false
+
+scoring_engine:
+  type: "riichi_han_fu"
+  output:
+    - yaku_list
+    - han_total
+    - fu_total
+    - dora_count
+    - limit_category # mangan/haneman/...
+    - points_delta
+  guidance:
+    during_build:
+      show_waits: true
+      show_best_score_per_wait: true
+      show_mangan_minimum_ok: true
+    during_play_optional:
+      warn_self_furiten: true
+      warn_instant_deal_in: true
+
+replay:
+  enabled: true
+  storage:
+    event_log: true
+    deterministic_seed: true
+  guide:
+    per_turn:
+      show_immediate_loss_tiles: true
+      suggest_alternatives_top_n: 3
+      tag_blunders: true
+
+architecture:
+  server_authoritative: true
+  realtime: "websocket"
+  client:
+    ui:
+      build_screen: true
+      play_screen: true
+      results_screen: true
+      replay_screen: true
+    assets:
+      tile_style: "realistic_riichi_tiles_original_art"
+
+ai:
+  difficulties:
+    - easy
+    - normal
+    - hard
+  behavior:
+    build_phase:
+      objective:
+        - maximize_mangan_tenpai_probability
+        - maximize_wait_count
+        - minimize_self_furiten_risk
+    play_phase:
+      objective:
+        - minimize_instant_loss_risk
+        - maximize_opponent_deal_in_probability_estimate
+
+telemetry:
+  events:
+    - match_start
+    - hand_lock
+    - discard
+    - auto_ron
+    - draw
+    - replay_open
+    - guide_step_view

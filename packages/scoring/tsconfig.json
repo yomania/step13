@@ -1,0 +1,6 @@
+{
+    "extends": "../proto/tsconfig.json",
+    "include": [
+        "src"
+    ]
+}

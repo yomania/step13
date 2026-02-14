@@ -1,0 +1,27 @@
+{
+  "name": "server",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@fastify/cors": "^9.0.0",
+    "@fastify/websocket": "^9.0.0",
+    "@step13/core": "workspace:*",
+    "@step13/proto": "workspace:*",
+    "@step13/scoring": "workspace:*",
+    "dotenv": "^16.0.0",
+    "fastify": "^4.20.0",
+    "xstate": "^5.28.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0",
+    "ws": "^8.19.0"
+  }
+}
