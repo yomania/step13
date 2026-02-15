@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useMachine } from '@xstate/react';
 import { gameMachine, RULES } from '@step13/core';
 import { useGameSocket } from './hooks/useGameSocket';
@@ -11,6 +11,8 @@ import { SingleMiniGame } from './components/SingleMiniGame';
 import { PlayerId, Tile } from '@step13/proto';
 import { calculateScore } from '@step13/scoring';
 import { preloadRealTileAssets } from './lib/tileAssets';
+import { getWinningTiles } from './lib/handAnalysis';
+import { AnimatePresence, motion } from 'framer-motion';
 
 const SCORE_OPTIONS = {
     requireManganMinimum: true,
@@ -70,12 +72,23 @@ export default function App() {
     const myHandSubmitted = Boolean(context.hands[playerId]);
     const opponentHandSubmitted = otherPlayerId ? Boolean(context.hands[otherPlayerId]) : false;
     const doraIndicators = (context as { doraIndicators?: Tile[] }).doraIndicators ?? [];
+    const selectedDoraId = doraIndicators[0]?.id ?? null;
     const isAiMatch = context.players.some((p: PlayerId) => p.startsWith('bot-'));
+    const myHand = context.hands[playerId] || [];
+    const myPool = context.pools[playerId] || [];
+    const myDiscards = context.discards[playerId] || [];
     const mySeatWind = context.seatMap?.[playerId] === 'EAST'
         ? 'EAST'
         : context.seatMap?.[playerId] === 'WEST'
             ? 'WEST'
             : undefined;
+    const myWaitKeys = useMemo(() => {
+        const waits = getWinningTiles(myHand);
+        return new Set(waits.map((tile) => `${tile.suit}-${tile.rank}`));
+    }, [myHand]);
+    const isFuriten = useMemo(() => {
+        return myDiscards.some((tile: Tile) => myWaitKeys.has(`${tile.suit}-${tile.rank}`));
+    }, [myDiscards, myWaitKeys]);
 
     // Helper to check state value
     const matches = (value: string) => {
@@ -90,6 +103,10 @@ export default function App() {
 
     const [handBuildRoundMeta, setHandBuildRoundMeta] = useState<{ round: number; startedAt: number } | null>(null);
     const [nowMs, setNowMs] = useState(() => Date.now());
+    const [showDoraReveal, setShowDoraReveal] = useState(false);
+    const [doraRevealDeadlineMs, setDoraRevealDeadlineMs] = useState<number | null>(null);
+    const [doraNowMs, setDoraNowMs] = useState(() => Date.now());
+    const lastDoraIdRef = useRef<string | null>(null);
 
     useEffect(() => {
         if (!isHandBuild) {
@@ -117,6 +134,37 @@ export default function App() {
         return Math.max(0, deadline - nowMs);
     }, [isHandBuild, handBuildRoundMeta, nowMs]);
 
+    useEffect(() => {
+        if (!isDoraSelect) {
+            lastDoraIdRef.current = null;
+            setShowDoraReveal(false);
+            setDoraRevealDeadlineMs(null);
+            return;
+        }
+
+        const currentDoraId = doraIndicators[0]?.id ?? null;
+        if (!currentDoraId || currentDoraId === lastDoraIdRef.current) {
+            return;
+        }
+
+        lastDoraIdRef.current = currentDoraId;
+        setShowDoraReveal(true);
+        setDoraRevealDeadlineMs(Date.now() + RULES.timers.doraRevealTimeMs);
+        const timer = setTimeout(() => setShowDoraReveal(false), 900);
+        return () => clearTimeout(timer);
+    }, [isDoraSelect, doraIndicators]);
+
+    useEffect(() => {
+        if (!isDoraSelect || !selectedDoraId || doraRevealDeadlineMs === null) return;
+        const timer = setInterval(() => setDoraNowMs(Date.now()), 100);
+        return () => clearInterval(timer);
+    }, [isDoraSelect, selectedDoraId, doraRevealDeadlineMs]);
+
+    const doraRevealRemainingSec = useMemo(() => {
+        if (!isDoraSelect || !selectedDoraId || doraRevealDeadlineMs === null) return null;
+        return Math.max(0, Math.ceil((doraRevealDeadlineMs - doraNowMs) / 1000));
+    }, [isDoraSelect, selectedDoraId, doraRevealDeadlineMs, doraNowMs]);
+
     const handleJoin = () => {
         sendEvent({ type: 'JOIN', playerId });
     };
@@ -131,7 +179,7 @@ export default function App() {
     };
 
     const onSelectDora = (tile: Tile) => {
-        if (playerId !== context.dealer || !tile.id) return;
+        if (playerId !== context.dealer || !tile.id || (context.doraIndicators?.length ?? 0) > 0) return;
         sendEvent({ type: 'SELECT_DORA', playerId, tileId: tile.id });
     };
 
@@ -457,6 +505,38 @@ export default function App() {
 
                     {isDoraSelect && (
                         <div className="flex-1">
+                            <AnimatePresence>
+                                {showDoraReveal && doraIndicators[0] && (
+                                    <motion.div
+                                        initial={{ opacity: 0, y: -70, scale: 0.8 }}
+                                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                                        exit={{ opacity: 0, y: 40, scale: 0.95 }}
+                                        transition={{ duration: 0.45, ease: 'easeOut' }}
+                                        className="pointer-events-none fixed inset-0 z-[85] flex flex-col items-center justify-center gap-3"
+                                    >
+                                        <div className="text-lg font-bold text-yellow-300 drop-shadow">도라를 뽑았습니다!</div>
+                                        <div className="transform scale-125">
+                                            <TileView tile={doraIndicators[0]} disabled={true} />
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                            <AnimatePresence mode="popLayout">
+                                {selectedDoraId && doraRevealRemainingSec !== null && doraRevealRemainingSec > 0 && (
+                                    <motion.div
+                                        key={doraRevealRemainingSec}
+                                        initial={{ opacity: 0, scale: 0.7, y: -12 }}
+                                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                                        exit={{ opacity: 0, scale: 1.25, y: 8 }}
+                                        transition={{ duration: 0.25, ease: 'easeOut' }}
+                                        className="pointer-events-none fixed top-24 left-1/2 -translate-x-1/2 z-[86]"
+                                    >
+                                        <div className="w-16 h-16 rounded-full bg-black/55 border border-yellow-400/80 text-yellow-300 text-3xl font-black flex items-center justify-center shadow-[0_0_30px_rgba(250,204,21,0.35)]">
+                                            {doraRevealRemainingSec}
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
                             <div className="mb-6">
                                 <h2 className="text-2xl font-bold text-white">도라 선택 단계</h2>
                                 <p className="text-gray-400 text-sm">
@@ -464,36 +544,36 @@ export default function App() {
                                 </p>
                             </div>
 
-                            {(context.doraIndicators?.length ?? 0) > 0 ? (
-                                <div className="bg-slate-700 rounded-lg p-4">
-                                    <div className="text-sm text-slate-300 mb-2">공개된 도라 표시패</div>
-                                    <div className="flex gap-2">
-                                        {context.doraIndicators.map((tile: Tile, idx: number) => (
-                                            <div key={`${tile.id ?? `${tile.suit}-${tile.rank}`}-${idx}`} className="transform scale-95 origin-left-top">
-                                                <TileView tile={tile} disabled={true} />
-                                            </div>
-                                        ))}
-                                    </div>
+                            <div>
+                                <div className="text-sm text-slate-300 mb-3">
+                                    {(context.doraIndicators?.length ?? 0) > 0
+                                        ? `선이 선택한 도라를 공개 중입니다. ${doraRevealRemainingSec ?? 0}초 후 조패 단계로 이동합니다.`
+                                        : context.dealer === playerId
+                                            ? '패산에서 1장을 선택하세요.'
+                                            : '선의 도라 선택을 기다리는 중...'}
                                 </div>
-                            ) : (
-                                <div>
-                                    <div className="text-sm text-slate-300 mb-3">
-                                        {context.dealer === playerId ? '패산에서 1장을 선택하세요.' : '선의 도라 선택을 기다리는 중...'}
-                                    </div>
-                                    <div className="grid grid-cols-8 sm:grid-cols-10 md:grid-cols-12 gap-1 p-2 bg-slate-700 rounded-lg max-h-[360px] overflow-y-auto">
-                                        {(context.wall || []).map((tile: Tile, idx: number) => (
+                                <div className="grid grid-cols-8 sm:grid-cols-10 md:grid-cols-12 gap-1 p-2 bg-slate-700 rounded-lg max-h-[360px] overflow-y-auto">
+                                    {(context.wall || []).map((tile: Tile, idx: number) => {
+                                        const isSelectedDora = selectedDoraId !== null && tile.id === selectedDoraId;
+                                        return (
                                             <button
                                                 key={tile.id ?? `${tile.suit}-${tile.rank}-${idx}`}
                                                 onClick={() => onSelectDora(tile)}
-                                                disabled={context.dealer !== playerId}
-                                                className={`w-10 h-14 rounded border-2 text-xs font-bold ${context.dealer === playerId ? 'border-yellow-400 bg-slate-100 text-slate-900 hover:bg-white' : 'border-slate-500 bg-slate-600 text-slate-400 cursor-not-allowed'}`}
+                                                disabled={context.dealer !== playerId || (context.doraIndicators?.length ?? 0) > 0}
+                                                className={`w-10 h-14 rounded border-2 text-xs font-bold flex items-center justify-center overflow-hidden ${
+                                                    isSelectedDora
+                                                        ? 'border-emerald-400 bg-slate-100'
+                                                        : context.dealer === playerId && (context.doraIndicators?.length ?? 0) === 0
+                                                            ? 'border-yellow-400 bg-slate-100 text-slate-900 hover:bg-white'
+                                                            : 'border-slate-500 bg-slate-600 text-slate-400 cursor-not-allowed'
+                                                }`}
                                             >
-                                                ?
+                                                {isSelectedDora ? <TileView tile={tile} disabled={true} /> : '?'}
                                             </button>
-                                        ))}
-                                    </div>
+                                        );
+                                    })}
                                 </div>
-                            )}
+                            </div>
                         </div>
                     )}
 
@@ -505,16 +585,36 @@ export default function App() {
                                     <p className="text-gray-400 text-sm">34개의 패 중 13개를 선택하여 텐파이를 만드세요.</p>
                                 </div>
                             </div>
-                            <HandBuilder
-                                dealtTiles={context.dealtTiles[playerId] || []}
-                                onSubmit={onSubmitHand}
-                                submitted={myHandSubmitted}
-                                opponentSubmitted={opponentHandSubmitted}
-                                buildTimeRemainingMs={handBuildRemainingMs}
-                                doraIndicators={doraIndicators}
-                                debugMode={debugMode}
-                                seatWind={mySeatWind}
-                            />
+                            {(context.dealtTiles[playerId] || []).length === 0 ? (
+                                <div className="h-64 rounded-xl border border-slate-700 bg-slate-800/70 flex items-center justify-center">
+                                    <div className="text-center w-full max-w-md px-4">
+                                        <div className="text-lg font-semibold text-cyan-300">패를 섞는 중입니다...</div>
+                                        <div className="text-sm text-slate-400 mt-1">조패 화면을 준비하고 있습니다.</div>
+                                        <div className="mt-6 flex items-center justify-center gap-3">
+                                            {[0, 1, 2, 3, 4].map((i) => (
+                                                <motion.div
+                                                    key={i}
+                                                    initial={{ y: 0, opacity: 0.6 }}
+                                                    animate={{ y: [0, -8, 0], opacity: [0.6, 1, 0.6] }}
+                                                    transition={{ duration: 0.9, repeat: Infinity, delay: i * 0.08, ease: 'easeInOut' }}
+                                                    className="w-10 h-14 rounded border border-cyan-300/70 bg-slate-100/90 shadow"
+                                                />
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : (
+                                <HandBuilder
+                                    dealtTiles={context.dealtTiles[playerId] || []}
+                                    onSubmit={onSubmitHand}
+                                    submitted={myHandSubmitted}
+                                    opponentSubmitted={opponentHandSubmitted}
+                                    buildTimeRemainingMs={handBuildRemainingMs}
+                                    doraIndicators={doraIndicators}
+                                    debugMode={debugMode}
+                                    seatWind={mySeatWind}
+                                />
+                            )}
                         </div>
                     )}
                 </div>
@@ -524,8 +624,11 @@ export default function App() {
                     {/* Interactive Elements passed as children */}
                     <div className="w-full">
                         <HandDisplay
-                            hand={context.hands[playerId] || []}
+                            hand={myHand}
+                            pool={myPool}
                             canDiscard={context.currentTurn === playerId}
+                            furitenWaitKeys={myWaitKeys}
+                            isFuriten={isFuriten}
                             onDiscard={({ tile }) => onDiscard(tile)}
                         />
                     </div>

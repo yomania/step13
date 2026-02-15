@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Tile as TileType } from '@step13/proto';
+import { getFallbackTileAssetRoot, getRealTileAssetUrl } from '../lib/tileAssets';
 
 interface TileProps {
     tile: TileType;
@@ -23,12 +24,9 @@ export function TileSkinProvider({ skin, children }: TileSkinProviderProps) {
 }
 
 function getRealTileAsset(tile: TileType): string {
-    const baseUrl = import.meta.env.BASE_URL || '/';
-    const root = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
-
     if (tile.suit === 'z') {
         const honors = ['Ton', 'Nan', 'Shaa', 'Pei', 'Haku', 'Hatsu', 'Chun'];
-        return `${root}tiles/regular-png/${honors[tile.rank - 1]}.png`;
+        return getRealTileAssetUrl(`${honors[tile.rank - 1]}.png`);
     }
 
     const suitPrefix: Record<Exclude<TileType['suit'], 'z'>, string> = {
@@ -38,16 +36,35 @@ function getRealTileAsset(tile: TileType): string {
     };
     const base = `${suitPrefix[tile.suit as Exclude<TileType['suit'], 'z'>]}${tile.rank}`;
     const doraSuffix = tile.isRed && tile.rank === 5 ? '-Dora' : '';
-    return `${root}tiles/regular-png/${base}${doraSuffix}.png`;
+    return getRealTileAssetUrl(`${base}${doraSuffix}.png`);
 }
 
 export function Tile({ tile, onClick, selected, disabled, size = 'md' }: TileProps) {
     const skin = useContext(TileSkinContext);
     const [imageLoaded, setImageLoaded] = useState(false);
+    const [useFallbackSrc, setUseFallbackSrc] = useState(false);
     const realAssetSrc = useMemo(() => getRealTileAsset(tile), [tile]);
+    const fallbackSrc = useMemo(() => {
+        const localRoot = getFallbackTileAssetRoot();
+        if (tile.suit === 'z') {
+            const honors = ['Ton', 'Nan', 'Shaa', 'Pei', 'Haku', 'Hatsu', 'Chun'];
+            return getRealTileAssetUrl(`${honors[tile.rank - 1]}.png`, localRoot);
+        }
+
+        const suitPrefix: Record<Exclude<TileType['suit'], 'z'>, string> = {
+            man: 'Man',
+            pin: 'Pin',
+            sou: 'Sou'
+        };
+        const base = `${suitPrefix[tile.suit as Exclude<TileType['suit'], 'z'>]}${tile.rank}`;
+        const doraSuffix = tile.isRed && tile.rank === 5 ? '-Dora' : '';
+        return getRealTileAssetUrl(`${base}${doraSuffix}.png`, localRoot);
+    }, [tile]);
+    const resolvedSrc = useFallbackSrc ? fallbackSrc : realAssetSrc;
 
     useEffect(() => {
         setImageLoaded(false);
+        setUseFallbackSrc(false);
     }, [realAssetSrc]);
 
     const sizeClasses = {
@@ -105,10 +122,16 @@ export function Tile({ tile, onClick, selected, disabled, size = 'md' }: TilePro
                         <span className="text-[10px] uppercase">{getDisplaySuit()}</span>
                     </div>
                     <img
-                        src={realAssetSrc}
+                        src={resolvedSrc}
                         alt={`${tile.suit}-${tile.rank}`}
                         onLoad={() => setImageLoaded(true)}
-                        onError={() => setImageLoaded(false)}
+                        onError={() => {
+                            if (!useFallbackSrc && fallbackSrc !== realAssetSrc) {
+                                setUseFallbackSrc(true);
+                                return;
+                            }
+                            setImageLoaded(false);
+                        }}
                         className={`absolute inset-0 w-full h-full object-contain pointer-events-none select-none transition-opacity ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
                         loading="eager"
                         decoding="async"
