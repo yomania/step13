@@ -6,6 +6,7 @@ type WorkerRequest = {
     requestId: number;
     dealtTiles: Tile[];
     doraIndicators: Tile[];
+    maxCount?: number;
     seatWind: 'EAST' | 'SOUTH' | 'WEST' | 'NORTH';
     roundWind: 'EAST' | 'SOUTH' | 'WEST' | 'NORTH';
 };
@@ -14,23 +15,27 @@ type WorkerResponse = {
     type: 'PREFETCH_RESULT';
     requestId: number;
     candidate: CandidateEvaluation | null;
+    candidates?: CandidateEvaluation[];
 };
 
 self.onmessage = (event: MessageEvent<WorkerRequest>) => {
     const payload = event.data;
     if (payload.type !== 'PREFETCH') return;
 
-    const candidate = buildBestCandidates(
+    const maxCount = payload.maxCount ?? 1;
+    const candidates = buildBestCandidates(
         payload.dealtTiles,
         payload.doraIndicators,
-        1,
+        maxCount,
         { seatWind: payload.seatWind, roundWind: payload.roundWind }
-    )[0] ?? null;
+    );
+    const candidate = candidates[0] ?? null;
 
     const response: WorkerResponse = {
         type: 'PREFETCH_RESULT',
         requestId: payload.requestId,
-        candidate
+        candidate,
+        candidates
     };
     self.postMessage(response);
 };

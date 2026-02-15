@@ -1,19 +1,21 @@
-# Step13 System Architecture
+# Step13 시스템 아키텍처 (System Architecture)
 
-## 1. Overview
+## 1. 개요 (Overview)
 
-This project is a Turborepo monorepo with three runtime layers:
+이 프로젝트는 세 가지 런타임 레이어를 가진 Turborepo 모노레포입니다:
 
-- `apps/web`: React client (UI, local interaction, websocket transport)
-- `apps/server`: Fastify + WebSocket gateway (room/session orchestration, bot hosting)
-- `packages/core`: deterministic game engine state machine (authoritative rule transitions)
+- `apps/web`: React 클라이언트 (UI, 로컬 상호작용, 웹소켓 전송)
+- `apps/server`: Fastify + WebSocket 게이트웨이 (방/세션 오케스트레이션, 봇 호스팅)
+- `packages/core`: 결정론적 게임 엔진 상태 머신 (권위 있는 규칙 전이)
 
-Supporting packages:
+지원 패키지:
 
-- `packages/proto`: shared runtime types/contracts
-- `packages/scoring`: shanten/score calculation
+- `packages/proto`: 공유 런타임 타입/계약(contracts)
+- `packages/scoring`: 샹텐/점수 계산
+- `packages/bot` (Future): AI 봇 로직 및 전략 (현재 초기 단계)
+- `packages/assets` (Future): 게임 에셋 관리 (현재 초기 단계)
 
-## 2. Runtime Topology
+## 2. 런타임 토폴로지 (Runtime Topology)
 
 ```mermaid
 flowchart LR
@@ -24,79 +26,79 @@ flowchart LR
     WS --- BOT[Server Bot Actor]
 ```
 
-## 3. Core Engine Design (Refactored)
+## 3. 코어 엔진 설계 (리팩토링됨)
 
-`packages/core` now separates **state orchestration** and **rule execution**:
+`packages/core`는 이제 **상태 오케스트레이션**과 **규칙 실행**을 분리합니다:
 
-- Orchestration: `packages/core/src/machine.ts`
-  - owns state graph, phase transitions, timers, event routing
-- Rule execution policies: `packages/core/src/engine/defaultEngine.ts`
-  - dealer selection (dice + tie-break)
-  - deal/wall creation
-  - dora selection/auto-selection
-  - hand validation & tenpai auto-build fallback
-  - discard application
-  - draw/ron resolution
-  - selectable via ruleset factory `packages/core/src/engine/rulesets.ts`
+- 오케스트레이션: `packages/core/src/machine.ts`
+  - 상태 그래프, 페이즈 전이, 타이머, 이벤트 라우팅 소유
+- 규칙 실행 정책: `packages/core/src/engine/defaultEngine.ts`
+  - 딜러 선정 (주사위 + 동점자 처리)
+  - 배패/벽 생성
+  - 도라 선택/자동 선택
+  - 패 검증 및 텐파이 자동 완성 폴백
+  - 타패 적용
+  - 유국/론 해결
+  - 룰셋 팩토리 `packages/core/src/engine/rulesets.ts`를 통해 선택 가능
 
-This reduces brittle in-machine branching and enables swapping rule behavior without rewriting the machine graph.
+이는 취약한 머신 내 분기를 줄이고 머신 그래프를 재작성하지 않고도 규칙 동작을 교체할 수 있게 합니다.
 
-`createGameMachine({ ruleset })` is exposed so each runtime can choose a ruleset without changing machine source.
+`createGameMachine({ ruleset })`이 노출되어 각 런타임이 머신 소스를 변경하지 않고 룰셋을 선택할 수 있습니다.
 
-## 4. Phase Pipeline
+## 4. 페이즈 파이프라인 (Phase Pipeline)
 
-Round-level pipeline is explicit:
+라운드 레벨 파이프라인은 명시적입니다:
 
 1. `matchStart`
 2. `doraSelect`
 3. `handBuild`
 4. `gameLoop.turn/checkRon`
 5. `roundEnd`
-6. (`matchStart` next hand) or `matchEnd`
+6. (`matchStart` 다음 핸드) 또는 `matchEnd`
 
-Machine responsibilities per phase:
+페이즈별 머신 책임:
 
-- phase enter/exit timing
-- transition guards
-- event dispatch to engine policies
+- 페이즈 진입/이탈 타이밍
+- 전이 가드(guard)
+- 엔진 정책으로의 이벤트 디스패치
 
-Engine responsibilities per phase:
+페이즈별 엔진 책임:
 
-- phase-specific computation and context patch production
+- 페이즈별 연산 및 컨텍스트 패치 생성
 
-## 5. State Ownership
+## 5. 상태 소유권 (State Ownership)
 
-Authoritative state fields are in `GameContext` (`packages/core/src/messages.ts`):
+권위 있는 상태 필드는 `GameContext` (`packages/core/src/messages.ts`)에 있습니다:
 
-- player/session: `players`, `dealer`, `dealerDice`, `seatMap`
-- round setup: `dealtTiles`, `wall`, `doraIndicators`
-- play progress: `hands`, `pools`, `discards`, `lastDiscard`, `currentTurn`
-- outcomes: `winner`, `winResult`, `scores`
-- observability: `eventLog`
+- 플레이어/세션: `players`, `dealer`, `dealerDice`, `seatMap`
+- 라운드 설정: `dealtTiles`, `wall`, `doraIndicators`
+- 플레이 진행: `hands`, `pools`, `discards`, `lastDiscard`, `currentTurn`
+- 결과: `winner`, `winResult`, `scores`
+- 관측성: `eventLog`
 
-## 6. Event Model
+## 6. 이벤트 모델 (Event Model)
 
-Input events are command-like (`JOIN`, `START_MATCH`, `SELECT_DORA`, `SUBMIT_HAND`, `DISCARD`, `DECLARE_WIN`, `RESTART`).
+입력 이벤트는 명령어 형태입니다 (`JOIN`, `START_MATCH`, `SELECT_DORA`, `SUBMIT_HAND`, `DISCARD`, `DECLARE_WIN`, `RESTART`).
 
-Output effects are represented through context updates + log events (`TIMEOUT`, `ROUND_END`, `MATCH_END`, `AUTO_RON`).
+출력 효과(effects)는 컨텍스트 업데이트 + 로그 이벤트를 통해 표현됩니다 (`TIMEOUT`, `ROUND_END`, `MATCH_END`, `AUTO_RON`).
 
-Replay system (`replayMachine`) replays event logs into snapshots for deterministic playback.
+리플레이 시스템 (`replayMachine`)은 결정론적 재생을 위해 `eventLog`를 스냅샷으로 리플레이합니다.
 
-## 7. Reset/Recovery Behavior
+## 7. 리셋/복구 동작 (Reset/Recovery Behavior)
 
-`RESTART` is handled globally in the machine and resets to `idle` from any phase.
+`RESTART`는 머신에서 전역적으로 처리되며 어떤 페이즈에서든 `idle`로 리셋됩니다.
 
-Server websocket binding permits re-`JOIN` on the same socket for the same `playerId` after reset, preventing stuck lobby state.
+서버 웹소켓 바인딩은 리셋 후 동일한 `playerId`에 대해 동일한 소켓에서 재-`JOIN`을 허용하여 로비 상태가 고착되는 것을 방지합니다.
 
-## 8. Extensibility Strategy
+## 8. 확장성 전략 (Extensibility Strategy)
 
-For future variants, keep new behavior inside engine policies first:
+미래의 변형을 위해, 새로운 동작은 먼저 엔진 정책 내부에 유지하십시오:
 
-- alternate dealer policy
-- alternate dora/opening policy
-- alternate timeout policy
-- alternate win threshold/scoring policy
+- 대체 딜러 정책
+- 대체 도라/오프닝 정책
+- 대체 타임아웃 정책
+- 대체 승리 임계값/점수 정책
 
-Only modify machine transitions when phase structure itself changes.
+페이즈 구조 자체가 변경될 때만 머신 전이를 수정하십시오.
 
-Current server runtime wiring: `apps/server/src/index.ts` reads `RULESET` env and initializes `GameRoom` with that ruleset.
+현재 서버 런타임 연결: `apps/server/src/index.ts`는 `RULESET` 환경 변수를 읽고 해당 룰셋으로 `GameRoom`을 초기화합니다.

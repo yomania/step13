@@ -1,7 +1,8 @@
 
 import { AnyActorRef } from 'xstate';
 import { PlayerId, Tile } from '@step13/proto';
-import { isTenpai, calculateScore } from '@step13/scoring';
+import { calculateScore } from '@step13/scoring';
+import { createEngineForRuleset, RulesetName } from '@step13/core';
 
 const SCORE_OPTIONS = {
     requireManganMinimum: true,
@@ -15,10 +16,15 @@ export class Bot {
     public actor: AnyActorRef;
     private state: any;
     private processing: boolean = false;
+    private rulesEngine;
+    private preparedHand: Tile[] | null = null;
+    private preparedPool: Tile[] | null = null;
+    private preparingHand: boolean = false;
 
-    constructor(id: PlayerId, actor: AnyActorRef) {
+    constructor(id: PlayerId, actor: AnyActorRef, ruleset: RulesetName = 'classic') {
         this.id = id;
         this.actor = actor;
+        this.rulesEngine = createEngineForRuleset(ruleset);
         this.actor.subscribe((snapshot) => {
             this.state = snapshot;
             this.decide();
@@ -36,12 +42,24 @@ export class Bot {
         if (phase === 'handBuild') {
             // Check if I already submitted
             if (!context.hands[this.id]) {
+                if (this.preparedHand && this.preparedPool) {
+                    this.actor.send({
+                        type: 'SUBMIT_HAND',
+                        playerId: this.id,
+                        hand: this.preparedHand,
+                        pool: this.preparedPool
+                    });
+                    this.preparedHand = null;
+                    this.preparedPool = null;
+                    return;
+                }
+
                 this.processing = true;
                 // Simulate delay
                 setTimeout(() => {
                     this.buildHand(context.dealtTiles[this.id]);
                     this.processing = false;
-                }, 1000 + Math.random() * 2000);
+                }, 250 + Math.random() * 450);
             }
         }
 
@@ -60,6 +78,26 @@ export class Bot {
                     this.processing = false;
                 }, 500 + Math.random() * 700);
             }
+
+            // While dora is being revealed, precompute hand so handBuild can start immediately.
+            if (
+                alreadySelected &&
+                !context.hands[this.id] &&
+                !this.preparingHand &&
+                !this.preparedHand &&
+                Array.isArray(context.dealtTiles?.[this.id])
+            ) {
+                this.preparingHand = true;
+                setTimeout(() => {
+                    // Keep dora-reveal window responsive: only do a light pre-search here.
+                    const prepared = this.findValidHandByRandomSampling(context.dealtTiles[this.id], 500);
+                    if (prepared) {
+                        this.preparedHand = prepared.hand;
+                        this.preparedPool = prepared.pool;
+                    }
+                    this.preparingHand = false;
+                }, 80 + Math.random() * 120);
+            }
         }
 
         // 2. Game Loop
@@ -69,7 +107,11 @@ export class Bot {
             // XState might be in 'checkRon' state or 'turn' state.
             // If context.lastDiscard is set and it's NOT me, check Ron.
             if (context.lastDiscard && context.lastDiscard.playerId !== this.id) {
-                const score = calculateScore(context.hands[this.id], context.lastDiscard.tile, false, [], SCORE_OPTIONS);
+                const myHand = context.hands[this.id];
+                if (!myHand) {
+                    return;
+                }
+                const score = calculateScore(myHand, context.lastDiscard.tile, false, [], SCORE_OPTIONS);
                 if (score.points > 0) {
                     // 50% chance to Ron (or 100% for testing)
                     // Let's go for 100% for now to verify logic.
@@ -97,35 +139,43 @@ export class Bot {
 
         console.log(`Bot ${this.id} building hand...`);
 
-        // Try N times to find a Tenpai hand
-        // Heuristic: Shuffle tiles, take first 13, check strict Tenpai.
-        // 17-step starting hand (34 tiles) usually guarantees at least one Tenpai combination if we search enough.
+        const found = this.findValidHand(tiles);
+        if (found) {
+            console.log(`Bot ${this.id} found a valid tenpai hand and submits immediately.`);
+            this.actor.send({ type: 'SUBMIT_HAND', playerId: this.id, hand: found.hand, pool: found.pool });
+            return;
+        }
 
-        let bestHand: Tile[] | null = null;
-        let bestPool: Tile[] | null = null;
+        // If no valid hand is found, do not submit random invalid data.
+        // The machine timeout path will auto-submit and progress safely.
+        console.warn(`Bot ${this.id} could not build a valid hand. Waiting for machine timeout auto-submit.`);
+    }
 
-        // Try up to 500 shuffles?
-        for (let i = 0; i < 500; i++) {
-            const shuffled = [...tiles].sort(() => Math.random() - 0.5);
-            const hand = shuffled.slice(0, 13);
-            if (isTenpai(hand)) {
-                bestHand = hand;
-                bestPool = shuffled.slice(13);
-                console.log(`Bot ${this.id} found Tenpai hand after ${i + 1} attempts`);
+    private findValidHand(tiles: Tile[]): { hand: Tile[]; pool: Tile[] } | null {
+        // Keep search lightweight to avoid blocking game loop responsiveness.
+        return this.findValidHandByRandomSampling(tiles, 2500, 120);
+    }
+
+    private findValidHandByRandomSampling(tiles: Tile[], attempts: number, maxMs?: number): { hand: Tile[]; pool: Tile[] } | null {
+        const startedAt = Date.now();
+        for (let i = 0; i < attempts; i++) {
+            if (maxMs != null && Date.now() - startedAt > maxMs) {
                 break;
             }
+            const shuffled = [...tiles];
+            for (let j = shuffled.length - 1; j > 0; j--) {
+                const k = Math.floor(Math.random() * (j + 1));
+                [shuffled[j], shuffled[k]] = [shuffled[k], shuffled[j]];
+            }
+            const hand = shuffled.slice(0, 13);
+            if (this.rulesEngine.hasWinningWait(hand)) {
+                return {
+                    hand,
+                    pool: shuffled.slice(13)
+                };
+            }
         }
-
-        if (bestHand && bestPool) {
-            this.actor.send({ type: 'SUBMIT_HAND', playerId: this.id, hand: bestHand, pool: bestPool });
-        } else {
-            console.warn(`Bot ${this.id} failed to find Tenpai hand. Submitting random (will likely fail validation or lose).`);
-            // Determine behavior: Force submit invalid or just fail?
-            // If we fallback to random, game will reject if strict.
-            // Let's submit random anyway to prevent deadlock in dev.
-            const shuffled = [...tiles].sort(() => Math.random() - 0.5);
-            this.actor.send({ type: 'SUBMIT_HAND', playerId: this.id, hand: shuffled.slice(0, 13), pool: shuffled.slice(13) });
-        }
+        return null;
     }
 
     private discard(hand: Tile[]) {

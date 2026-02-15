@@ -1,6 +1,6 @@
 product:
   name: "17보 웹게임"
-  genre: "2-player riichi mahjong variant"
+  genre: "2인 리치 마작 변형 (2-player riichi mahjong variant)"
   modes:
     - solo_ai
     - pvp_2p
@@ -18,14 +18,14 @@ ruleset:
     starting_points: 50000
     renchan: false
     round_wind: "EAST_FIXED"
-    seat_assignment: "RANDOM_AT_MATCH_START" # E/W fixed within match
+    seat_assignment: "RANDOM_AT_MATCH_START" # 매치 내에서 동/서 고정
   timers:
     build_time_sec: 120
     turn_time_sec: 5
     time_bank_sec: 10
   actions:
     allow_tsumo: false
-    allow_calls: false # chi/pon/kan
+    allow_calls: false # chi/pon/kan (치/펑/캉 불가)
     auto_ron: true
     riichi:
       first_turn_required: true
@@ -55,7 +55,7 @@ ruleset:
     condition: "AFTER_17_DISCARDS_EACH"
     noten_bappu:
       enabled: true
-      amount: 3000 # configurable
+      amount: 3000 # 설정 가능 (configurable)
   bans:
     nagashi_mangan: false
     abortive_draw: false
@@ -68,7 +68,7 @@ scoring_engine:
     - han_total
     - fu_total
     - dora_count
-    - limit_category # mangan/haneman/...
+    - limit_category # mangan/haneman/... (만관/하네만/...)
     - points_delta
   guidance:
     during_build:
@@ -88,7 +88,7 @@ replay:
     per_turn:
       show_immediate_loss_tiles: true
       suggest_alternatives_top_n: 3
-      tag_blunders: true
+    tag_blunders: true
 
 architecture:
   server_authoritative: true

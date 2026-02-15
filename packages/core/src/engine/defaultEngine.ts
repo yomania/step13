@@ -1,8 +1,8 @@
-import { calculateScore, calculateShanten, isTenpai, ScoreOptions } from '@step13/scoring';
+import { calculateScore, calculateShanten, ScoreOptions } from '@step13/scoring';
 import { Tile, Wind } from '@step13/proto';
 import { GameContext, GameEvents } from '../messages';
 import { RULES, WindSeat } from '../rules';
-import { createSeededRng, generateTiles, shuffleWithSeed } from '../utils';
+import { generateTiles, shuffleWithSeed } from '../utils';
 import { DealResult, DealerSelection, GameEngine, RoundResult } from './types';
 
 type EngineConfig = {
@@ -46,10 +46,11 @@ export function createDefaultEngine({ scoreOptions }: EngineConfig): GameEngine 
         },
 
         findTenpaiHand(tiles: Tile[]): { hand: Tile[]; pool: Tile[] } {
-            for (let i = 0; i < 500; i++) {
+            // Use the same win-wait predicate as machine guard to avoid mismatch.
+            for (let i = 0; i < 5000; i++) {
                 const shuffled = shuffleWithSeed(tiles, i + 1);
                 const hand = shuffled.slice(0, RULES.tiles.handSize);
-                if (isTenpai(hand)) {
+                if (hasWinningWaitInternal(hand)) {
                     return { hand, pool: shuffled.slice(RULES.tiles.handSize) };
                 }
             }
@@ -61,20 +62,26 @@ export function createDefaultEngine({ scoreOptions }: EngineConfig): GameEngine 
             };
         },
 
-        canSelectDora(context: GameContext, playerId: string, tileId: string): boolean {
+        canSelectDora(context: GameContext, playerId: string, _tileId: string): boolean {
             if (playerId !== context.dealer) {
                 return false;
             }
-            return context.wall.some((tile) => tile.id === tileId);
+            if ((context.doraIndicators?.length ?? 0) > 0) {
+                return false;
+            }
+            // Accept dealer input as long as there is a selectable wall tile.
+            // Some clients may send an empty/stale tileId under reconnect/race conditions.
+            return context.wall.length > 0;
         },
 
         selectDora(context: GameContext, event: Extract<GameEvents, { type: 'SELECT_DORA' }>) {
-            const selected = context.wall.find((tile) => tile.id === event.tileId);
+            const selected = context.wall.find((tile) => tile.id === event.tileId) ?? context.wall[0];
             if (!selected) {
                 return {};
             }
             return {
-                wall: context.wall.filter((tile) => tile.id !== event.tileId),
+                // Keep wall layout intact so clients can reveal the selected tile in-place.
+                wall: context.wall,
                 doraIndicators: [selected],
                 eventLog: [...context.eventLog, event]
             };
@@ -88,7 +95,8 @@ export function createDefaultEngine({ scoreOptions }: EngineConfig): GameEngine 
             const timeoutEvent: GameEvents = { type: 'TIMEOUT', playerId: context.dealer, phase: 'DORA_SELECT' };
             const selectEvent: GameEvents = { type: 'SELECT_DORA', playerId: context.dealer, tileId: selected.id ?? '' };
             return {
-                wall: context.wall.slice(1),
+                // Keep wall layout intact so clients can reveal the selected tile in-place.
+                wall: context.wall,
                 doraIndicators: [selected],
                 eventLog: [...context.eventLog, timeoutEvent, selectEvent]
             };
@@ -244,12 +252,20 @@ function hasWinningWaitInternal(hand: Tile[]): boolean {
 }
 
 function rollDealerDice(players: string[], seed: number): Record<string, number> {
-    const rng = createSeededRng(seed);
     const result: Record<string, number> = {};
-    players.forEach((playerId) => {
-        result[playerId] = Math.floor(rng() * 6) + 1;
+    players.forEach((playerId, index) => {
+        result[playerId] = deterministicDice(seed, index + 1);
     });
     return result;
+}
+
+function deterministicDice(seed: number, salt: number): number {
+    // Murmur-inspired finalizer for stable, per-player pseudo-randomness.
+    let x = (seed ^ Math.imul(salt, 0x9e3779b9)) >>> 0;
+    x = Math.imul(x ^ (x >>> 16), 0x85ebca6b) >>> 0;
+    x = Math.imul(x ^ (x >>> 13), 0xc2b2ae35) >>> 0;
+    x = (x ^ (x >>> 16)) >>> 0;
+    return (x % 6) + 1;
 }
 
 function pickDealerFromDice(players: string[], seed: number, dealerDice: Record<string, number>): string {

@@ -12,11 +12,13 @@ export class GameRoom {
     private machine;
     private clients: Map<PlayerId, WebSocket> = new Map();
     private bots: Bot[] = [];
+    private ruleset: RulesetName;
 
     public roomId: string;
 
     constructor(roomId: string, ruleset: RulesetName = 'classic') {
         this.roomId = roomId;
+        this.ruleset = ruleset;
         this.machineLogic = createGameMachine({ ruleset });
         this.machine = createActor(this.machineLogic);
         this.machine.start();
@@ -42,7 +44,7 @@ export class GameRoom {
     public addBot() {
         // Generate a bot ID
         const botId = `bot-${Date.now()}`;
-        const bot = new Bot(botId, this.machine);
+        const bot = new Bot(botId, this.machine, this.ruleset);
         this.bots.push(bot);
 
         console.log(`Adding Bot: ${botId}`);

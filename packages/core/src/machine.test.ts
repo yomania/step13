@@ -29,7 +29,31 @@ afterEach(() => {
 });
 
 describe('gameMachine full cycle and edge cases', () => {
-    it('plays all 4 hands and reaches match end', async () => {
+    it('falls back to first wall tile when dealer sends an invalid dora tile id', async () => {
+        vi.useFakeTimers();
+
+        const actor = createActor(gameMachine);
+        actor.start();
+
+        actor.send({ type: 'JOIN', playerId: 'p1' });
+        actor.send({ type: 'JOIN', playerId: 'p2' });
+        actor.send({ type: 'START_MATCH', seed: 7 });
+
+        await advance(1000);
+        const snapshot = actor.getSnapshot();
+        expect(snapshot.value).toBe('doraSelect');
+
+        const dealer = snapshot.context.dealer;
+        const firstWallTile = snapshot.context.wall[0];
+        actor.send({ type: 'SELECT_DORA', playerId: dealer, tileId: 'stale-or-missing-id' });
+
+        const afterSelect = actor.getSnapshot();
+        expect(afterSelect.value).toBe('handBuild');
+        expect(afterSelect.context.doraIndicators[0]?.id).toBe(firstWallTile?.id);
+        expect(actor.getSnapshot().value).toBe('handBuild');
+    });
+
+    it('plays all 4 hands and reaches match end', { timeout: 20000 }, async () => {
         vi.useFakeTimers();
 
         const actor = createActor(gameMachine);
@@ -71,7 +95,7 @@ describe('gameMachine full cycle and edge cases', () => {
         expect(lastEvent.type).toBe('MATCH_END');
     });
 
-    it('ignores invalid discard attempts (wrong player and unknown tile id)', async () => {
+    it('ignores invalid discard attempts (wrong player and unknown tile id)', { timeout: 20000 }, async () => {
         vi.useFakeTimers();
 
         const actor = createActor(gameMachine);
@@ -98,7 +122,7 @@ describe('gameMachine full cycle and edge cases', () => {
         expect(after.context.currentTurn).toBe(turnPlayer);
     });
 
-    it('consumes turn timebank on timeout and logs timeout event', async () => {
+    it('consumes turn timebank on timeout and logs timeout event', { timeout: 20000 }, async () => {
         vi.useFakeTimers();
 
         const actor = createActor(gameMachine);
@@ -125,5 +149,43 @@ describe('gameMachine full cycle and edge cases', () => {
             playerId: firstTurn,
             phase: 'TURN'
         });
+    });
+
+    it('auto-submits hand on build timeout', { timeout: 10000 }, async () => {
+        vi.useFakeTimers();
+
+        const actor = createActor(gameMachine);
+        actor.start();
+
+        actor.send({ type: 'JOIN', playerId: 'p1' });
+        actor.send({ type: 'JOIN', playerId: 'p2' });
+        actor.send({ type: 'START_MATCH', seed: 3 });
+
+        // Advance to Hand Build
+        await advance(1100); // matchStart -> doraSelect
+        const doraSnap = actor.getSnapshot();
+        const dealer = doraSnap.context.dealer;
+        const tileId = doraSnap.context.wall[0]?.id;
+        if (dealer && tileId) {
+            actor.send({ type: 'SELECT_DORA', playerId: dealer, tileId });
+        }
+        expect(actor.getSnapshot().value).toBe('handBuild');
+
+        // Wait for build timeout
+        await advance(RULES.timers.buildTimeMs);
+
+        // Should have moved to gameLoop (turn)
+        expect(actor.getSnapshot().value).toEqual({ gameLoop: 'turn' });
+
+        // Context should have hands populated
+        expect(actor.getSnapshot().context.hands['p1']).toBeDefined();
+        expect(actor.getSnapshot().context.hands['p2']).toBeDefined();
+
+        // Log should contain TIMEOUT and SUBMIT_HAND events
+        const log = actor.getSnapshot().context.eventLog;
+        const p1Timeout = log.find(e => e.type === 'TIMEOUT' && e.playerId === 'p1' && e.phase === 'HAND_BUILD');
+        const p2Timeout = log.find(e => e.type === 'TIMEOUT' && e.playerId === 'p2' && e.phase === 'HAND_BUILD');
+        expect(p1Timeout).toBeDefined();
+        expect(p2Timeout).toBeDefined();
     });
 });

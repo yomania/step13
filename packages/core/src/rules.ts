@@ -7,6 +7,7 @@ export const RULES = {
     },
     timers: {
         doraSelectTimeMs: 15000,
+        doraRevealTimeMs: 3000,
         buildTimeMs: 120000,
         turnTimeMs: 5000,
         timeBankMs: 10000

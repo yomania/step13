@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Tile as TileType, Wind } from '@step13/proto';
 import { Tile } from './Tile';
 import { calculateScore } from '@step13/scoring';
@@ -138,11 +138,24 @@ export function HandBuilder({
 }: HandBuilderProps) {
     const [selectedIndices, setSelectedIndices] = useState<number[]>([]);
     const [showDebugLayer, setShowDebugLayer] = useState(false);
+    const [debugCandidates, setDebugCandidates] = useState<CandidateEvaluation[]>([]);
+    const [debugCandidatesLoading, setDebugCandidatesLoading] = useState(false);
+    const debugWorkerRef = useRef<Worker | null>(null);
+    const debugRequestIdRef = useRef(0);
 
     useEffect(() => {
         setSelectedIndices([]);
         setShowDebugLayer(false);
+        setDebugCandidates([]);
+        setDebugCandidatesLoading(false);
     }, [dealtTiles]);
+
+    useEffect(() => {
+        return () => {
+            debugWorkerRef.current?.terminate();
+            debugWorkerRef.current = null;
+        };
+    }, []);
 
     const sortedTilesWithIndices = useMemo(() => {
         return dealtTiles
@@ -179,10 +192,57 @@ export function HandBuilder({
         [selectedTiles, winningTiles, doraIndicators, seatWind]
     );
 
-    const debugCandidates = useMemo(() => {
-        if (!debugMode || submitted) return [];
-        return buildBestCandidates(dealtTiles, doraIndicators, 8, { seatWind, roundWind: 'EAST' });
-    }, [debugMode, submitted, dealtTiles, doraIndicators, seatWind]);
+    useEffect(() => {
+        if (!debugMode || submitted || !showDebugLayer) return;
+        setDebugCandidatesLoading(true);
+
+        const currentRequestId = ++debugRequestIdRef.current;
+        const worker = new Worker(new URL('../workers/aiCandidateWorker.ts', import.meta.url), { type: 'module' });
+        debugWorkerRef.current?.terminate();
+        debugWorkerRef.current = worker;
+
+        worker.onmessage = (
+            event: MessageEvent<{ type: 'PREFETCH_RESULT'; requestId: number; candidate: CandidateEvaluation | null; candidates?: CandidateEvaluation[] }>
+        ) => {
+            const payload = event.data;
+            if (payload.type !== 'PREFETCH_RESULT') return;
+            if (payload.requestId !== currentRequestId) return;
+            setDebugCandidates(payload.candidates ?? (payload.candidate ? [payload.candidate] : []));
+            setDebugCandidatesLoading(false);
+            worker.terminate();
+            if (debugWorkerRef.current === worker) {
+                debugWorkerRef.current = null;
+            }
+        };
+
+        worker.onerror = () => {
+            // Worker fallback: keep functionality by using local calculation.
+            const next = buildBestCandidates(dealtTiles, doraIndicators, 8, { seatWind, roundWind: 'EAST' });
+            setDebugCandidates(next);
+            setDebugCandidatesLoading(false);
+            worker.terminate();
+            if (debugWorkerRef.current === worker) {
+                debugWorkerRef.current = null;
+            }
+        };
+
+        worker.postMessage({
+            type: 'PREFETCH',
+            requestId: currentRequestId,
+            dealtTiles,
+            doraIndicators,
+            maxCount: 8,
+            seatWind: seatWind ?? 'EAST',
+            roundWind: 'EAST'
+        });
+
+        return () => {
+            worker.terminate();
+            if (debugWorkerRef.current === worker) {
+                debugWorkerRef.current = null;
+            }
+        };
+    }, [debugMode, submitted, showDebugLayer, dealtTiles, doraIndicators, seatWind]);
 
     const tenpai = winningTiles.length > 0;
     const isMangan = potentialScoreWithWind ? potentialScoreWithWind.points >= 8000 : false;
@@ -339,7 +399,9 @@ export function HandBuilder({
 
                         <div className="space-y-3">
                             {debugCandidates.length === 0 && (
-                                <div className="text-sm text-slate-400">추천 조패를 찾지 못했습니다.</div>
+                                <div className="text-sm text-slate-400">
+                                    {debugCandidatesLoading ? '추천 조패 계산 중...' : '추천 조패를 찾지 못했습니다.'}
+                                </div>
                             )}
 
                             {debugCandidates.map((candidate, idx) => (
