@@ -11,6 +11,7 @@
     "dev:web": "./scripts/dev-web.sh",
     "dev:server": "./scripts/dev-server.sh",
     "test": "./scripts/test-all.sh",
+    "test:e2e": "pnpm --filter server exec tsx ../../scripts/test-e2e-flows.ts",
     "build": "turbo build",
     "dev": "turbo dev"
   },
