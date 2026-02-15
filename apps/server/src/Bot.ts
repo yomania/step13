@@ -1,12 +1,20 @@
 
 import { AnyActorRef } from 'xstate';
 import { PlayerId, Tile } from '@step13/proto';
-import { isTenpai } from '@step13/scoring';
+import { isTenpai, calculateScore } from '@step13/scoring';
+
+const SCORE_OPTIONS = {
+    requireManganMinimum: true,
+    includeOmoteDoraInMinimum: true,
+    kiriageMangan: true,
+    autoRiichiFallback: true
+} as const;
 
 export class Bot {
     public id: PlayerId;
-    private actor: AnyActorRef;
+    public actor: AnyActorRef;
     private state: any;
+    private processing: boolean = false;
 
     constructor(id: PlayerId, actor: AnyActorRef) {
         this.id = id;
@@ -18,81 +26,148 @@ export class Bot {
     }
 
     private decide() {
-        if (!this.state) return;
+        if (!this.state || this.processing) return;
 
         const { value, context } = this.state;
+        const phase = typeof value === 'string' ? value : Object.keys(value)[0];
         const myTurn = context.currentTurn === this.id;
 
-        // 1. Join if not joined (though GameRoom usually adds bot manually)
-        // 2. Hand Building Phase
-        if (value === 'handBuild' && !context.hands[this.id]) {
-            this.buildHand(context.dealtTiles[this.id]);
+        // 1. Hand Building Phase
+        if (phase === 'handBuild') {
+            // Check if I already submitted
+            if (!context.hands[this.id]) {
+                this.processing = true;
+                // Simulate delay
+                setTimeout(() => {
+                    this.buildHand(context.dealtTiles[this.id]);
+                    this.processing = false;
+                }, 1000 + Math.random() * 2000);
+            }
         }
 
-        // 3. Game Loop - Discard
-        if (value === 'gameLoop' && myTurn) {
-            // Simple delay to simulate thinking
-            setTimeout(() => {
-                this.discard(context.hands[this.id]);
-            }, 1000);
+        // 1.5 Dora Selection Phase
+        if (phase === 'doraSelect') {
+            const isDealer = context.dealer === this.id;
+            const alreadySelected = (context.doraIndicators?.length ?? 0) > 0;
+            if (isDealer && !alreadySelected && !this.processing) {
+                this.processing = true;
+                setTimeout(() => {
+                    const wall = context.wall ?? [];
+                    const pick = wall[Math.floor(Math.random() * Math.max(1, wall.length))];
+                    if (pick?.id) {
+                        this.actor.send({ type: 'SELECT_DORA', playerId: this.id, tileId: pick.id });
+                    }
+                    this.processing = false;
+                }, 500 + Math.random() * 700);
+            }
+        }
+
+        // 2. Game Loop
+        if (phase === 'gameLoop') {
+            // Check for RON opportunity (regardless of turn, if it's someone else's discard)
+            // But usually Ron is possible immediately after DISCARD event.
+            // XState might be in 'checkRon' state or 'turn' state.
+            // If context.lastDiscard is set and it's NOT me, check Ron.
+            if (context.lastDiscard && context.lastDiscard.playerId !== this.id) {
+                const score = calculateScore(context.hands[this.id], context.lastDiscard.tile, false, [], SCORE_OPTIONS);
+                if (score.points > 0) {
+                    // 50% chance to Ron (or 100% for testing)
+                    // Let's go for 100% for now to verify logic.
+                    console.log(`Bot ${this.id} declares RON on ${context.lastDiscard.tile.suit}${context.lastDiscard.tile.rank}! Points: ${score.points}`);
+                    this.actor.send({ type: 'DECLARE_WIN', playerId: this.id });
+                    return;
+                }
+            }
+
+            if (myTurn) {
+                // If it's my turn, I must Discard.
+                if (!this.processing) {
+                    this.processing = true;
+                    setTimeout(() => {
+                        this.discard(context.hands[this.id]);
+                        this.processing = false;
+                    }, 1000 + Math.random() * 1000);
+                }
+            }
         }
     }
 
     private buildHand(tiles: Tile[]) {
-        if (!tiles) return;
+        if (!tiles || tiles.length < 13) return;
 
-        // Simple Logic: Sort by suit/rank and take first 13 that make Tenpai? 
-        // For now, just take first 13 (Valid or not, to test flow. 
-        // Actually, core logic checks isTenpai. So we need a valid hand.
+        console.log(`Bot ${this.id} building hand...`);
 
-        // Randomly pick 13 until valid (Terrible, but simple for now)
-        // Better: Just pick first 13 and hope? No, validation will fail.
+        // Try N times to find a Tenpai hand
+        // Heuristic: Shuffle tiles, take first 13, check strict Tenpai.
+        // 17-step starting hand (34 tiles) usually guarantees at least one Tenpai combination if we search enough.
 
-        // Strategy: Pre-calculated valid hand or valid random selection.
-        // For 17-step, we deal 34 tiles. Finding a Tenpai hand is the game!
-        // Writing a solver here is too complex for "Phase 3 Pre-Test".
-        // Let's cheat for the bot? Or just implement a very dumb connection.
+        let bestHand: Tile[] | null = null;
+        let bestPool: Tile[] | null = null;
 
-        // Wait, if I can't build a valid hand, the bot hangs.
-        // Let's implement a "Force valid hand" helper or just a simple greedy builder.
-        // Or... just make the bot send a "SKIP" if strict mode is off?
-        // No, let's try to find *any* combination.
-        // Actually, standard 17-step has a "Riso" (Ideal) setup usually. 
+        // Try up to 500 shuffles?
+        for (let i = 0; i < 500; i++) {
+            const shuffled = [...tiles].sort(() => Math.random() - 0.5);
+            const hand = shuffled.slice(0, 13);
+            if (isTenpai(hand)) {
+                bestHand = hand;
+                bestPool = shuffled.slice(13);
+                console.log(`Bot ${this.id} found Tenpai hand after ${i + 1} attempts`);
+                break;
+            }
+        }
 
-        // Let's assume for this test, the server "generates" a hand for the bot.
-        // OR: Just select first 13 and if it fails, retry?
-
-        // For TDD/Test: I will just pick indices 0-12. If it fails, I log it.
-        // But to make it playable, I should probably ensure the deck allows at least one Tenpai.
-        // (The current deal logic is random 34 tiles).
-
-        // Implementation: Just try to submit the first 13 tiles.
-        // If it fails, the bot will be stuck. 
-        // TODO: Import a proper solver later.
-
-        const hand = tiles.slice(0, 13);
-        const pool = tiles.slice(13);
-
-        // Attempt submit
-        if (isTenpai(hand)) {
-            this.actor.send({ type: 'SUBMIT_HAND', playerId: this.id, hand, pool });
+        if (bestHand && bestPool) {
+            this.actor.send({ type: 'SUBMIT_HAND', playerId: this.id, hand: bestHand, pool: bestPool });
         } else {
-            console.log(`Bot ${this.id} failed to build Tenpai. Retrying... (Not implemented)`);
-            // Fallback: shuffle and retry?
+            console.warn(`Bot ${this.id} failed to find Tenpai hand. Submitting random (will likely fail validation or lose).`);
+            // Determine behavior: Force submit invalid or just fail?
+            // If we fallback to random, game will reject if strict.
+            // Let's submit random anyway to prevent deadlock in dev.
+            const shuffled = [...tiles].sort(() => Math.random() - 0.5);
+            this.actor.send({ type: 'SUBMIT_HAND', playerId: this.id, hand: shuffled.slice(0, 13), pool: shuffled.slice(13) });
         }
     }
 
     private discard(hand: Tile[]) {
         if (!hand || hand.length === 0) return;
 
-        // Tsumogiri: Discard the last drawn/added tile? 
-        // In 17-step, we don't draw. We just discard from hand.
-        // Random discard
-        const randomIndex = Math.floor(Math.random() * hand.length);
-        const tile = hand[randomIndex];
+        // Simple Bot: Random Discard
+        // Phase 3 Improvement: Use Shanten to discard tile that keeps Shanten low?
+        // But for turn-based 17-step, we don't draw. We just discard.
+        // So we should pick a tile that is "safe" or "least value"?
+        // For MVP, random is fine.
+
+        // Wait: In 17-step, "Hand" is the 13 tiles.
+        // "Pool" is the remaining 21 tiles.
+        // Discarding checks "Pool"!
+        // We shouldn't discard from "Hand" (Locked).
+        // Discards come from the "Pool".
+
+        // Wait!! In 17-step, you discard from the POOL (the 21 tiles you didn't choose).
+        // You NEVER touch your HAND (the 13 tiles).
+        // My previous logic might be flawed if I thought I discard from hand.
+        // In `machine.ts`, `SUBMIT_HAND` sets `context.hands`.
+        // `DISCARD` takes `tileId`.
+        // `handleDiscard` logic: `const pool = context.pools[event.playerId]; const tile = pool.find(...)`.
+        // So yes, Discard must be from POOL.
+
+        // Bot needs to look at `context.pools[this.id]`!
+        // `decide` passes `context.hands[this.id]` which is wrong for discard source.
+
+        // I need to access `context.pools` in `decide`.
+        // `decide` uses `context.hands` currently. I should fix it.
+        const pool = this.state.context.pools[this.id];
+        if (!pool || pool.length === 0) {
+            console.warn(`Bot ${this.id} has no tiles in pool to discard!`);
+            return;
+        }
+
+        // Pick random from POOL
+        const randomIndex = Math.floor(Math.random() * pool.length);
+        const tile = pool[randomIndex];
 
         if (tile && tile.id) {
-            console.log(`Bot ${this.id} discarding ${tile.suit}${tile.rank}`);
+            console.log(`Bot ${this.id} discarding from pool: ${tile.suit}${tile.rank}`);
             this.actor.send({ type: 'DISCARD', playerId: this.id, tileId: tile.id });
         }
     }

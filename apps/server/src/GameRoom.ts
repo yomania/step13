@@ -1,20 +1,24 @@
 
 import { createActor, SnapshotFrom } from 'xstate';
-import { gameMachine } from '@step13/core';
+import { createGameMachine, RulesetName } from '@step13/core';
 import { PlayerId } from '@step13/proto';
 import { WebSocket } from 'ws';
 import { Bot } from './Bot';
 
+type MachineLogic = ReturnType<typeof createGameMachine>;
+
 export class GameRoom {
+    private machineLogic: MachineLogic;
     private machine;
     private clients: Map<PlayerId, WebSocket> = new Map();
     private bots: Bot[] = [];
 
     public roomId: string;
 
-    constructor(roomId: string) {
+    constructor(roomId: string, ruleset: RulesetName = 'classic') {
         this.roomId = roomId;
-        this.machine = createActor(gameMachine);
+        this.machineLogic = createGameMachine({ ruleset });
+        this.machine = createActor(this.machineLogic);
         this.machine.start();
 
         // Subscribe to state changes and broadcast to all clients
@@ -28,16 +32,6 @@ export class GameRoom {
 
         // Forward JOIN to machine
         this.machine.send({ type: 'JOIN', playerId });
-
-        // setup socket listeners
-        socket.on('message', (data) => {
-            try {
-                const event = JSON.parse(data.toString());
-                this.handleMessage(playerId, event);
-            } catch (e) {
-                console.error('Invalid message from', playerId, e);
-            }
-        });
 
         socket.on('close', () => {
             console.log(`Player ${playerId} disconnected`);
@@ -67,11 +61,34 @@ export class GameRoom {
             return;
         }
 
+        if (!this.clients.has(playerId) && !playerId.startsWith('bot-')) {
+            console.warn(`Unknown player ${playerId} event rejected:`, event.type);
+            return;
+        }
+
         console.log(`Processing event from ${playerId}:`, event.type);
         this.machine.send(event);
+        this.emitTelemetry(event.type, playerId);
     }
 
-    private broadcastState(snapshot: SnapshotFrom<typeof gameMachine>) {
+    public hasPlayer(playerId: PlayerId): boolean {
+        return this.clients.has(playerId) || this.machine.getSnapshot().context.players.includes(playerId);
+    }
+
+    private emitTelemetry(eventType: string, playerId: PlayerId) {
+        const allowed = new Set([
+            'START_MATCH',
+            'SUBMIT_HAND',
+            'DISCARD',
+            'AUTO_RON',
+            'ROUND_END',
+            'GUIDE_VIEW'
+        ]);
+        if (!allowed.has(eventType)) return;
+        console.log('[telemetry]', JSON.stringify({ eventType, playerId, at: Date.now(), roomId: this.roomId }));
+    }
+
+    private broadcastState(snapshot: SnapshotFrom<MachineLogic>) {
         const state = {
             value: snapshot.value,
             context: snapshot.context,

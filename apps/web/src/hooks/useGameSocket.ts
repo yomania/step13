@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { AnyActorRef } from 'xstate';
 
-export function useGameSocket(actor: AnyActorRef, onStateChange?: (state: any) => void) {
+export function useGameSocket(_actor: AnyActorRef, onStateChange?: (state: any) => void) {
     const socketRef = useRef<WebSocket | null>(null);
 
     useEffect(() => {
@@ -35,7 +35,7 @@ export function useGameSocket(actor: AnyActorRef, onStateChange?: (state: any) =
         return () => {
             socket.close();
         };
-    }, [actor, onStateChange]);
+    }, [onStateChange]);
 
     const sendEvent = (event: any) => {
         if (socketRef.current?.readyState === WebSocket.OPEN) {

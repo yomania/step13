@@ -1,2 +1,2 @@
 export * from './shanten';
-// export * from './points';
+export * from './points';

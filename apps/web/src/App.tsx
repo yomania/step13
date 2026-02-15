@@ -1,14 +1,26 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useMachine } from '@xstate/react';
-import { gameMachine } from '@step13/core';
+import { gameMachine, RULES } from '@step13/core';
 import { useGameSocket } from './hooks/useGameSocket';
 import { HandBuilder } from './components/HandBuilder';
 import { HandDisplay } from './components/HandDisplay';
-import { DiscardPile } from './components/DiscardPile';
+import { Tile as TileView, TileSkinProvider, type TileSkin } from './components/Tile';
+import { GameBoard } from './components/GameBoard';
+import { ReplayViewer } from './components/ReplayViewer';
+import { SingleMiniGame } from './components/SingleMiniGame';
 import { PlayerId, Tile } from '@step13/proto';
+import { calculateScore } from '@step13/scoring';
+import { preloadRealTileAssets } from './lib/tileAssets';
+
+const SCORE_OPTIONS = {
+    requireManganMinimum: true,
+    includeOmoteDoraInMinimum: true,
+    kiriageMangan: true,
+    autoRiichiFallback: true
+} as const;
 
 export default function App() {
-    const [localState, send, actor] = useMachine(gameMachine);
+    const [localState, , actor] = useMachine(gameMachine);
     const [serverState, setServerState] = useState<any>(null);
 
     // Pass the actor and a callback to update serverState
@@ -20,14 +32,50 @@ export default function App() {
 
     const [playerId] = useState(`player-${Math.floor(Math.random() * 1000)}`);
     const [isConnected, setIsConnected] = useState(false);
+    const [debugMode, setDebugMode] = useState<boolean>(() => {
+        if (typeof window === 'undefined') return false;
+        return window.localStorage.getItem('step13-debug-mode') === '1';
+    });
+    const [tileSkin, setTileSkin] = useState<TileSkin>(() => {
+        if (typeof window === 'undefined') return 'classic';
+        const saved = window.localStorage.getItem('step13-tile-skin');
+        return saved === 'real' ? 'real' : 'classic';
+    });
+    const [showOptions, setShowOptions] = useState(false);
+    const [mainMode, setMainMode] = useState<'match' | 'mini'>('match');
 
     // Initial connection check effect (mock)
     useEffect(() => {
         setIsConnected(true);
     }, []);
 
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        window.localStorage.setItem('step13-debug-mode', debugMode ? '1' : '0');
+    }, [debugMode]);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        window.localStorage.setItem('step13-tile-skin', tileSkin);
+    }, [tileSkin]);
+
+    useEffect(() => {
+        // Warm image cache early so switching to real skin feels instant.
+        preloadRealTileAssets().catch(() => undefined);
+    }, []);
+
     // Helper to abstract state source (Server > Local)
     const context = serverState ? serverState.context : localState.context;
+    const otherPlayerId = context.players.find((p: PlayerId) => p !== playerId);
+    const myHandSubmitted = Boolean(context.hands[playerId]);
+    const opponentHandSubmitted = otherPlayerId ? Boolean(context.hands[otherPlayerId]) : false;
+    const doraIndicators = (context as { doraIndicators?: Tile[] }).doraIndicators ?? [];
+    const isAiMatch = context.players.some((p: PlayerId) => p.startsWith('bot-'));
+    const mySeatWind = context.seatMap?.[playerId] === 'EAST'
+        ? 'EAST'
+        : context.seatMap?.[playerId] === 'WEST'
+            ? 'WEST'
+            : undefined;
 
     // Helper to check state value
     const matches = (value: string) => {
@@ -36,11 +84,40 @@ export default function App() {
         }
         return localState.matches(value as any);
     };
+    const isIdle = matches('idle');
+    const isHandBuild = matches('handBuild');
+    const isDoraSelect = matches('doraSelect');
 
-    const phase = serverState ? JSON.stringify(serverState.value) : localState.value.toString();
+    const [handBuildRoundMeta, setHandBuildRoundMeta] = useState<{ round: number; startedAt: number } | null>(null);
+    const [nowMs, setNowMs] = useState(() => Date.now());
+
+    useEffect(() => {
+        if (!isHandBuild) {
+            setHandBuildRoundMeta(null);
+            return;
+        }
+
+        setHandBuildRoundMeta((prev) => {
+            if (!prev || prev.round !== context.round) {
+                return { round: context.round, startedAt: Date.now() };
+            }
+            return prev;
+        });
+    }, [isHandBuild, context.round]);
+
+    useEffect(() => {
+        if (!isHandBuild) return;
+        const timer = setInterval(() => setNowMs(Date.now()), 250);
+        return () => clearInterval(timer);
+    }, [isHandBuild]);
+
+    const handBuildRemainingMs = useMemo(() => {
+        if (!isHandBuild || !handBuildRoundMeta) return null;
+        const deadline = handBuildRoundMeta.startedAt + RULES.timers.buildTimeMs;
+        return Math.max(0, deadline - nowMs);
+    }, [isHandBuild, handBuildRoundMeta, nowMs]);
 
     const handleJoin = () => {
-        send({ type: 'JOIN', playerId });
         sendEvent({ type: 'JOIN', playerId });
     };
 
@@ -49,134 +126,476 @@ export default function App() {
     };
 
     const onSubmitHand = (hand: Tile[], pool: Tile[]) => {
+        if (myHandSubmitted) return;
         sendEvent({ type: 'SUBMIT_HAND', playerId, hand, pool });
+    };
+
+    const onSelectDora = (tile: Tile) => {
+        if (playerId !== context.dealer || !tile.id) return;
+        sendEvent({ type: 'SELECT_DORA', playerId, tileId: tile.id });
     };
 
     const onDiscard = (tile: Tile) => {
         if (!tile.id) return;
-        send({ type: 'DISCARD', playerId, tileId: tile.id });
         sendEvent({ type: 'DISCARD', playerId, tileId: tile.id });
     };
 
-    return (
-        <div className="flex flex-col items-center justify-center min-h-screen bg-slate-900 text-white p-4">
-            <header className="mb-8 text-center">
-                <h1 className="text-4xl font-bold mb-2">17보 마작</h1>
-                <div className="flex flex-col items-center text-xs text-gray-400 gap-1">
-                    <p>단계: {phase}</p>
-                    <p>플레이어 ID: {playerId}</p>
-                    <p className={isConnected ? "text-green-500" : "text-red-500"}>
-                        네트워크: {isConnected ? "연결됨 (동기화됨)" : "연결 중..."}
-                    </p>
-                    {serverState && <span className="text-blue-400">[서버 권한 모드]</span>}
+    const onDeclareWin = () => {
+        sendEvent({ type: 'DECLARE_WIN', playerId });
+    };
+
+    const onRestart = () => {
+        // Send restart if implemented, or just refresh
+        window.location.reload();
+    };
+
+    // Calculate Ron Opportunity
+    const ronOpportunity = useMemo(() => {
+        if (!matches('gameLoop')) return null;
+        // Logic: if current turn is NOT me, and lastDiscard exists...
+        // Actually, verify via 'lastDiscard' context
+        const { lastDiscard, hands } = context;
+        if (!lastDiscard) return null;
+        if (lastDiscard.playerId === playerId) return null; // Can't ron self
+
+        const myHand = hands[playerId];
+        if (!myHand) return null;
+
+        // Check score
+        const res = calculateScore(myHand, lastDiscard.tile, false, doraIndicators, {
+            ...SCORE_OPTIONS,
+            seatWind: mySeatWind,
+            roundWind: 'EAST'
+        });
+        if (res.points > 0) {
+            return res;
+        }
+        return null;
+    }, [context.lastDiscard, context.hands, playerId, doraIndicators, context, matches, mySeatWind]); // Add dependencies carefully
+
+    const [showReplay, setShowReplay] = useState(false);
+    const [showAiExitMenu, setShowAiExitMenu] = useState(false);
+    const [aiRematchStep, setAiRematchStep] = useState<'none' | 'join' | 'waitSelf' | 'addBot' | 'waitBot' | 'start'>('none');
+
+    useEffect(() => {
+        if (showReplay) {
+            sendEvent({ type: 'GUIDE_VIEW', playerId, step: 'replay_open' });
+        }
+    }, [showReplay, playerId, sendEvent]);
+
+    useEffect(() => {
+        if (!isAiMatch) {
+            setShowAiExitMenu(false);
+        }
+    }, [isAiMatch]);
+
+    useEffect(() => {
+        if (aiRematchStep === 'none' || !isIdle) return;
+
+        const hasSelf = context.players.includes(playerId);
+        const hasBot = context.players.some((p: PlayerId) => p.startsWith('bot-'));
+        const playerCount = context.players.length;
+
+        if (aiRematchStep === 'join') {
+            if (!hasSelf) {
+                sendEvent({ type: 'JOIN', playerId });
+                setAiRematchStep('waitSelf');
+                return;
+            }
+            setAiRematchStep('addBot');
+            return;
+        }
+
+        if (aiRematchStep === 'waitSelf') {
+            if (hasSelf) {
+                setAiRematchStep('addBot');
+            }
+            return;
+        }
+
+        if (aiRematchStep === 'addBot') {
+            if (!hasBot) {
+                sendEvent({ type: 'ADD_BOT' });
+                setAiRematchStep('waitBot');
+                return;
+            }
+            setAiRematchStep('start');
+            return;
+        }
+
+        if (aiRematchStep === 'waitBot') {
+            if (hasBot) {
+                setAiRematchStep('start');
+            }
+            return;
+        }
+
+        if (aiRematchStep === 'start' && playerCount === 2) {
+            sendEvent({ type: 'START_MATCH' });
+            setAiRematchStep('none');
+        }
+    }, [aiRematchStep, isIdle, context.players, playerId, sendEvent]);
+
+    const onAiExitToLobby = () => {
+        setShowAiExitMenu(false);
+        setAiRematchStep('none');
+        sendEvent({ type: 'RESTART' });
+    };
+
+    const onAiExitToHandBuild = () => {
+        setShowAiExitMenu(false);
+        setAiRematchStep('join');
+        sendEvent({ type: 'RESTART' });
+    };
+
+    if (showReplay) {
+        return (
+            <TileSkinProvider skin={tileSkin}>
+                <ReplayViewer
+                    events={context.eventLog || []}
+                    myPlayerId={playerId}
+                    onClose={() => setShowReplay(false)}
+                />
+            </TileSkinProvider>
+        );
+    }
+
+    if (mainMode === 'mini') {
+        return (
+            <TileSkinProvider skin={tileSkin}>
+                <div className="flex flex-col items-center justify-center min-h-screen bg-slate-900 text-white font-sans relative">
+                    <SingleMiniGame onExit={() => setMainMode('match')} />
                 </div>
-            </header>
+            </TileSkinProvider>
+        );
+    }
 
-            <main className="w-full max-w-4xl bg-slate-800 rounded-lg p-6 shadow-xl">
-                {matches('idle') && (
-                    <div className="text-center space-y-4">
-                        <h2 className="text-2xl font-semibold">로비</h2>
-                        <div className="flex justify-center gap-4">
-                            {!context.players.includes(playerId) ? (
+    return (
+        <TileSkinProvider skin={tileSkin}>
+            <div className="flex flex-col items-center justify-center min-h-screen bg-slate-900 text-white font-sans relative">
+            {isAiMatch && !isIdle && (
+                <div className="absolute top-4 right-4 z-[60]">
+                    <button
+                        onClick={() => setShowAiExitMenu(true)}
+                        className="px-4 py-2 rounded-lg bg-red-700 hover:bg-red-600 text-white font-bold shadow-lg border border-red-400"
+                    >
+                        AI 대전 종료
+                    </button>
+                </div>
+            )}
+            {showAiExitMenu && (
+                <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 px-4">
+                    <div className="w-full max-w-sm rounded-xl border border-slate-600 bg-slate-900 p-5 shadow-2xl">
+                        <h3 className="text-lg font-bold text-white">AI 대전 종료</h3>
+                        <p className="mt-2 text-sm text-slate-300">
+                            진행 중인 AI 대전을 종료하고 이동할 위치를 선택하세요.
+                        </p>
+                        <div className="mt-4 flex flex-col gap-2">
+                            <button
+                                onClick={onAiExitToLobby}
+                                className="w-full px-3 py-2 rounded bg-slate-700 hover:bg-slate-600 text-sm font-semibold"
+                            >
+                                최초 화면(로비)로 이동
+                            </button>
+                            <button
+                                onClick={onAiExitToHandBuild}
+                                className="w-full px-3 py-2 rounded bg-blue-700 hover:bg-blue-600 text-sm font-semibold"
+                            >
+                                조패 단계부터 다시 시작
+                            </button>
+                            <button
+                                onClick={() => setShowAiExitMenu(false)}
+                                className="w-full px-3 py-2 rounded bg-slate-800 hover:bg-slate-700 text-sm text-slate-300"
+                            >
+                                취소
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* Lobby / Match Start / Hand Build Phases - Keep as overlays or separate views */}
+            {/* If gameLoop or matchEnd, we can use GameBoard as base? 
+                 Actually, matchEnd is an overlay ON TOP of GameBoard usually.
+                 gameLoop IS the GameBoard.
+                 handBuild is separate? 
+                 App.tsx utilized a single main container. 
+              */}
+
+            {(matches('idle') || matches('matchStart') || matches('doraSelect') || matches('handBuild')) ? (
+                <div className="w-full max-w-5xl bg-slate-800 rounded-xl p-6 shadow-2xl min-h-[600px] flex flex-col relative m-4">
+                    <header className="mb-4 text-center w-full flex justify-between items-end border-b border-slate-700 pb-4">
+                        <div>
+                            <h1 className="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500">17보 마작</h1>
+                            <div className="text-xs text-gray-400 mt-1 space-x-2">
+                                <span>ID: <span className="text-white font-mono">{playerId}</span></span>
+                                <span>•</span>
+                                <span className={isConnected ? "text-green-500" : "text-red-500"}>
+                                    {isConnected ? "ONLINE" : "OFFLINE"}
+                                </span>
+                            </div>
+                        </div>
+                        <div className="text-right relative">
+                            <button
+                                onClick={() => setShowOptions((prev) => !prev)}
+                                className="px-3 py-1.5 rounded border border-slate-600 bg-slate-700 hover:bg-slate-600 text-sm font-semibold"
+                            >
+                                옵션
+                            </button>
+                            {showOptions && (
+                                <div className="absolute right-0 mt-2 w-64 rounded-lg border border-slate-600 bg-slate-900 p-3 shadow-2xl z-[70] text-left">
+                                    <div className="text-xs text-slate-400 mb-2">실행 옵션</div>
+                                    <div className="mb-3">
+                                        <div className="text-xs text-slate-300 mb-1">실행모드</div>
+                                        <div className="grid grid-cols-2 gap-1">
+                                            <button
+                                                onClick={() => setDebugMode(false)}
+                                                className={`px-2 py-1 rounded text-xs border ${!debugMode ? 'bg-blue-700 border-blue-500 text-white' : 'bg-slate-800 border-slate-600 text-slate-300'}`}
+                                            >
+                                                NORMAL
+                                            </button>
+                                            <button
+                                                onClick={() => setDebugMode(true)}
+                                                className={`px-2 py-1 rounded text-xs border ${debugMode ? 'bg-amber-700 border-amber-500 text-white' : 'bg-slate-800 border-slate-600 text-slate-300'}`}
+                                            >
+                                                DEBUG
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div className="text-xs text-slate-300 mb-1">UI 선택</div>
+                                        <div className="grid grid-cols-2 gap-1">
+                                            <button
+                                                onClick={() => setTileSkin('classic')}
+                                                className={`px-2 py-1 rounded text-xs border ${tileSkin === 'classic' ? 'bg-cyan-700 border-cyan-500 text-white' : 'bg-slate-800 border-slate-600 text-slate-300'}`}
+                                            >
+                                                클래식
+                                            </button>
+                                            <button
+                                                onClick={() => setTileSkin('real')}
+                                                className={`px-2 py-1 rounded text-xs border ${tileSkin === 'real' ? 'bg-emerald-700 border-emerald-500 text-white' : 'bg-slate-800 border-slate-600 text-slate-300'}`}
+                                            >
+                                                리얼 패
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                        {context.players.length === 2 && (
+                            <div className="text-right text-xs">
+                                <div className="text-slate-300 mb-1">선결정 주사위</div>
+                                <div className="text-yellow-300">
+                                    {context.players.map((p: PlayerId) => (
+                                        <span key={p} className="ml-2">{p === playerId ? 'YOU' : 'OPP'}: {context.dealerDice?.[p] ?? '-'}</span>
+                                    ))}
+                                </div>
+                                <div className="text-amber-300 mt-1">선: {context.dealer === playerId ? 'YOU' : context.dealer || '-'}</div>
+                            </div>
+                        )}
+                    </header>
+
+                    {matches('idle') && (
+                        <div className="flex-1 flex flex-col items-center justify-center space-y-8">
+                            {/* ... Lobby UI ... */}
+                            <div className="text-center space-y-2">
+                                <h2 className="text-3xl font-bold text-white">대기실</h2>
+                                <p className="text-gray-400">상대를 기다리거나 봇을 추가하세요.</p>
+                            </div>
+
+                            <div className="flex flex-col gap-4 w-full max-w-md">
                                 <button
-                                    onClick={handleJoin}
-                                    className="px-6 py-2 bg-blue-600 hover:bg-blue-500 rounded font-bold"
+                                    onClick={() => setMainMode('mini')}
+                                    className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 rounded-lg font-bold text-lg shadow-lg"
                                 >
-                                    게임 참가
+                                    싱글 미니게임: 조패하기
                                 </button>
+                                {!context.players.includes(playerId) ? (
+                                    <button onClick={handleJoin} className="w-full py-3 bg-blue-600 hover:bg-blue-500 rounded-lg font-bold text-lg shadow-lg">
+                                        게임 참가
+                                    </button>
+                                ) : (
+                                    <div className="text-green-400 bg-green-900/30 py-2 px-4 rounded text-center border border-green-500/50">
+                                        참가 완료! ({context.players.indexOf(playerId) + 1}P)
+                                    </div>
+                                )}
+
+                                {context.players.length > 0 && (
+                                    <div className="bg-slate-900/50 p-4 rounded-lg">
+                                        <h3 className="text-sm font-bold text-slate-400 mb-2 uppercase tracking-wider">Players</h3>
+                                        <ul className="space-y-2">
+                                            {context.players.map((p: PlayerId) => (
+                                                <li key={p} className="flex items-center gap-2 p-2 bg-slate-800 rounded">
+                                                    <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                                                    <span className={p === playerId ? "text-yellow-300 font-bold" : "text-gray-300"}>
+                                                        {p} {p === playerId && "(YOU)"}
+                                                    </span>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
+                                {context.players.includes(playerId) && context.players.length === 1 && (
+                                    <button onClick={() => sendEvent({ type: 'ADD_BOT' })} className="w-full py-3 bg-purple-600 hover:bg-purple-500 rounded-lg font-bold shadow-lg">
+                                        AI 추가 (Add Bot)
+                                    </button>
+                                )}
+                                {context.players.length === 2 && (
+                                    <button onClick={handleStartMatch} className="w-full py-4 bg-green-600 hover:bg-green-500 rounded-lg font-bold text-xl shadow-xl animate-pulse">
+                                        매치 시작 (Start)
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {matches('matchStart') && (
+                        <div className="flex-1 flex flex-col items-center justify-center animate-in fade-in zoom-in duration-500">
+                            <h2 className="text-4xl font-bold text-yellow-400 mb-4">MATCH START</h2>
+                            <div className="text-xl text-gray-300">패를 섞는 중...</div>
+                        </div>
+                    )}
+
+                    {isDoraSelect && (
+                        <div className="flex-1">
+                            <div className="mb-6">
+                                <h2 className="text-2xl font-bold text-white">도라 선택 단계</h2>
+                                <p className="text-gray-400 text-sm">
+                                    선({context.dealer === playerId ? 'YOU' : context.dealer})이 패산에서 도라 표시패를 선택합니다.
+                                </p>
+                            </div>
+
+                            {(context.doraIndicators?.length ?? 0) > 0 ? (
+                                <div className="bg-slate-700 rounded-lg p-4">
+                                    <div className="text-sm text-slate-300 mb-2">공개된 도라 표시패</div>
+                                    <div className="flex gap-2">
+                                        {context.doraIndicators.map((tile: Tile, idx: number) => (
+                                            <div key={`${tile.id ?? `${tile.suit}-${tile.rank}`}-${idx}`} className="transform scale-95 origin-left-top">
+                                                <TileView tile={tile} disabled={true} />
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
                             ) : (
-                                <div className="text-green-400 mb-4">참가 완료! 대기 중...</div>
-                            )}
-
-                            {context.players.includes(playerId) && context.players.length === 1 && (
-                                <button
-                                    onClick={() => sendEvent({ type: 'ADD_BOT' })}
-                                    className="px-6 py-2 bg-purple-600 hover:bg-purple-500 rounded font-bold"
-                                >
-                                    AI 추가 (+bot)
-                                </button>
-                            )}
-
-                            {context.players.length === 2 && (
-                                <button
-                                    onClick={handleStartMatch}
-                                    className="px-6 py-2 bg-green-600 hover:bg-green-500 rounded font-bold"
-                                >
-                                    매치 시작
-                                </button>
+                                <div>
+                                    <div className="text-sm text-slate-300 mb-3">
+                                        {context.dealer === playerId ? '패산에서 1장을 선택하세요.' : '선의 도라 선택을 기다리는 중...'}
+                                    </div>
+                                    <div className="grid grid-cols-8 sm:grid-cols-10 md:grid-cols-12 gap-1 p-2 bg-slate-700 rounded-lg max-h-[360px] overflow-y-auto">
+                                        {(context.wall || []).map((tile: Tile, idx: number) => (
+                                            <button
+                                                key={tile.id ?? `${tile.suit}-${tile.rank}-${idx}`}
+                                                onClick={() => onSelectDora(tile)}
+                                                disabled={context.dealer !== playerId}
+                                                className={`w-10 h-14 rounded border-2 text-xs font-bold ${context.dealer === playerId ? 'border-yellow-400 bg-slate-100 text-slate-900 hover:bg-white' : 'border-slate-500 bg-slate-600 text-slate-400 cursor-not-allowed'}`}
+                                            >
+                                                ?
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
                             )}
                         </div>
-                        <div className="mt-4">
-                            <h3 className="text-lg">플레이어 ({context.players.length}/2):</h3>
-                            <ul className="list-disc list-inside">
-                                {context.players.map((p: PlayerId) => <li key={p}>{p}</li>)}
-                            </ul>
-                        </div>
-                    </div>
-                )}
+                    )}
 
-                {matches('matchStart') && (
-                    <div className="text-center animate-pulse">
-                        <h2 className="text-3xl font-bold text-yellow-400">매치 시작 중...</h2>
-                        <div className="mt-4">패 초기화 중...</div>
-                    </div>
-                )}
-
-                {matches('handBuild') && (
-                    <div className="text-center">
-                        <h2 className="text-2xl font-bold mb-4">패 완성 단계</h2>
-                        <p className="mb-4">텐파이 패를 만들기 위해 13개의 패를 선택하세요.</p>
-                        <div className="p-4 bg-slate-700 rounded mb-4">
+                    {matches('handBuild') && (
+                        <div className="flex-1">
+                            <div className="mb-6 flex justify-between items-end">
+                                <div>
+                                    <h2 className="text-2xl font-bold text-white">조패 단계 (Hand Building)</h2>
+                                    <p className="text-gray-400 text-sm">34개의 패 중 13개를 선택하여 텐파이를 만드세요.</p>
+                                </div>
+                            </div>
                             <HandBuilder
                                 dealtTiles={context.dealtTiles[playerId] || []}
                                 onSubmit={onSubmitHand}
+                                submitted={myHandSubmitted}
+                                opponentSubmitted={opponentHandSubmitted}
+                                buildTimeRemainingMs={handBuildRemainingMs}
+                                doraIndicators={doraIndicators}
+                                debugMode={debugMode}
+                                seatWind={mySeatWind}
                             />
                         </div>
+                    )}
+                </div>
+            ) : (
+                // Game Loop & Match End using GameBoard
+                <GameBoard context={context} myPlayerId={playerId}>
+                    {/* Interactive Elements passed as children */}
+                    <div className="w-full">
+                        <HandDisplay
+                            hand={context.hands[playerId] || []}
+                            canDiscard={context.currentTurn === playerId}
+                            onDiscard={({ tile }) => onDiscard(tile)}
+                        />
                     </div>
-                )}
 
-                {matches('gameLoop') && (
-                    <div className="text-center w-full">
-                        <h2 className="text-2xl font-bold mb-4">게임 진행</h2>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="p-4 bg-slate-700 rounded">
-                                <h3 className="mb-2 font-bold">내 손패</h3>
-                                <HandDisplay
-                                    hand={context.hands[playerId] || []}
-                                    canDiscard={context.currentTurn === playerId}
-                                    onDiscard={({ tile }) => onDiscard(tile)}
-                                />
-                                <div className="mt-2 text-sm">
-                                    {context.currentTurn === playerId ?
-                                        <span className="text-green-400">내 차례 (패를 버리세요)</span> :
-                                        <span className="text-yellow-400">상대방 차례...</span>
-                                    }
-                                </div>
-                            </div>
-                            <div className="p-4 bg-slate-700 rounded">
-                                <h3 className="mb-2 font-bold">버림패</h3>
-                                <div className="space-y-2">
-                                    <div>
-                                        <span className="text-xs text-gray-400">나</span>
-                                        <DiscardPile discards={context.discards[playerId] || []} />
-                                    </div>
-                                    <hr className="border-slate-600" />
-                                    {context.players.filter((p: PlayerId) => p !== playerId).map((p: PlayerId) => (
-                                        <div key={p}>
-                                            <span className="text-xs text-gray-400">상대방 ({p})</span>
-                                            <DiscardPile discards={context.discards[p] || []} />
+                    {/* Overlays */}
+                    {ronOpportunity && (
+                        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50">
+                            <button
+                                onClick={onDeclareWin}
+                                className="bg-red-600 border-4 border-yellow-400 text-white text-6xl font-black py-8 px-16 rounded-full shadow-2xl animate-bounce hover:scale-110 transition-transform"
+                            >
+                                RON! ({ronOpportunity.points})
+                            </button>
+                        </div>
+                    )}
+
+                    {matches('matchEnd') && (
+                        <div className="absolute inset-0 z-50 bg-slate-900/95 flex flex-col items-center justify-center p-8 backdrop-blur-sm">
+                            <div className="bg-slate-800 p-8 rounded-2xl shadow-2xl max-w-2xl w-full border border-slate-600 text-center animate-in zoom-in-50 duration-300">
+                                <h2 className="text-5xl font-black text-white mb-2">
+                                    {context.winner ? (context.winner === playerId ? "WINNER!" : "LOSE...") : "DRAW (유국)"}
+                                </h2>
+                                <p className="text-2xl text-gray-400 mb-8">
+                                    {context.winner ? (context.winner === playerId ? "축하합니다! 승리하셨습니다." : "아쉽네요. 패배했습니다.") : "승부가 나지 않았습니다."}
+                                </p>
+
+                                {context.winResult && (
+                                    <div className="bg-black/30 p-6 rounded-xl mb-8 text-left space-y-2">
+                                        <div className="flex justify-between items-center border-b border-gray-700 pb-2 mb-2">
+                                            <span className="text-gray-400">Winning Hand Score</span>
+                                            <span className="text-3xl font-bold text-yellow-400">{context.winResult.points.toLocaleString()} pts</span>
                                         </div>
-                                    ))}
+                                        <div className="flex gap-4 text-lg">
+                                            <span className="font-bold text-white">{context.winResult.han}판</span>
+                                            <span className="font-bold text-white">{context.winResult.fu}부</span>
+                                            {context.winResult.limit && <span className="bg-red-600 px-2 rounded text-xs leading-6 h-6">{String(context.winResult.limit)}</span>}
+                                        </div>
+                                        <div className="pt-2">
+                                            <h4 className="text-sm text-gray-500 mb-1">Yaku (역)</h4>
+                                            <div className="flex flex-wrap gap-2">
+                                                {context.winResult.yaku.length > 0 ? context.winResult.yaku.map((y: string) => (
+                                                    <span key={y} className="px-3 py-1 bg-blue-900/50 text-blue-200 rounded-full text-sm border border-blue-800">
+                                                        {y}
+                                                    </span>
+                                                )) : <span className="text-gray-600">No Yaku?</span>}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div className="flex gap-4 justify-center">
+                                    <button
+                                        onClick={onRestart}
+                                        className="px-8 py-3 bg-white text-slate-900 font-bold rounded-full hover:bg-gray-200 transition-colors"
+                                    >
+                                        로비로 돌아가기
+                                    </button>
+                                    <button
+                                        onClick={() => setShowReplay(true)}
+                                        className="px-8 py-3 bg-blue-600 text-white font-bold rounded-full hover:bg-blue-500 border border-blue-400 shadow-lg"
+                                    >
+                                        리플레이 보기
+                                    </button>
                                 </div>
                             </div>
                         </div>
-                    </div>
-                )}
-            </main>
-
-            <footer className="mt-8 text-xs text-gray-600 px-4 text-center">
-                <p>디버그: {serverState ? '서버 상태 활성' : '로컬 상태 활성'}</p>
-            </footer>
-        </div>
+                    )}
+                </GameBoard>
+            )}
+            </div>
+        </TileSkinProvider>
     );
 }

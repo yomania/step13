@@ -1,0 +1,384 @@
+import { describe, expect, it } from 'vitest';
+import { Tile } from '@step13/proto';
+import { calculateScore } from './points';
+
+const t = (suit: Tile['suit'], rank: number): Tile => ({ suit, rank: rank as Tile['rank'], isRed: false });
+
+describe('calculateScore', () => {
+    it('returns zero for non-winning hand', () => {
+        const hand: Tile[] = [
+            t('man', 1), t('man', 2), t('man', 3),
+            t('pin', 1), t('pin', 2), t('pin', 3),
+            t('sou', 1), t('sou', 2), t('sou', 3),
+            t('man', 7), t('man', 8), t('man', 9),
+            t('z', 1)
+        ];
+
+        const result = calculateScore(hand, t('z', 2), false, []);
+        expect(result.points).toBe(0);
+    });
+
+    it('scores low hand below mangan when minimum is not required', () => {
+        const hand: Tile[] = [
+            t('man', 2), t('man', 3), t('man', 4),
+            t('man', 3), t('man', 4), t('man', 5),
+            t('pin', 2), t('pin', 3), t('pin', 4),
+            t('sou', 4), t('sou', 5), t('sou', 6),
+            t('pin', 6)
+        ];
+
+        const result = calculateScore(hand, t('pin', 6), false, []);
+        expect(result.points).toBeGreaterThan(0);
+        expect(result.points).toBeLessThan(8000);
+    });
+
+    it('returns baiman when chinitsu hand also satisfies iipeikou', () => {
+        const hand: Tile[] = [
+            t('man', 1), t('man', 2), t('man', 3),
+            t('man', 3), t('man', 4), t('man', 5),
+            t('man', 6), t('man', 7), t('man', 8),
+            t('man', 9), t('man', 9), t('man', 9),
+            t('man', 1)
+        ];
+
+        const result = calculateScore(hand, t('man', 1), false, []);
+        expect(result.limitCategory).toBe('Baiman');
+        expect(result.points).toBe(16000);
+    });
+
+    it('scores chiitoitsu + honitsu as mangan', () => {
+        const hand: Tile[] = [
+            t('man', 1), t('man', 1),
+            t('man', 2), t('man', 2),
+            t('man', 3), t('man', 3),
+            t('man', 4), t('man', 4),
+            t('man', 5), t('man', 5),
+            t('z', 1), t('z', 1),
+            t('z', 2)
+        ];
+
+        const result = calculateScore(hand, t('z', 2), false, [], {
+            requireManganMinimum: true,
+            includeOmoteDoraInMinimum: true,
+            kiriageMangan: true
+        });
+
+        expect(result.han).toBe(5);
+        expect(result.points).toBe(8000);
+        expect(result.yaku).toContain('Chiitoitsu');
+        expect(result.yaku).toContain('Honitsu');
+    });
+
+    it('includes ittsuu and auto riichi in han preview', () => {
+        const hand: Tile[] = [
+            t('man', 1), t('man', 2), t('man', 3),
+            t('man', 4), t('man', 5), t('man', 6),
+            t('man', 8), t('man', 9),
+            t('pin', 1), t('pin', 2), t('pin', 3),
+            t('z', 1), t('z', 1)
+        ];
+
+        const result = calculateScore(hand, t('man', 7), false, [], {
+            requireManganMinimum: true,
+            includeOmoteDoraInMinimum: true,
+            kiriageMangan: true,
+            autoRiichiFallback: true
+        });
+
+        expect(result.han).toBe(3);
+        expect(result.points).toBe(0);
+        expect(result.yaku).toContain('Ittsuu');
+        expect(result.yaku).toContain('Riichi (Auto)');
+    });
+
+    it('includes tanyao when hand has only 2-8 number tiles', () => {
+        const hand: Tile[] = [
+            t('man', 2), t('man', 3), t('man', 4),
+            t('pin', 3), t('pin', 4), t('pin', 5),
+            t('sou', 4), t('sou', 5), t('sou', 6),
+            t('man', 6), t('man', 7), t('man', 8),
+            t('pin', 6)
+        ];
+
+        const result = calculateScore(hand, t('pin', 6), false, [], {
+            requireManganMinimum: false,
+            includeOmoteDoraInMinimum: true,
+            kiriageMangan: true,
+            autoRiichiFallback: true
+        });
+
+        expect(result.yaku).toContain('Tanyao');
+    });
+
+    it('respects includeOmoteDoraInMinimum option', () => {
+        const hand: Tile[] = [
+            t('man', 3), t('man', 4), t('man', 5),
+            t('man', 5), t('man', 6), t('man', 7),
+            t('pin', 2), t('pin', 3), t('pin', 4),
+            t('sou', 2), t('sou', 3), t('sou', 4),
+            t('man', 5)
+        ];
+
+        const winTile = t('man', 5);
+        const doraIndicator = t('man', 4); // dora = 5m
+
+        const withDoraForMinimum = calculateScore(hand, winTile, false, [doraIndicator], {
+            requireManganMinimum: true,
+            includeOmoteDoraInMinimum: true,
+            kiriageMangan: true
+        });
+
+        const withoutDoraForMinimum = calculateScore(hand, winTile, false, [doraIndicator], {
+            requireManganMinimum: true,
+            includeOmoteDoraInMinimum: false,
+            kiriageMangan: true
+        });
+
+        expect(withDoraForMinimum.points).toBe(12000);
+        expect(withoutDoraForMinimum.points).toBe(0);
+    });
+
+    it('adds han for seat wind yakuhai', () => {
+        const hand: Tile[] = [
+            t('z', 1), t('z', 1), t('z', 1),
+            t('man', 2), t('man', 3), t('man', 4),
+            t('pin', 2), t('pin', 3), t('pin', 4),
+            t('sou', 2), t('sou', 3), t('sou', 4),
+            t('man', 5)
+        ];
+
+        const result = calculateScore(hand, t('man', 5), false, [], {
+            seatWind: 'EAST',
+            autoRiichiFallback: false
+        });
+
+        expect(result.yaku).toContain('Yakuhai(Seat): z1');
+        expect(result.han).toBeGreaterThanOrEqual(1);
+    });
+
+    it('counts seat and round wind separately when same wind', () => {
+        const hand: Tile[] = [
+            t('z', 1), t('z', 1), t('z', 1),
+            t('man', 2), t('man', 3), t('man', 4),
+            t('pin', 2), t('pin', 3), t('pin', 4),
+            t('sou', 2), t('sou', 3), t('sou', 4),
+            t('man', 5)
+        ];
+
+        const result = calculateScore(hand, t('man', 5), false, [], {
+            seatWind: 'EAST',
+            roundWind: 'EAST',
+            autoRiichiFallback: false
+        });
+
+        expect(result.yaku).toContain('Yakuhai(Seat): z1');
+        expect(result.yaku).toContain('Yakuhai(Round): z1');
+    });
+
+    it('includes pinfu for all-sequence hand with non-value pair', () => {
+        const hand: Tile[] = [
+            t('man', 1), t('man', 2), t('man', 3),
+            t('man', 4), t('man', 5), t('man', 6),
+            t('pin', 2), t('pin', 3),
+            t('sou', 6), t('sou', 7), t('sou', 8),
+            t('pin', 5), t('pin', 5)
+        ];
+
+        const result = calculateScore(hand, t('pin', 4), false, [], {
+            seatWind: 'EAST',
+            roundWind: 'EAST',
+            autoRiichiFallback: false
+        });
+
+        expect(result.yaku).toContain('Pinfu');
+    });
+
+    it('does not include pinfu for edge wait (penchan)', () => {
+        const hand: Tile[] = [
+            t('man', 1), t('man', 2),
+            t('man', 4), t('man', 5), t('man', 6),
+            t('pin', 3), t('pin', 4), t('pin', 5),
+            t('sou', 6), t('sou', 7), t('sou', 8),
+            t('pin', 2), t('pin', 2)
+        ];
+
+        const result = calculateScore(hand, t('man', 3), false, [], {
+            seatWind: 'EAST',
+            roundWind: 'EAST',
+            autoRiichiFallback: false
+        });
+
+        expect(result.yaku).not.toContain('Pinfu');
+    });
+
+    it('does not include pinfu for kanchan wait', () => {
+        const hand: Tile[] = [
+            t('man', 1), t('man', 3),
+            t('man', 4), t('man', 5), t('man', 6),
+            t('pin', 3), t('pin', 4), t('pin', 5),
+            t('sou', 6), t('sou', 7), t('sou', 8),
+            t('pin', 2), t('pin', 2)
+        ];
+
+        const result = calculateScore(hand, t('man', 2), false, [], {
+            seatWind: 'EAST',
+            roundWind: 'EAST',
+            autoRiichiFallback: false
+        });
+
+        expect(result.yaku).not.toContain('Pinfu');
+    });
+
+    it('includes sanshoku doukou for same-rank triplets in all three suits', () => {
+        const hand: Tile[] = [
+            t('man', 4), t('man', 4), t('man', 4),
+            t('pin', 4), t('pin', 4), t('pin', 4),
+            t('sou', 4), t('sou', 4), t('sou', 4),
+            t('man', 2), t('man', 3), t('man', 4),
+            t('pin', 5)
+        ];
+
+        const result = calculateScore(hand, t('pin', 5), false, [], {
+            seatWind: 'EAST',
+            roundWind: 'EAST',
+            autoRiichiFallback: false
+        });
+
+        expect(result.yaku).toContain('SanshokuDoukou');
+    });
+
+    it('includes sanshoku doujun for same sequence in all three suits', () => {
+        const hand: Tile[] = [
+            t('man', 1), t('man', 2), t('man', 3),
+            t('pin', 1), t('pin', 2), t('pin', 3),
+            t('sou', 1), t('sou', 2), t('sou', 3),
+            t('man', 4), t('man', 5), t('man', 6),
+            t('pin', 7)
+        ];
+
+        const result = calculateScore(hand, t('pin', 7), false, [], {
+            autoRiichiFallback: false
+        });
+
+        expect(result.yaku).toContain('SanshokuDoujun');
+    });
+
+    it('includes toitoi and sanankou for triplet hand', () => {
+        const hand: Tile[] = [
+            t('man', 2), t('man', 2), t('man', 2),
+            t('pin', 3), t('pin', 3), t('pin', 3),
+            t('sou', 4), t('sou', 4), t('sou', 4),
+            t('z', 1), t('z', 1), t('z', 1),
+            t('pin', 5)
+        ];
+
+        const result = calculateScore(hand, t('pin', 5), false, [], {
+            autoRiichiFallback: false
+        });
+
+        expect(result.yaku).toContain('Toitoi');
+        expect(result.yaku).toContain('Sanankou');
+    });
+
+    it('includes chanta', () => {
+        const hand: Tile[] = [
+            t('man', 1), t('man', 2), t('man', 3),
+            t('pin', 7), t('pin', 8), t('pin', 9),
+            t('sou', 1), t('sou', 2), t('sou', 3),
+            t('z', 1), t('z', 1), t('z', 1),
+            t('z', 2)
+        ];
+
+        const result = calculateScore(hand, t('z', 2), false, [], {
+            autoRiichiFallback: false
+        });
+
+        expect(result.yaku).toContain('Chanta');
+    });
+
+    it('includes junchan', () => {
+        const hand: Tile[] = [
+            t('man', 1), t('man', 1),
+            t('man', 7), t('man', 8), t('man', 9),
+            t('pin', 1), t('pin', 2), t('pin', 3),
+            t('pin', 7), t('pin', 8), t('pin', 9),
+            t('sou', 1), t('sou', 2)
+        ];
+
+        const result = calculateScore(hand, t('sou', 3), false, [], {
+            autoRiichiFallback: false
+        });
+
+        expect(result.yaku).toContain('Junchan');
+    });
+
+    it('includes honroutou', () => {
+        const hand: Tile[] = [
+            t('man', 1), t('man', 1), t('man', 1),
+            t('pin', 9), t('pin', 9), t('pin', 9),
+            t('sou', 1), t('sou', 1), t('sou', 1),
+            t('z', 1), t('z', 1), t('z', 1),
+            t('z', 5)
+        ];
+
+        const result = calculateScore(hand, t('z', 5), false, [], {
+            autoRiichiFallback: false
+        });
+
+        expect(result.yaku).toContain('Honroutou');
+    });
+
+    it('includes shousangen', () => {
+        const hand: Tile[] = [
+            t('z', 5), t('z', 5), t('z', 5),
+            t('z', 6), t('z', 6), t('z', 6),
+            t('z', 7), t('z', 7),
+            t('man', 1), t('man', 2), t('man', 3),
+            t('pin', 1), t('pin', 2)
+        ];
+
+        const result = calculateScore(hand, t('pin', 3), false, [], {
+            autoRiichiFallback: false
+        });
+
+        expect(result.yaku).toContain('Shousangen');
+    });
+
+    it('includes both pinfu and tanyao when all pinfu conditions are met with simples only', () => {
+        const hand: Tile[] = [
+            t('man', 2), t('man', 3), t('man', 4),
+            t('man', 3), t('man', 4), t('man', 5),
+            t('pin', 4), t('pin', 5), t('pin', 6),
+            t('sou', 5), t('sou', 6),
+            t('pin', 6), t('pin', 6)
+        ];
+
+        const result = calculateScore(hand, t('sou', 7), false, [], {
+            seatWind: 'EAST',
+            roundWind: 'EAST',
+            autoRiichiFallback: false
+        });
+
+        expect(result.yaku).toContain('Pinfu');
+        expect(result.yaku).toContain('Tanyao');
+    });
+
+    it('includes pinfu but excludes tanyao when terminal tile exists', () => {
+        const hand: Tile[] = [
+            t('man', 1), t('man', 2), t('man', 3),
+            t('man', 4), t('man', 5), t('man', 6),
+            t('pin', 2), t('pin', 3),
+            t('sou', 6), t('sou', 7), t('sou', 8),
+            t('pin', 5), t('pin', 5)
+        ];
+
+        const result = calculateScore(hand, t('pin', 4), false, [], {
+            seatWind: 'EAST',
+            roundWind: 'EAST',
+            autoRiichiFallback: false
+        });
+
+        expect(result.yaku).toContain('Pinfu');
+        expect(result.yaku).not.toContain('Tanyao');
+    });
+});

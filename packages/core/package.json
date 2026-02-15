@@ -11,12 +11,13 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "xstate": "^5.0.0",
     "@step13/proto": "workspace:*",
-    "@step13/scoring": "workspace:*"
+    "@step13/scoring": "workspace:*",
+    "xstate": "^5.0.0"
   },
   "devDependencies": {
     "tsup": "^8.0.0",
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "vitest": "^4.0.18"
   }
 }
