@@ -3,3 +3,7 @@ node_modules
 
 dist/
 *.log
+
+# Bot outputs
+packages/bot/test_output*.txt
+packages/bot/logs/
