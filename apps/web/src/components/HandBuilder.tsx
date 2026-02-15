@@ -276,12 +276,15 @@ export function HandBuilder({
 
     return (
         <div className="flex flex-col gap-4">
-            <div className="flex justify-between items-center bg-slate-800 p-3 rounded">
+            <div className="surface-panel flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center p-3 rounded-2xl">
                 <div>
                     <span className="font-bold mr-4">선택됨: {selectedTiles.length} / 13</span>
                     <span className={`text-sm font-bold ${tenpai ? 'text-green-400' : 'text-red-400'}`}>
                         {tenpai ? '텐파이 (청패)' : '텐파이 아님'}
                     </span>
+                    <div className="mt-2 w-full sm:w-56 h-1.5 rounded-full bg-slate-700 overflow-hidden">
+                        <div className="h-full bg-gradient-to-r from-cyan-400 to-emerald-400" style={{ width: `${(selectedTiles.length / 13) * 100}%` }} />
+                    </div>
                 </div>
                 <div className="text-right">
                     <div className="text-cyan-300 font-mono font-bold">남은 시간: {formatBuildTime(buildTimeRemainingMs)}</div>
@@ -333,7 +336,7 @@ export function HandBuilder({
                 </div>
             </div>
 
-            <div className="grid grid-cols-8 sm:grid-cols-10 md:grid-cols-12 gap-1 p-2 bg-slate-700 rounded-lg overflow-y-auto max-h-[400px]">
+            <div className="grid grid-cols-8 sm:grid-cols-10 md:grid-cols-12 gap-1 p-2 surface-panel rounded-2xl overflow-y-auto max-h-[400px] thin-scrollbar">
                 {sortedTilesWithIndices.map(({ tile, index }) => (
                     <div key={index} className="transform scale-90">
                         <Tile
@@ -347,7 +350,7 @@ export function HandBuilder({
             </div>
 
             {tenpai && (
-                <div className="bg-slate-800 rounded p-3">
+                <div className="surface-panel rounded-2xl p-3">
                     <div className="text-sm font-bold text-emerald-300 mb-2">대기패 ({winningTiles.length})</div>
                     <div className="flex flex-wrap gap-1">
                         {waitEvaluations.map(({ wait, score }, idx) => (
@@ -371,13 +374,13 @@ export function HandBuilder({
             )}
 
             {debugMode && !submitted && !loading && (
-                <div className="flex items-center justify-between rounded bg-slate-800/80 border border-slate-600 p-3">
+                <div className="flex items-center justify-between rounded-2xl surface-panel p-3">
                     <div className="text-xs text-slate-300">
                         디버그 모드: 추천 조패를 우선순위별로 확인하고 자동 적용할 수 있습니다.
                     </div>
                     <button
                         onClick={() => setShowDebugLayer(true)}
-                        className="px-3 py-2 rounded bg-amber-600 hover:bg-amber-500 text-white text-sm font-bold"
+                        className="px-3 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-sm font-bold"
                     >
                         디버그 추천 보기
                     </button>
@@ -386,12 +389,12 @@ export function HandBuilder({
 
             {showDebugLayer && (
                 <div className="fixed inset-0 z-[90] bg-black/70 flex items-center justify-center p-4">
-                    <div className="w-full max-w-4xl max-h-[80vh] overflow-y-auto bg-slate-900 border border-slate-600 rounded-xl p-4 shadow-2xl">
+                    <div className="w-full max-w-4xl max-h-[80vh] overflow-y-auto thin-scrollbar glass-panel rounded-2xl p-4 shadow-2xl">
                         <div className="flex items-center justify-between mb-4">
                             <h3 className="text-lg font-bold text-white">디버그 조패 추천 (상위 {debugCandidates.length}개)</h3>
                             <button
                                 onClick={() => setShowDebugLayer(false)}
-                                className="px-3 py-1 rounded bg-slate-700 hover:bg-slate-600 text-sm"
+                                className="px-3 py-1 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm"
                             >
                                 닫기
                             </button>
@@ -405,7 +408,7 @@ export function HandBuilder({
                             )}
 
                             {debugCandidates.map((candidate, idx) => (
-                                <div key={candidate.indices.join('-')} className="bg-slate-800 border border-slate-700 rounded p-3">
+                                <div key={candidate.indices.join('-')} className="bg-slate-800/70 border border-slate-700 rounded-xl p-3">
                                     <div className="flex items-center justify-between mb-2">
                                         <div className="text-sm font-bold text-yellow-300">
                                             #{idx + 1} ({candidate.score.han}/5판) {candidate.score.points}점
@@ -415,7 +418,7 @@ export function HandBuilder({
                                         </div>
                                         <button
                                             onClick={() => applyCandidate(candidate)}
-                                            className="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-xs font-bold"
+                                            className="px-3 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-xs font-bold"
                                         >
                                             자동 적용
                                         </button>
@@ -444,9 +447,9 @@ export function HandBuilder({
                 onClick={handleSubmit}
                 disabled={!canSubmit || loading}
                 className={`
-                    w-full py-4 rounded-lg font-bold text-xl transition-all shadow-lg
+                    w-full py-4 rounded-2xl font-bold text-xl transition-all shadow-lg
                     ${canSubmit && !loading
-                        ? 'bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white transform hover:scale-[1.02]'
+                        ? 'bg-gradient-to-r from-cyan-600 to-emerald-600 hover:from-cyan-500 hover:to-emerald-500 text-white transform hover:scale-[1.02]'
                         : 'bg-slate-600 text-slate-400 cursor-not-allowed opacity-50'}
                 `}
             >

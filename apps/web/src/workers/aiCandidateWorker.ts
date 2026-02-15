@@ -9,6 +9,7 @@ type WorkerRequest = {
     maxCount?: number;
     seatWind: 'EAST' | 'SOUTH' | 'WEST' | 'NORTH';
     roundWind: 'EAST' | 'SOUTH' | 'WEST' | 'NORTH';
+    difficulty?: 'EASY' | 'MEDIUM' | 'HARD';
 };
 
 type WorkerResponse = {
@@ -27,7 +28,8 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
         payload.dealtTiles,
         payload.doraIndicators,
         maxCount,
-        { seatWind: payload.seatWind, roundWind: payload.roundWind }
+        { seatWind: payload.seatWind, roundWind: payload.roundWind },
+        payload.difficulty ?? 'MEDIUM'
     );
     const candidate = candidates[0] ?? null;
 
@@ -40,4 +42,4 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
     self.postMessage(response);
 };
 
-export {};
+export { };

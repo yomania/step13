@@ -31,6 +31,16 @@ type MiniResult = {
     gaveUp?: boolean;
 };
 
+type MiniHistoryEntry = {
+    id: string;
+    round: number;
+    createdAt: number;
+    roundData: MiniRound;
+    result: MiniResult;
+};
+
+const SINGLE_MINI_GAME_HISTORY_KEY = 'single-mini-game-history-v1';
+
 function createTileDeck(): Tile[] {
     const tiles: Tile[] = [];
     const suits: Tile['suit'][] = ['man', 'pin', 'sou', 'z'];
@@ -312,6 +322,24 @@ function shouldHideYakuDetail(yaku: string): boolean {
     return yaku === 'Tanyao' || yaku === 'Pinfu';
 }
 
+function readMiniHistory(): MiniHistoryEntry[] {
+    if (typeof window === 'undefined') return [];
+    try {
+        const raw = window.sessionStorage.getItem(SINGLE_MINI_GAME_HISTORY_KEY);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw) as MiniHistoryEntry[];
+        if (!Array.isArray(parsed)) return [];
+        return parsed;
+    } catch {
+        return [];
+    }
+}
+
+function writeMiniHistory(entries: MiniHistoryEntry[]) {
+    if (typeof window === 'undefined') return;
+    window.sessionStorage.setItem(SINGLE_MINI_GAME_HISTORY_KEY, JSON.stringify(entries));
+}
+
 interface SingleMiniGameProps {
     onExit: () => void;
 }
@@ -320,6 +348,8 @@ export function SingleMiniGame({ onExit }: SingleMiniGameProps) {
     const [round, setRound] = useState(1);
     const [currentRound, setCurrentRound] = useState<MiniRound>(() => createMiniRound());
     const [result, setResult] = useState<MiniResult | null>(null);
+    const [history, setHistory] = useState<MiniHistoryEntry[]>([]);
+    const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
     const [isCalculating, setIsCalculating] = useState(false);
     const [aiPrefetch, setAiPrefetch] = useState<CandidateEvaluation | null>(null);
     const [isPreloading, setIsPreloading] = useState(true);
@@ -327,7 +357,10 @@ export function SingleMiniGame({ onExit }: SingleMiniGameProps) {
     const requestIdRef = useRef(0);
     const pendingResolversRef = useRef(new Map<number, (candidate: CandidateEvaluation | null) => void>());
 
-    const sortedDealtTiles = sortTiles(currentRound.dealtTiles);
+    const selectedHistoryEntry = selectedHistoryId ? history.find((entry) => entry.id === selectedHistoryId) ?? null : null;
+    const visibleRound = selectedHistoryEntry?.roundData ?? currentRound;
+    const visibleResult = selectedHistoryEntry?.result ?? result;
+    const sortedVisibleDealtTiles = sortTiles(visibleRound.dealtTiles);
 
     const prefetchAi = (targetRound: MiniRound) => {
         const worker = workerRef.current;
@@ -348,27 +381,42 @@ export function SingleMiniGame({ onExit }: SingleMiniGameProps) {
     };
 
     const requestAiCandidate = (targetRound: MiniRound): Promise<CandidateEvaluation | null> => {
-        const worker = workerRef.current;
-        if (!worker) {
-            return Promise.resolve(
-                buildBestCandidates(targetRound.dealtTiles, targetRound.doraIndicators, 1, { seatWind: 'EAST', roundWind: 'EAST' })[0] ?? null
-            );
+        if (workerRef.current) {
+            return new Promise<CandidateEvaluation | null>((resolve) => {
+                const id = Math.random();
+                const handler = (event: MessageEvent) => {
+                    if (event.data.type === 'PREFETCH_RESULT' && event.data.requestId === id) {
+                        workerRef.current?.removeEventListener('message', handler);
+                        resolve(event.data.candidate);
+                    }
+                };
+                workerRef.current?.addEventListener('message', handler);
+                workerRef.current?.postMessage({
+                    type: 'PREFETCH',
+                    requestId: id,
+                    dealtTiles: targetRound.dealtTiles,
+                    doraIndicators: targetRound.doraIndicators,
+                    maxCount: 1,
+                    seatWind: 'EAST',
+                    roundWind: 'EAST',
+                    difficulty: 'HARD'
+                });
+            });
         }
 
-        requestIdRef.current += 1;
-        const requestId = requestIdRef.current;
-        return new Promise<CandidateEvaluation | null>((resolve) => {
-            pendingResolversRef.current.set(requestId, resolve);
-            worker.postMessage({
-                type: 'PREFETCH',
-                requestId,
-                dealtTiles: targetRound.dealtTiles,
-                doraIndicators: targetRound.doraIndicators,
-                seatWind: 'EAST',
-                roundWind: 'EAST'
-            });
-        });
+        return Promise.resolve(buildBestCandidates(
+            targetRound.dealtTiles,
+            targetRound.doraIndicators,
+            1,
+            { seatWind: 'EAST', roundWind: 'EAST' },
+            'HARD'
+        )[0] ?? null);
     };
+
+    useEffect(() => {
+        const loaded = readMiniHistory();
+        setHistory(loaded);
+    }, []);
 
     useEffect(() => {
         const worker = new Worker(new URL('../workers/aiCandidateWorker.ts', import.meta.url), { type: 'module' });
@@ -422,7 +470,7 @@ export function SingleMiniGame({ onExit }: SingleMiniGameProps) {
         const rawRate = aiMetric <= 0 ? 100 : Math.round((playerMetric / aiMetric) * 100);
         const clampedRate = Math.max(0, Math.min(150, rawRate));
 
-        setResult({
+        const nextResult: MiniResult = {
             player: {
                 hand,
                 waits,
@@ -445,7 +493,21 @@ export function SingleMiniGame({ onExit }: SingleMiniGameProps) {
                 { han: aiExpected.score.han, waits: aiExpected.waits.length, points: aiExpected.score.points },
                 clampedRate
             )
+        };
+        setResult(nextResult);
+        const entry: MiniHistoryEntry = {
+            id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+            round,
+            createdAt: Date.now(),
+            roundData: currentRound,
+            result: nextResult
+        };
+        setHistory((prev) => {
+            const next = [entry, ...prev].slice(0, 30);
+            writeMiniHistory(next);
+            return next;
         });
+        setSelectedHistoryId(null);
         setIsCalculating(false);
     };
 
@@ -466,7 +528,7 @@ export function SingleMiniGame({ onExit }: SingleMiniGameProps) {
         const runGiveUp = async () => {
             const aiExpected = aiPrefetch ?? await requestAiCandidate(currentRound);
 
-            setResult({
+            const nextResult: MiniResult = {
                 player: {
                     hand: [],
                     waits: [],
@@ -486,7 +548,21 @@ export function SingleMiniGame({ onExit }: SingleMiniGameProps) {
                 rate: 0,
                 description: '이번 판은 포기했습니다. AI 기준 조패를 참고해서 다음 판에서 갱신해보세요.',
                 gaveUp: true
+            };
+            setResult(nextResult);
+            const entry: MiniHistoryEntry = {
+                id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+                round,
+                createdAt: Date.now(),
+                roundData: currentRound,
+                result: nextResult
+            };
+            setHistory((prev) => {
+                const next = [entry, ...prev].slice(0, 30);
+                writeMiniHistory(next);
+                return next;
             });
+            setSelectedHistoryId(null);
             setIsCalculating(false);
         };
 
@@ -496,10 +572,10 @@ export function SingleMiniGame({ onExit }: SingleMiniGameProps) {
     };
 
     return (
-        <div className="w-full max-w-5xl bg-slate-800 rounded-xl p-6 shadow-2xl min-h-[600px] flex flex-col relative m-4">
-            <header className="mb-4 w-full flex justify-between items-center border-b border-slate-700 pb-4">
+        <div className="w-full max-w-5xl glass-panel rounded-3xl p-4 sm:p-6 shadow-2xl min-h-[600px] flex flex-col relative m-2 sm:m-4 z-10">
+            <header className="mb-4 w-full flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center border-b border-slate-700/80 pb-4">
                 <div>
-                    <h1 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-emerald-300 to-cyan-400">
+                    <h1 className="text-2xl sm:text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-emerald-300 to-cyan-300">
                         조패하기 미니게임
                     </h1>
                     <p className="text-sm text-slate-300 mt-1">목표: 최대 판수 + 다면 대기를 만드는 13패를 선택하세요.</p>
@@ -511,25 +587,33 @@ export function SingleMiniGame({ onExit }: SingleMiniGameProps) {
                         {isPreloading ? 'AI 결과 프리로딩 중...' : 'AI 결과 프리로딩 완료'}
                     </div>
                     <div className="mt-2 flex gap-2 justify-end">
+                        {history.length > 0 && (
+                            <button
+                                onClick={() => setSelectedHistoryId(null)}
+                                className="px-3 py-1 rounded-xl bg-cyan-700 hover:bg-cyan-600 text-sm"
+                            >
+                                현재 판 보기
+                            </button>
+                        )}
                         {!result && (
                             <button
                                 onClick={handleGiveUp}
-                                className="px-3 py-1 rounded bg-rose-700 hover:bg-rose-600 text-sm"
+                                className="px-3 py-1 rounded-xl bg-rose-700 hover:bg-rose-600 text-sm"
                             >
                                 포기
                             </button>
                         )}
-                        <button onClick={onExit} className="px-3 py-1 rounded bg-slate-700 hover:bg-slate-600 text-sm">
+                        <button onClick={onExit} className="px-3 py-1 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm">
                             로비로
                         </button>
                     </div>
                 </div>
             </header>
 
-            <div className="mb-4 rounded-lg bg-slate-700/70 border border-slate-600 p-3">
+            <div className="mb-4 rounded-2xl surface-panel p-3">
                 <div className="text-sm text-slate-300 mb-2">도라 표시패</div>
                 <div className="flex gap-2">
-                    {currentRound.doraIndicators.map((tile, idx) => (
+                    {visibleRound.doraIndicators.map((tile, idx) => (
                         <div key={`${tile.id ?? `${tile.suit}-${tile.rank}`}-${idx}`} className="transform scale-95 origin-left-top">
                             <TileView tile={tile} disabled={true} />
                         </div>
@@ -540,7 +624,7 @@ export function SingleMiniGame({ onExit }: SingleMiniGameProps) {
             <HandBuilder
                 dealtTiles={currentRound.dealtTiles}
                 onSubmit={(hand, _pool) => handleSubmit(hand)}
-                submitted={Boolean(result) || isCalculating}
+                submitted={Boolean(result) || isCalculating || Boolean(selectedHistoryEntry)}
                 doraIndicators={currentRound.doraIndicators}
                 debugMode={false}
                 singleMode={true}
@@ -551,31 +635,69 @@ export function SingleMiniGame({ onExit }: SingleMiniGameProps) {
             />
 
             {isCalculating && (
-                <div className="mt-4 rounded-xl border border-amber-500/40 bg-amber-900/20 p-4">
+                <div className="mt-4 rounded-2xl border border-amber-500/40 bg-amber-900/20 p-4">
                     <div className="text-sm font-semibold text-amber-300">로딩 중...</div>
                     <div className="text-xs text-slate-300 mt-1">서버 전달 및 결과 계산을 진행하고 있습니다. 잠시만 기다려주세요.</div>
                 </div>
             )}
 
-            {result && (
-                <div className="mt-4 rounded-xl border border-cyan-600/40 bg-slate-900/80 p-4">
+            {history.length > 0 && (
+                <div className="mt-4 rounded-2xl surface-panel p-4">
+                    <div className="text-sm font-semibold text-slate-200 mb-2">로컬 세션 히스토리</div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        {history.map((entry) => (
+                            <button
+                                key={entry.id}
+                                onClick={() => setSelectedHistoryId(entry.id)}
+                                className={`text-left rounded-xl border px-3 py-2 ${selectedHistoryId === entry.id ? 'border-cyan-400 bg-cyan-900/30' : 'border-slate-700 bg-slate-800/80 hover:bg-slate-700'}`}
+                            >
+                                <div className="text-xs text-slate-300">
+                                    {entry.round}국 · RATE {entry.result.rate}% · {new Date(entry.createdAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
+                                </div>
+                                <div className="text-xs text-slate-400 mt-1">{entry.result.description}</div>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {visibleResult && (
+                <div className="mt-4 rounded-2xl border border-cyan-600/40 bg-slate-900/75 p-4">
                     <div className="flex items-center justify-between">
                         <h3 className="text-lg font-bold text-cyan-300">결과 분석</h3>
                         <div className="flex items-center gap-2">
-                            {result.gaveUp && (
+                            {visibleResult.gaveUp && (
                                 <span className="px-2 py-1 rounded bg-rose-700 text-white text-xs font-bold">포기</span>
                             )}
-                            <div className="text-2xl font-black text-yellow-300">RATE {result.rate}%</div>
+                            <button
+                                onClick={() => {
+                                    const log = {
+                                        round: visibleRound,
+                                        result: visibleResult,
+                                        dealt: visibleRound.dealtTiles.map(t => tileKey(t)),
+                                        doraCheck: visibleRound.doraIndicators.map(t => tileKey(t)),
+                                        playerHand: visibleResult.player.hand.map(t => tileKey(t)),
+                                        aiHand: visibleResult.ai.hand.map(t => tileKey(t))
+                                    };
+                                    navigator.clipboard.writeText(JSON.stringify(log, null, 2))
+                                        .then(() => alert('로그가 클립보드에 복사되었습니다.'))
+                                        .catch(() => alert('로그 복사에 실패했습니다.'));
+                                }}
+                                className="px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-xs text-cyan-300 border border-slate-600 transition-colors"
+                            >
+                                로그 복사
+                            </button>
+                            <div className="text-2xl font-black text-yellow-300">RATE {visibleResult.rate}%</div>
                         </div>
                     </div>
-                    <div className="mt-2 text-sm text-slate-300">{result.description}</div>
+                    <div className="mt-2 text-sm text-slate-300">{visibleResult.description}</div>
                     <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <div className="rounded bg-slate-800 p-3 border border-slate-700">
+                        <div className="rounded-2xl bg-slate-800/80 p-3 border border-slate-700">
                             <div className="text-xs text-slate-400">내 결과</div>
-                            <div className="text-sm font-bold text-white">{result.player.han}판 / {result.player.points}점 / 대기 {result.player.waits.length}개</div>
+                            <div className="text-sm font-bold text-white">{visibleResult.player.han}판 / {visibleResult.player.points}점 / 대기 {visibleResult.player.waits.length}개</div>
                             <div className="text-xs text-emerald-300 mt-2 mb-1">내 조패 (정렬 13)</div>
                             <div className="flex flex-wrap gap-1">
-                                {sortTiles(result.player.hand).map((tile, idx) => (
+                                {sortTiles(visibleResult.player.hand).map((tile, idx) => (
                                     <div key={`player-hand-${tile.suit}-${tile.rank}-${idx}`} className="transform scale-90 origin-left-top">
                                         <TileView tile={tile} disabled={true} size="sm" />
                                     </div>
@@ -583,20 +705,20 @@ export function SingleMiniGame({ onExit }: SingleMiniGameProps) {
                             </div>
                             <div className="text-xs text-emerald-300 mt-2 mb-1">내 대기패</div>
                             <div className="flex flex-wrap gap-1">
-                                {result.player.waits.map((tile, idx) => (
+                                {visibleResult.player.waits.map((tile, idx) => (
                                     <div key={`player-wait-${tile.suit}-${tile.rank}-${idx}`} className="transform scale-90 origin-left-top">
                                         <TileView tile={tile} disabled={true} size="sm" />
                                     </div>
                                 ))}
                             </div>
                             <div className="text-xs text-emerald-300 mt-2 mb-1">내 역</div>
-                            {result.player.yaku.length > 0 ? (
+                            {visibleResult.player.yaku.length > 0 ? (
                                 <div className="space-y-1">
-                                    {result.player.yaku.map((yaku) => (
+                                    {visibleResult.player.yaku.map((yaku) => (
                                         <div key={`player-yaku-${yaku}`} className="text-xs text-slate-200">
                                             {shouldHideYakuDetail(yaku)
                                                 ? toKoreanYakuName(yaku)
-                                                : `${toKoreanYakuName(yaku)}: ${refinedYakuDetailText(yaku, result.player.hand, result.player.bestWait, currentRound.doraIndicators)}`}
+                                                : `${toKoreanYakuName(yaku)}: ${refinedYakuDetailText(yaku, visibleResult.player.hand, visibleResult.player.bestWait, visibleRound.doraIndicators)}`}
                                         </div>
                                     ))}
                                 </div>
@@ -604,12 +726,12 @@ export function SingleMiniGame({ onExit }: SingleMiniGameProps) {
                                 <div className="text-xs text-slate-400">없음</div>
                             )}
                         </div>
-                        <div className="rounded bg-slate-800 p-3 border border-slate-700">
+                        <div className="rounded-2xl bg-slate-800/80 p-3 border border-slate-700">
                             <div className="text-xs text-slate-400">AI 예상 최대 판수 다면팅</div>
-                            <div className="text-sm font-bold text-white">{result.ai.han}판 / {result.ai.points}점 / 대기 {result.ai.waits.length}개</div>
+                            <div className="text-sm font-bold text-white">{visibleResult.ai.han}판 / {visibleResult.ai.points}점 / 대기 {visibleResult.ai.waits.length}개</div>
                             <div className="text-xs text-cyan-300 mt-2 mb-1">AI 예상 조패 (13)</div>
                             <div className="flex flex-wrap gap-1">
-                                {sortTiles(result.ai.hand).map((tile, idx) => (
+                                {sortTiles(visibleResult.ai.hand).map((tile, idx) => (
                                     <div key={`ai-hand-${tile.suit}-${tile.rank}-${idx}`} className="transform scale-90 origin-left-top">
                                         <TileView tile={tile} disabled={true} size="sm" />
                                     </div>
@@ -617,20 +739,20 @@ export function SingleMiniGame({ onExit }: SingleMiniGameProps) {
                             </div>
                             <div className="text-xs text-cyan-300 mt-2 mb-1">AI 대기패</div>
                             <div className="flex flex-wrap gap-1">
-                                {result.ai.waits.map((tile, idx) => (
+                                {visibleResult.ai.waits.map((tile, idx) => (
                                     <div key={`ai-wait-${tile.suit}-${tile.rank}-${idx}`} className="transform scale-90 origin-left-top">
                                         <TileView tile={tile} disabled={true} size="sm" />
                                     </div>
                                 ))}
                             </div>
                             <div className="text-xs text-cyan-300 mt-2 mb-1">AI 역</div>
-                            {result.ai.yaku.length > 0 ? (
+                            {visibleResult.ai.yaku.length > 0 ? (
                                 <div className="space-y-1">
-                                    {result.ai.yaku.map((yaku) => (
+                                    {visibleResult.ai.yaku.map((yaku) => (
                                         <div key={`ai-yaku-${yaku}`} className="text-xs text-slate-200">
                                             {shouldHideYakuDetail(yaku)
                                                 ? toKoreanYakuName(yaku)
-                                                : `${toKoreanYakuName(yaku)}: ${refinedYakuDetailText(yaku, result.ai.hand, result.ai.bestWait, currentRound.doraIndicators)}`}
+                                                : `${toKoreanYakuName(yaku)}: ${refinedYakuDetailText(yaku, visibleResult.ai.hand, visibleResult.ai.bestWait, visibleRound.doraIndicators)}`}
                                         </div>
                                     ))}
                                 </div>
@@ -639,22 +761,24 @@ export function SingleMiniGame({ onExit }: SingleMiniGameProps) {
                             )}
                         </div>
                     </div>
-                    <div className="mt-3 rounded bg-slate-800/80 border border-slate-700 p-3">
+                    <div className="mt-3 rounded-2xl bg-slate-800/70 border border-slate-700 p-3">
                         <div className="text-xs text-slate-400 mb-2">이번 판 제시 패 (34)</div>
                         <div className="flex flex-wrap gap-1">
-                            {sortedDealtTiles.map((tile, idx) => (
+                            {sortedVisibleDealtTiles.map((tile, idx) => (
                                 <div key={`dealt-${tile.id ?? `${tile.suit}-${tile.rank}`}-${idx}`} className="transform scale-75 origin-left-top">
                                     <TileView tile={tile} disabled={true} size="sm" />
                                 </div>
                             ))}
                         </div>
                     </div>
-                    <button
-                        onClick={handleNextRound}
-                        className="mt-4 w-full py-3 rounded-lg bg-gradient-to-r from-emerald-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 font-bold"
-                    >
-                        다음 판 시작
-                    </button>
+                    {!selectedHistoryEntry && (
+                        <button
+                            onClick={handleNextRound}
+                            className="mt-4 w-full py-3 rounded-2xl bg-gradient-to-r from-emerald-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 font-bold"
+                        >
+                            다음 판 시작
+                        </button>
+                    )}
                 </div>
             )}
         </div>

@@ -13,10 +13,11 @@ async function reachTurnWithAutoSubmit(actor: ReturnType<typeof createActor<type
 
     const doraSnapshot = actor.getSnapshot();
     const dealer = doraSnapshot.context.dealer;
-    const doraTileId = doraSnapshot.context.wall[0]?.id;
-    if (dealer && doraTileId) {
-        actor.send({ type: 'SELECT_DORA', playerId: dealer, tileId: doraTileId });
+    if (dealer) {
+        actor.send({ type: 'SELECT_DORA', playerId: dealer, tileId: doraSnapshot.context.wall[0]?.id ?? 'fallback-dora' });
     }
+    expect(actor.getSnapshot().value).toBe('doraSelect');
+    await advance(RULES.timers.doraRevealTimeMs);
     expect(actor.getSnapshot().value).toBe('handBuild');
 
     await advance(RULES.timers.buildTimeMs);
@@ -48,8 +49,31 @@ describe('gameMachine full cycle and edge cases', () => {
         actor.send({ type: 'SELECT_DORA', playerId: dealer, tileId: 'stale-or-missing-id' });
 
         const afterSelect = actor.getSnapshot();
-        expect(afterSelect.value).toBe('handBuild');
+        expect(afterSelect.value).toBe('doraSelect');
         expect(afterSelect.context.doraIndicators[0]?.id).toBe(firstWallTile?.id);
+        await advance(RULES.timers.doraRevealTimeMs);
+        expect(actor.getSnapshot().value).toBe('handBuild');
+    });
+
+    it('waits dora reveal time before entering handBuild after selecting dora', async () => {
+        vi.useFakeTimers();
+
+        const actor = createActor(gameMachine);
+        actor.start();
+
+        actor.send({ type: 'JOIN', playerId: 'p1' });
+        actor.send({ type: 'JOIN', playerId: 'p2' });
+        actor.send({ type: 'START_MATCH', seed: 9 });
+
+        await advance(1000);
+        expect(actor.getSnapshot().value).toBe('doraSelect');
+        const snap = actor.getSnapshot();
+        actor.send({ type: 'SELECT_DORA', playerId: snap.context.dealer, tileId: snap.context.wall[0].id! });
+
+        expect(actor.getSnapshot().value).toBe('doraSelect');
+        await advance(RULES.timers.doraRevealTimeMs - 1);
+        expect(actor.getSnapshot().value).toBe('doraSelect');
+        await advance(1);
         expect(actor.getSnapshot().value).toBe('handBuild');
     });
 
@@ -83,7 +107,8 @@ describe('gameMachine full cycle and edge cases', () => {
             }
 
             expect(actor.getSnapshot().value).toBe('roundEnd');
-            await advance(1200);
+            const players = actor.getSnapshot().context.players;
+            players.forEach((playerId) => actor.send({ type: 'CONFIRM_ROUND_END', playerId }));
         }
 
         const snapshot = actor.getSnapshot();
@@ -169,6 +194,7 @@ describe('gameMachine full cycle and edge cases', () => {
         if (dealer && tileId) {
             actor.send({ type: 'SELECT_DORA', playerId: dealer, tileId });
         }
+        await advance(RULES.timers.doraRevealTimeMs);
         expect(actor.getSnapshot().value).toBe('handBuild');
 
         // Wait for build timeout
@@ -187,5 +213,66 @@ describe('gameMachine full cycle and edge cases', () => {
         const p2Timeout = log.find(e => e.type === 'TIMEOUT' && e.playerId === 'p2' && e.phase === 'HAND_BUILD');
         expect(p1Timeout).toBeDefined();
         expect(p2Timeout).toBeDefined();
+    });
+
+    it('blocks next hand until both players confirm round end', { timeout: 20000 }, async () => {
+        vi.useFakeTimers();
+
+        const actor = createActor(gameMachine);
+        actor.start();
+        actor.send({ type: 'JOIN', playerId: 'p1' });
+        actor.send({ type: 'JOIN', playerId: 'p2' });
+        actor.send({ type: 'START_MATCH', seed: 11 });
+
+        await reachTurnWithAutoSubmit(actor);
+
+        let safety = 0;
+        while (actor.getSnapshot().value !== 'roundEnd' && safety < 200) {
+            const s = actor.getSnapshot();
+            const playerId = s.context.currentTurn!;
+            const tileId = s.context.pools[playerId]?.[0]?.id;
+            if (!tileId) break;
+            actor.send({ type: 'DISCARD', playerId, tileId });
+            safety += 1;
+        }
+
+        expect(actor.getSnapshot().value).toBe('roundEnd');
+        await advance(5000);
+        expect(actor.getSnapshot().value).toBe('roundEnd');
+
+        actor.send({ type: 'CONFIRM_ROUND_END', playerId: 'p1' });
+        expect(actor.getSnapshot().value).toBe('roundEnd');
+        actor.send({ type: 'CONFIRM_ROUND_END', playerId: 'p2' });
+        expect(actor.getSnapshot().value).toBe('matchStart');
+    });
+
+    it('auto-confirms bot on round end and advances when human confirms', { timeout: 20000 }, async () => {
+        vi.useFakeTimers();
+
+        const actor = createActor(gameMachine);
+        actor.start();
+        actor.send({ type: 'JOIN', playerId: 'p1' });
+        actor.send({ type: 'JOIN', playerId: 'bot-1' });
+        actor.send({ type: 'START_MATCH', seed: 13 });
+
+        await reachTurnWithAutoSubmit(actor);
+
+        let safety = 0;
+        while (actor.getSnapshot().value !== 'roundEnd' && safety < 200) {
+            const s = actor.getSnapshot();
+            const playerId = s.context.currentTurn!;
+            const tileId = s.context.pools[playerId]?.[0]?.id;
+            if (!tileId) break;
+            actor.send({ type: 'DISCARD', playerId, tileId });
+            safety += 1;
+        }
+
+        const roundEnd = actor.getSnapshot();
+        expect(roundEnd.value).toBe('roundEnd');
+        expect(roundEnd.context.roundEndConfirmedBy['bot-1']).toBe(true);
+        expect(roundEnd.context.roundEndConfirmedBy['p1']).not.toBe(true);
+
+        actor.send({ type: 'CONFIRM_ROUND_END', playerId: 'p1' });
+        expect(actor.getSnapshot().value).toBe('matchStart');
     });
 });

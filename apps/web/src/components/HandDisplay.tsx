@@ -4,6 +4,7 @@ import { Tile } from './Tile';
 interface HandDisplayProps {
     hand: TileType[];
     pool: TileType[];
+    waits?: TileType[];
     onDiscard?: (info: { tile: TileType, index: number }) => void;
     canDiscard?: boolean;
     furitenWaitKeys?: Set<string>;
@@ -17,6 +18,7 @@ function tileWaitKey(tile: TileType): string {
 export function HandDisplay({
     hand,
     pool,
+    waits = [],
     onDiscard,
     canDiscard,
     furitenWaitKeys = new Set<string>(),
@@ -28,6 +30,10 @@ export function HandDisplay({
     });
 
     const sortedPool = [...pool].sort((a, b) => {
+        if (a.suit !== b.suit) return a.suit.localeCompare(b.suit);
+        return a.rank - b.rank;
+    });
+    const sortedWaits = [...waits].sort((a, b) => {
         if (a.suit !== b.suit) return a.suit.localeCompare(b.suit);
         return a.rank - b.rank;
     });
@@ -76,6 +82,14 @@ export function HandDisplay({
                         </div>
                     );
                 })}
+            </div>
+
+            <div className="px-2 text-xs text-slate-400">내 대기패</div>
+            <div className="flex flex-wrap gap-1 justify-center p-2 bg-slate-800 rounded min-h-[56px]">
+                {sortedWaits.length === 0 && <span className="text-slate-400 py-2">대기패 없음</span>}
+                {sortedWaits.map((tile, i) => (
+                    <Tile key={`${tile.suit}-${tile.rank}-${i}`} tile={tile} size="sm" disabled={true} />
+                ))}
             </div>
         </div>
     );

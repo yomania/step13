@@ -25,7 +25,8 @@ const initialContext: GameContext = {
     matchHandIndex: 0,
     seatMap: {},
     deterministicSeed: null,
-    timeBankRemainingMs: {}
+    timeBankRemainingMs: {},
+    roundEndConfirmedBy: {}
 };
 
 export type GameMachineOptions = {
@@ -84,7 +85,9 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                 }
                 return engine.canDeclareRon(context, event.playerId);
             },
-            hasNextHand: ({ context }) => context.matchHandIndex < RULES.match.handsPerMatch
+            hasNextHand: ({ context }) => context.matchHandIndex < RULES.match.handsPerMatch,
+            hasNoNextHand: ({ context }) => context.matchHandIndex >= RULES.match.handsPerMatch,
+            allRoundEndConfirmed: ({ context }) => context.players.every((playerId) => Boolean(context.roundEndConfirmedBy[playerId]))
         },
         actions: {
             initializeMatch: assign(({ context, event }) => {
@@ -124,6 +127,7 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                     lastDiscard: null,
                     deterministicSeed: seed,
                     timeBankRemainingMs: timeBank,
+                    roundEndConfirmedBy: {},
                     eventLog: [...context.eventLog, { type: 'START_MATCH', seed, dealtTiles: dealResult.dealt }]
                 };
             }),
@@ -151,7 +155,8 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                     winResult: null,
                     currentTurn: dealer,
                     lastDiscard: null,
-                    timeBankRemainingMs: timeBank
+                    timeBankRemainingMs: timeBank,
+                    roundEndConfirmedBy: {}
                 };
             }),
             selectDoraIndicator: assign(({ context, event }) => {
@@ -309,7 +314,33 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                     eventLog: [...context.eventLog, event]
                 };
             }),
-            resetGame: assign(() => initialContext)
+            resetGame: assign(() => initialContext),
+            markRoundEndConfirmed: assign(({ context, event }) => {
+                if (event.type !== 'CONFIRM_ROUND_END') {
+                    return {};
+                }
+                if (!context.players.includes(event.playerId)) {
+                    return {};
+                }
+                return {
+                    roundEndConfirmedBy: {
+                        ...context.roundEndConfirmedBy,
+                        [event.playerId]: true
+                    },
+                    eventLog: [...context.eventLog, event]
+                };
+            }),
+            autoConfirmBotsInRoundEnd: assign(({ context }) => {
+                const next = { ...context.roundEndConfirmedBy };
+                context.players.forEach((playerId) => {
+                    if (playerId.startsWith('bot-')) {
+                        next[playerId] = true;
+                    }
+                });
+                return {
+                    roundEndConfirmedBy: next
+                };
+            })
         }
     }).createMachine({
         id: 'mahjong-17-step',
@@ -358,22 +389,14 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                     },
                     [RULES.timers.doraSelectTimeMs]: {
                         guard: 'hasNoSelectedDoraIndicator',
-                        target: 'handBuild',
                         actions: 'autoSelectDoraIndicator'
                     }
                 },
                 on: {
                     SELECT_DORA: {
                         guard: 'canSelectDoraIndicator',
-                        actions: 'selectDoraIndicator',
-                        target: 'doraSelected'
+                        actions: 'selectDoraIndicator'
                     }
-                }
-            },
-            doraSelected: {
-                always: {
-                    target: 'handBuild',
-                    actions: assign({ phase: () => 'ROUND_START' })
                 }
             },
             handBuild: {
@@ -454,21 +477,32 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                 }
             },
             roundEnd: {
-                entry: assign({
-                    phase: () => 'ROUND_END'
-                }),
-                after: {
-                    1200: [
-                        {
-                            guard: 'hasNextHand',
-                            target: 'matchStart',
-                            actions: 'startNextHand'
-                        },
-                        {
-                            target: 'matchEnd',
-                            actions: 'finalizeMatch'
-                        }
-                    ]
+                entry: [
+                    assign({
+                        phase: () => 'ROUND_END'
+                    }),
+                    'autoConfirmBotsInRoundEnd'
+                ],
+                always: [
+                    {
+                        guard: ({ context }) =>
+                            context.players.every((playerId) => Boolean(context.roundEndConfirmedBy[playerId])) &&
+                            context.matchHandIndex < RULES.match.handsPerMatch,
+                        target: 'matchStart',
+                        actions: 'startNextHand'
+                    },
+                    {
+                        guard: ({ context }) =>
+                            context.players.every((playerId) => Boolean(context.roundEndConfirmedBy[playerId])) &&
+                            context.matchHandIndex >= RULES.match.handsPerMatch,
+                        target: 'matchEnd',
+                        actions: 'finalizeMatch'
+                    }
+                ],
+                on: {
+                    CONFIRM_ROUND_END: {
+                        actions: 'markRoundEndConfirmed'
+                    }
                 }
             },
             matchEnd: {

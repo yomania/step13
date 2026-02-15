@@ -1,7 +1,6 @@
-
 import { AnyActorRef } from 'xstate';
 import { PlayerId, Tile } from '@step13/proto';
-import { calculateScore } from '@step13/scoring';
+import { calculateScore, calculateShanten } from '@step13/scoring';
 import { createEngineForRuleset, RulesetName } from '@step13/core';
 
 const SCORE_OPTIONS = {
@@ -38,9 +37,7 @@ export class Bot {
         const phase = typeof value === 'string' ? value : Object.keys(value)[0];
         const myTurn = context.currentTurn === this.id;
 
-        // 1. Hand Building Phase
         if (phase === 'handBuild') {
-            // Check if I already submitted
             if (!context.hands[this.id]) {
                 if (this.preparedHand && this.preparedPool) {
                     this.actor.send({
@@ -55,15 +52,13 @@ export class Bot {
                 }
 
                 this.processing = true;
-                // Simulate delay
                 setTimeout(() => {
-                    this.buildHand(context.dealtTiles[this.id]);
+                    this.buildHand(context.dealtTiles[this.id], context.doraIndicators ?? []);
                     this.processing = false;
                 }, 250 + Math.random() * 450);
             }
         }
 
-        // 1.5 Dora Selection Phase
         if (phase === 'doraSelect') {
             const isDealer = context.dealer === this.id;
             const alreadySelected = (context.doraIndicators?.length ?? 0) > 0;
@@ -79,7 +74,6 @@ export class Bot {
                 }, 500 + Math.random() * 700);
             }
 
-            // While dora is being revealed, precompute hand so handBuild can start immediately.
             if (
                 alreadySelected &&
                 !context.hands[this.id] &&
@@ -89,44 +83,30 @@ export class Bot {
             ) {
                 this.preparingHand = true;
                 setTimeout(() => {
-                    // Keep dora-reveal window responsive: only do a light pre-search here.
-                    const prepared = this.findValidHandByRandomSampling(context.dealtTiles[this.id], 500);
-                    if (prepared) {
-                        this.preparedHand = prepared.hand;
-                        this.preparedPool = prepared.pool;
-                    }
+                    const prepared = this.buildBestHand(context.dealtTiles[this.id], context.doraIndicators ?? []);
+                    this.preparedHand = prepared.hand;
+                    this.preparedPool = prepared.pool;
                     this.preparingHand = false;
                 }, 80 + Math.random() * 120);
             }
         }
 
-        // 2. Game Loop
         if (phase === 'gameLoop') {
-            // Check for RON opportunity (regardless of turn, if it's someone else's discard)
-            // But usually Ron is possible immediately after DISCARD event.
-            // XState might be in 'checkRon' state or 'turn' state.
-            // If context.lastDiscard is set and it's NOT me, check Ron.
             if (context.lastDiscard && context.lastDiscard.playerId !== this.id) {
                 const myHand = context.hands[this.id];
-                if (!myHand) {
-                    return;
-                }
+                if (!myHand) return;
                 const score = calculateScore(myHand, context.lastDiscard.tile, false, [], SCORE_OPTIONS);
                 if (score.points > 0) {
-                    // 50% chance to Ron (or 100% for testing)
-                    // Let's go for 100% for now to verify logic.
-                    console.log(`Bot ${this.id} declares RON on ${context.lastDiscard.tile.suit}${context.lastDiscard.tile.rank}! Points: ${score.points}`);
                     this.actor.send({ type: 'DECLARE_WIN', playerId: this.id });
                     return;
                 }
             }
 
             if (myTurn) {
-                // If it's my turn, I must Discard.
                 if (!this.processing) {
                     this.processing = true;
                     setTimeout(() => {
-                        this.discard(context.hands[this.id]);
+                        this.discard();
                         this.processing = false;
                     }, 1000 + Math.random() * 1000);
                 }
@@ -134,34 +114,43 @@ export class Bot {
         }
     }
 
-    private buildHand(tiles: Tile[]) {
+    private buildHand(tiles: Tile[], doraIndicators: Tile[]) {
         if (!tiles || tiles.length < 13) return;
 
-        console.log(`Bot ${this.id} building hand...`);
+        const picked = this.buildBestHand(tiles, doraIndicators);
+        this.actor.send({ type: 'SUBMIT_HAND', playerId: this.id, hand: picked.hand, pool: picked.pool });
+    }
 
-        const found = this.findValidHand(tiles);
-        if (found) {
-            console.log(`Bot ${this.id} found a valid tenpai hand and submits immediately.`);
-            this.actor.send({ type: 'SUBMIT_HAND', playerId: this.id, hand: found.hand, pool: found.pool });
-            return;
+    private buildBestHand(tiles: Tile[], doraIndicators: Tile[]): { hand: Tile[]; pool: Tile[] } {
+        const baseline = this.rulesEngine.findTenpaiHand(tiles);
+        const baselineIsTenpai = this.rulesEngine.hasWinningWait(baseline.hand);
+        const robust = baselineIsTenpai ? baseline : this.findAnyTenpaiHand(tiles, 15000);
+        const seedCandidate = robust ?? baseline;
+        const seedIsTenpai = this.rulesEngine.hasWinningWait(seedCandidate.hand);
+        const baselineScore = seedIsTenpai ? this.evaluateHandPotential(seedCandidate.hand, doraIndicators) : -1;
+        let best = seedCandidate;
+        let bestScore = baselineScore;
+
+        for (let i = 0; i < 1200; i++) {
+            const shuffled = [...tiles];
+            for (let j = shuffled.length - 1; j > 0; j--) {
+                const k = Math.floor(Math.random() * (j + 1));
+                [shuffled[j], shuffled[k]] = [shuffled[k], shuffled[j]];
+            }
+            const hand = shuffled.slice(0, 13);
+            if (!this.rulesEngine.hasWinningWait(hand)) continue;
+            const score = this.evaluateHandPotential(hand, doraIndicators);
+            if (score > bestScore) {
+                bestScore = score;
+                best = { hand, pool: shuffled.slice(13) };
+            }
         }
 
-        // If no valid hand is found, do not submit random invalid data.
-        // The machine timeout path will auto-submit and progress safely.
-        console.warn(`Bot ${this.id} could not build a valid hand. Waiting for machine timeout auto-submit.`);
+        return best;
     }
 
-    private findValidHand(tiles: Tile[]): { hand: Tile[]; pool: Tile[] } | null {
-        // Keep search lightweight to avoid blocking game loop responsiveness.
-        return this.findValidHandByRandomSampling(tiles, 2500, 120);
-    }
-
-    private findValidHandByRandomSampling(tiles: Tile[], attempts: number, maxMs?: number): { hand: Tile[]; pool: Tile[] } | null {
-        const startedAt = Date.now();
+    private findAnyTenpaiHand(tiles: Tile[], attempts: number): { hand: Tile[]; pool: Tile[] } | null {
         for (let i = 0; i < attempts; i++) {
-            if (maxMs != null && Date.now() - startedAt > maxMs) {
-                break;
-            }
             const shuffled = [...tiles];
             for (let j = shuffled.length - 1; j > 0; j--) {
                 const k = Math.floor(Math.random() * (j + 1));
@@ -169,55 +158,51 @@ export class Bot {
             }
             const hand = shuffled.slice(0, 13);
             if (this.rulesEngine.hasWinningWait(hand)) {
-                return {
-                    hand,
-                    pool: shuffled.slice(13)
-                };
+                return { hand, pool: shuffled.slice(13) };
             }
         }
         return null;
     }
 
-    private discard(hand: Tile[]) {
-        if (!hand || hand.length === 0) return;
+    private evaluateHandPotential(hand: Tile[], doraIndicators: Tile[]): number {
+        const waits = this.findWinningTiles(hand);
+        if (waits.length === 0) return -1;
 
-        // Simple Bot: Random Discard
-        // Phase 3 Improvement: Use Shanten to discard tile that keeps Shanten low?
-        // But for turn-based 17-step, we don't draw. We just discard.
-        // So we should pick a tile that is "safe" or "least value"?
-        // For MVP, random is fine.
-
-        // Wait: In 17-step, "Hand" is the 13 tiles.
-        // "Pool" is the remaining 21 tiles.
-        // Discarding checks "Pool"!
-        // We shouldn't discard from "Hand" (Locked).
-        // Discards come from the "Pool".
-
-        // Wait!! In 17-step, you discard from the POOL (the 21 tiles you didn't choose).
-        // You NEVER touch your HAND (the 13 tiles).
-        // My previous logic might be flawed if I thought I discard from hand.
-        // In `machine.ts`, `SUBMIT_HAND` sets `context.hands`.
-        // `DISCARD` takes `tileId`.
-        // `handleDiscard` logic: `const pool = context.pools[event.playerId]; const tile = pool.find(...)`.
-        // So yes, Discard must be from POOL.
-
-        // Bot needs to look at `context.pools[this.id]`!
-        // `decide` passes `context.hands[this.id]` which is wrong for discard source.
-
-        // I need to access `context.pools` in `decide`.
-        // `decide` uses `context.hands` currently. I should fix it.
-        const pool = this.state.context.pools[this.id];
-        if (!pool || pool.length === 0) {
-            console.warn(`Bot ${this.id} has no tiles in pool to discard!`);
-            return;
+        let best = -1;
+        for (const wait of waits) {
+            const strict = calculateScore(hand, wait, false, doraIndicators, SCORE_OPTIONS);
+            const soft = calculateScore(hand, wait, false, doraIndicators, {
+                ...SCORE_OPTIONS,
+                requireManganMinimum: false
+            });
+            const weighted = strict.points * 1000 + soft.han * 100 + soft.yaku.length * 10 + waits.length;
+            if (weighted > best) best = weighted;
         }
+        return best;
+    }
 
-        // Pick random from POOL
+    private findWinningTiles(hand: Tile[]): Tile[] {
+        if (hand.length !== 13) return [];
+        const waits: Tile[] = [];
+        const suits: Array<Tile['suit']> = ['man', 'pin', 'sou', 'z'];
+        for (const suit of suits) {
+            const maxRank = suit === 'z' ? 7 : 9;
+            for (let rank = 1; rank <= maxRank; rank++) {
+                const tile: Tile = { suit, rank: rank as Tile['rank'], isRed: false };
+                if (calculateShanten([...hand, tile]) === -1) {
+                    waits.push(tile);
+                }
+            }
+        }
+        return waits;
+    }
+
+    private discard() {
+        const pool = this.state.context.pools[this.id];
+        if (!pool || pool.length === 0) return;
         const randomIndex = Math.floor(Math.random() * pool.length);
         const tile = pool[randomIndex];
-
-        if (tile && tile.id) {
-            console.log(`Bot ${this.id} discarding from pool: ${tile.suit}${tile.rank}`);
+        if (tile?.id) {
             this.actor.send({ type: 'DISCARD', playerId: this.id, tileId: tile.id });
         }
     }

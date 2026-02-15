@@ -8,6 +8,7 @@ import { Tile as TileView, TileSkinProvider, type TileSkin } from './components/
 import { GameBoard } from './components/GameBoard';
 import { ReplayViewer } from './components/ReplayViewer';
 import { SingleMiniGame } from './components/SingleMiniGame';
+import { YakuInfoLayer } from './components/YakuInfoLayer';
 import { PlayerId, Tile } from '@step13/proto';
 import { calculateScore } from '@step13/scoring';
 import { preloadRealTileAssets } from './lib/tileAssets';
@@ -86,9 +87,53 @@ export default function App() {
         const waits = getWinningTiles(myHand);
         return new Set(waits.map((tile) => `${tile.suit}-${tile.rank}`));
     }, [myHand]);
+    const myWaitTiles = useMemo(() => {
+        const waits = getWinningTiles(myHand);
+        const seen = new Set<string>();
+        return waits.filter((tile) => {
+            const key = `${tile.suit}-${tile.rank}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+    }, [myHand]);
     const isFuriten = useMemo(() => {
         return myDiscards.some((tile: Tile) => myWaitKeys.has(`${tile.suit}-${tile.rank}`));
     }, [myDiscards, myWaitKeys]);
+    const myRoundEndConfirmed = Boolean(context.roundEndConfirmedBy?.[playerId]);
+    const roundEndSummaries = useMemo(() => {
+        return (context.players as PlayerId[]).map((pid) => {
+            const hand: Tile[] = context.hands[pid] || [];
+            const rawWaits = getWinningTiles(hand);
+            const seen = new Set<string>();
+            const waits = rawWaits.filter((tile) => {
+                const key = `${tile.suit}-${tile.rank}`;
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+            const seatWind = context.seatMap?.[pid] === 'EAST' ? 'EAST' : context.seatMap?.[pid] === 'WEST' ? 'WEST' : undefined;
+            let best = { points: 0, han: 0, yaku: [] as string[] };
+            for (const wait of waits) {
+                const score = calculateScore(hand, wait, false, doraIndicators, {
+                    ...SCORE_OPTIONS,
+                    requireManganMinimum: false,
+                    seatWind,
+                    roundWind: 'EAST'
+                });
+                if (score.points > best.points || (score.points === best.points && score.han > best.han)) {
+                    best = { points: score.points, han: score.han, yaku: score.yaku };
+                }
+            }
+            return {
+                playerId: pid,
+                waits,
+                best,
+                confirmed: Boolean(context.roundEndConfirmedBy?.[pid]),
+                isBot: pid.startsWith('bot-')
+            };
+        });
+    }, [context.players, context.hands, context.seatMap, context.roundEndConfirmedBy, doraIndicators]);
 
     // Helper to check state value
     const matches = (value: string) => {
@@ -191,6 +236,10 @@ export default function App() {
     const onDeclareWin = () => {
         sendEvent({ type: 'DECLARE_WIN', playerId });
     };
+    const onConfirmRoundEnd = () => {
+        if (myRoundEndConfirmed) return;
+        sendEvent({ type: 'CONFIRM_ROUND_END', playerId });
+    };
 
     const onRestart = () => {
         // Send restart if implemented, or just refresh
@@ -222,6 +271,7 @@ export default function App() {
     }, [context.lastDiscard, context.hands, playerId, doraIndicators, context, matches, mySeatWind]); // Add dependencies carefully
 
     const [showReplay, setShowReplay] = useState(false);
+    const [showYakuInfo, setShowYakuInfo] = useState(false);
     const [showAiExitMenu, setShowAiExitMenu] = useState(false);
     const [aiRematchStep, setAiRematchStep] = useState<'none' | 'join' | 'waitSelf' | 'addBot' | 'waitBot' | 'start'>('none');
 
@@ -311,8 +361,19 @@ export default function App() {
     if (mainMode === 'mini') {
         return (
             <TileSkinProvider skin={tileSkin}>
-                <div className="flex flex-col items-center justify-center min-h-screen bg-slate-900 text-white font-sans relative">
+                <div className="app-noise flex flex-col items-center justify-center min-h-screen text-white font-sans relative overflow-x-hidden px-3 py-4 sm:px-5">
+                    <div className="pointer-events-none absolute -top-24 -left-28 w-72 h-72 rounded-full bg-cyan-500/20 blur-3xl" />
+                    <div className="pointer-events-none absolute -bottom-20 -right-20 w-72 h-72 rounded-full bg-emerald-500/20 blur-3xl" />
+                    <div className="absolute top-4 left-4 z-[70]">
+                        <button
+                            onClick={() => setShowYakuInfo(true)}
+                            className="px-4 py-2 rounded-xl bg-cyan-700/90 hover:bg-cyan-600 text-white font-bold shadow-lg border border-cyan-300/70"
+                        >
+                            17보 역정보
+                        </button>
+                    </div>
                     <SingleMiniGame onExit={() => setMainMode('match')} />
+                    <YakuInfoLayer open={showYakuInfo} onClose={() => setShowYakuInfo(false)} />
                 </div>
             </TileSkinProvider>
         );
@@ -320,12 +381,24 @@ export default function App() {
 
     return (
         <TileSkinProvider skin={tileSkin}>
-            <div className="flex flex-col items-center justify-center min-h-screen bg-slate-900 text-white font-sans relative">
+            <div className="app-noise flex flex-col items-center justify-center min-h-screen text-white font-sans relative overflow-x-hidden px-3 py-4 sm:px-5">
+            <div className="pointer-events-none absolute -top-20 -left-20 w-72 h-72 rounded-full bg-cyan-500/20 blur-3xl" />
+            <div className="pointer-events-none absolute -bottom-24 -right-16 w-80 h-80 rounded-full bg-emerald-500/20 blur-3xl" />
+            {(isIdle || isHandBuild) && (
+                <div className="absolute top-4 left-4 z-[70]">
+                    <button
+                        onClick={() => setShowYakuInfo(true)}
+                        className="px-4 py-2 rounded-xl bg-cyan-700/90 hover:bg-cyan-600 text-white font-bold shadow-lg border border-cyan-300/70"
+                    >
+                        17보 역정보
+                    </button>
+                </div>
+            )}
             {isAiMatch && !isIdle && (
                 <div className="absolute top-4 right-4 z-[60]">
                     <button
                         onClick={() => setShowAiExitMenu(true)}
-                        className="px-4 py-2 rounded-lg bg-red-700 hover:bg-red-600 text-white font-bold shadow-lg border border-red-400"
+                        className="px-4 py-2 rounded-xl bg-rose-700/90 hover:bg-rose-600 text-white font-bold shadow-lg border border-rose-300/70"
                     >
                         AI 대전 종료
                     </button>
@@ -333,7 +406,7 @@ export default function App() {
             )}
             {showAiExitMenu && (
                 <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 px-4">
-                    <div className="w-full max-w-sm rounded-xl border border-slate-600 bg-slate-900 p-5 shadow-2xl">
+                    <div className="w-full max-w-sm rounded-2xl glass-panel p-5 shadow-2xl">
                         <h3 className="text-lg font-bold text-white">AI 대전 종료</h3>
                         <p className="mt-2 text-sm text-slate-300">
                             진행 중인 AI 대전을 종료하고 이동할 위치를 선택하세요.
@@ -341,19 +414,19 @@ export default function App() {
                         <div className="mt-4 flex flex-col gap-2">
                             <button
                                 onClick={onAiExitToLobby}
-                                className="w-full px-3 py-2 rounded bg-slate-700 hover:bg-slate-600 text-sm font-semibold"
+                                className="w-full px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm font-semibold"
                             >
                                 최초 화면(로비)로 이동
                             </button>
                             <button
                                 onClick={onAiExitToHandBuild}
-                                className="w-full px-3 py-2 rounded bg-blue-700 hover:bg-blue-600 text-sm font-semibold"
+                                className="w-full px-3 py-2 rounded-xl bg-cyan-700 hover:bg-cyan-600 text-sm font-semibold"
                             >
                                 조패 단계부터 다시 시작
                             </button>
                             <button
                                 onClick={() => setShowAiExitMenu(false)}
-                                className="w-full px-3 py-2 rounded bg-slate-800 hover:bg-slate-700 text-sm text-slate-300"
+                                className="w-full px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-sm text-slate-300"
                             >
                                 취소
                             </button>
@@ -361,6 +434,7 @@ export default function App() {
                     </div>
                 </div>
             )}
+            <YakuInfoLayer open={showYakuInfo} onClose={() => setShowYakuInfo(false)} />
             {/* Lobby / Match Start / Hand Build Phases - Keep as overlays or separate views */}
             {/* If gameLoop or matchEnd, we can use GameBoard as base? 
                  Actually, matchEnd is an overlay ON TOP of GameBoard usually.
@@ -370,10 +444,10 @@ export default function App() {
               */}
 
             {(matches('idle') || matches('matchStart') || matches('doraSelect') || matches('handBuild')) ? (
-                <div className="w-full max-w-5xl bg-slate-800 rounded-xl p-6 shadow-2xl min-h-[600px] flex flex-col relative m-4">
-                    <header className="mb-4 text-center w-full flex justify-between items-end border-b border-slate-700 pb-4">
+                <div className="w-full max-w-5xl glass-panel rounded-3xl p-4 sm:p-6 min-h-[600px] flex flex-col relative m-2 sm:m-4 z-10">
+                    <header className="mb-4 text-center w-full flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-end border-b border-slate-700/80 pb-4">
                         <div>
-                            <h1 className="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500">17보 마작</h1>
+                            <h1 className="text-3xl sm:text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-sky-200 to-emerald-300">17보 마작</h1>
                             <div className="text-xs text-gray-400 mt-1 space-x-2">
                                 <span>ID: <span className="text-white font-mono">{playerId}</span></span>
                                 <span>•</span>
@@ -385,12 +459,12 @@ export default function App() {
                         <div className="text-right relative">
                             <button
                                 onClick={() => setShowOptions((prev) => !prev)}
-                                className="px-3 py-1.5 rounded border border-slate-600 bg-slate-700 hover:bg-slate-600 text-sm font-semibold"
+                                className="px-3 py-1.5 rounded-xl border border-slate-500/80 bg-slate-800/80 hover:bg-slate-700 text-sm font-semibold"
                             >
                                 옵션
                             </button>
                             {showOptions && (
-                                <div className="absolute right-0 mt-2 w-64 rounded-lg border border-slate-600 bg-slate-900 p-3 shadow-2xl z-[70] text-left">
+                                <div className="absolute right-0 mt-2 w-64 rounded-2xl glass-panel p-3 shadow-2xl z-[70] text-left">
                                     <div className="text-xs text-slate-400 mb-2">실행 옵션</div>
                                     <div className="mb-3">
                                         <div className="text-xs text-slate-300 mb-1">실행모드</div>
@@ -453,26 +527,26 @@ export default function App() {
                             <div className="flex flex-col gap-4 w-full max-w-md">
                                 <button
                                     onClick={() => setMainMode('mini')}
-                                    className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 rounded-lg font-bold text-lg shadow-lg"
+                                    className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 rounded-2xl font-bold text-lg shadow-lg"
                                 >
                                     싱글 미니게임: 조패하기
                                 </button>
                                 {!context.players.includes(playerId) ? (
-                                    <button onClick={handleJoin} className="w-full py-3 bg-blue-600 hover:bg-blue-500 rounded-lg font-bold text-lg shadow-lg">
+                                    <button onClick={handleJoin} className="w-full py-3 bg-cyan-600 hover:bg-cyan-500 rounded-2xl font-bold text-lg shadow-lg">
                                         게임 참가
                                     </button>
                                 ) : (
-                                    <div className="text-green-400 bg-green-900/30 py-2 px-4 rounded text-center border border-green-500/50">
+                                    <div className="text-green-300 bg-green-900/30 py-2 px-4 rounded-xl text-center border border-green-500/50">
                                         참가 완료! ({context.players.indexOf(playerId) + 1}P)
                                     </div>
                                 )}
 
                                 {context.players.length > 0 && (
-                                    <div className="bg-slate-900/50 p-4 rounded-lg">
+                                    <div className="surface-panel p-4 rounded-2xl">
                                         <h3 className="text-sm font-bold text-slate-400 mb-2 uppercase tracking-wider">Players</h3>
                                         <ul className="space-y-2">
                                             {context.players.map((p: PlayerId) => (
-                                                <li key={p} className="flex items-center gap-2 p-2 bg-slate-800 rounded">
+                                                <li key={p} className="flex items-center gap-2 p-2 bg-slate-800/80 rounded-xl">
                                                     <div className="w-2 h-2 rounded-full bg-green-500"></div>
                                                     <span className={p === playerId ? "text-yellow-300 font-bold" : "text-gray-300"}>
                                                         {p} {p === playerId && "(YOU)"}
@@ -483,12 +557,12 @@ export default function App() {
                                     </div>
                                 )}
                                 {context.players.includes(playerId) && context.players.length === 1 && (
-                                    <button onClick={() => sendEvent({ type: 'ADD_BOT' })} className="w-full py-3 bg-purple-600 hover:bg-purple-500 rounded-lg font-bold shadow-lg">
+                                    <button onClick={() => sendEvent({ type: 'ADD_BOT' })} className="w-full py-3 bg-amber-600 hover:bg-amber-500 rounded-2xl font-bold shadow-lg">
                                         AI 추가 (Add Bot)
                                     </button>
                                 )}
                                 {context.players.length === 2 && (
-                                    <button onClick={handleStartMatch} className="w-full py-4 bg-green-600 hover:bg-green-500 rounded-lg font-bold text-xl shadow-xl animate-pulse">
+                                    <button onClick={handleStartMatch} className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 rounded-2xl font-bold text-xl shadow-xl animate-pulse">
                                         매치 시작 (Start)
                                     </button>
                                 )}
@@ -626,6 +700,7 @@ export default function App() {
                         <HandDisplay
                             hand={myHand}
                             pool={myPool}
+                            waits={myWaitTiles}
                             canDiscard={context.currentTurn === playerId}
                             furitenWaitKeys={myWaitKeys}
                             isFuriten={isFuriten}
@@ -645,9 +720,57 @@ export default function App() {
                         </div>
                     )}
 
+                    {matches('roundEnd') && (
+                        <div className="absolute inset-0 z-50 bg-slate-900/95 flex flex-col items-center justify-center p-6 backdrop-blur-sm">
+                            <div className="glass-panel p-6 rounded-3xl shadow-2xl max-w-3xl w-full">
+                                <h2 className="text-3xl font-black text-white text-center mb-1">
+                                    {context.winner ? (context.winner === playerId ? '라운드 승리' : '라운드 패배') : '유국 (DRAW)'}
+                                </h2>
+                                <p className="text-center text-slate-300 mb-4">
+                                    다음 라운드로 진행하려면 양쪽 확인이 필요합니다.
+                                </p>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    {roundEndSummaries.map((summary) => (
+                                        <div key={summary.playerId} className="rounded-lg border border-slate-600 bg-slate-900/60 p-3">
+                                            <div className="flex items-center justify-between">
+                                                <div className="font-bold text-slate-100">{summary.playerId}{summary.playerId === playerId ? ' (YOU)' : ''}</div>
+                                                <div className={`text-xs font-bold ${summary.confirmed ? 'text-emerald-300' : 'text-amber-300'}`}>
+                                                    {summary.confirmed ? '확인 완료' : summary.isBot ? '자동 확인 대기' : '확인 대기'}
+                                                </div>
+                                            </div>
+                                            <div className="mt-2 text-sm text-slate-300">
+                                                예상 역수: <span className="text-yellow-300 font-bold">{summary.best.han}판</span>
+                                            </div>
+                                            <div className="mt-1 text-xs text-slate-400">
+                                                대기패 {summary.waits.length}개
+                                            </div>
+                                            <div className="mt-2 flex flex-wrap gap-1">
+                                                {summary.waits.length === 0 && <span className="text-xs text-slate-500">대기패 없음</span>}
+                                                {summary.waits.map((tile, idx) => (
+                                                    <TileView key={`${summary.playerId}-${tile.suit}-${tile.rank}-${idx}`} tile={tile} size="sm" disabled={true} />
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                <div className="mt-5 flex justify-center gap-3">
+                                    <button
+                                        onClick={onConfirmRoundEnd}
+                                        disabled={myRoundEndConfirmed}
+                                        className={`px-6 py-2 rounded font-bold ${myRoundEndConfirmed ? 'bg-slate-600 text-slate-300 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-500 text-white'}`}
+                                    >
+                                        {myRoundEndConfirmed ? '확인 완료' : '결과 확인'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {matches('matchEnd') && (
                         <div className="absolute inset-0 z-50 bg-slate-900/95 flex flex-col items-center justify-center p-8 backdrop-blur-sm">
-                            <div className="bg-slate-800 p-8 rounded-2xl shadow-2xl max-w-2xl w-full border border-slate-600 text-center animate-in zoom-in-50 duration-300">
+                            <div className="glass-panel p-8 rounded-3xl shadow-2xl max-w-2xl w-full text-center animate-in zoom-in-50 duration-300">
                                 <h2 className="text-5xl font-black text-white mb-2">
                                     {context.winner ? (context.winner === playerId ? "WINNER!" : "LOSE...") : "DRAW (유국)"}
                                 </h2>
@@ -688,7 +811,7 @@ export default function App() {
                                     </button>
                                     <button
                                         onClick={() => setShowReplay(true)}
-                                        className="px-8 py-3 bg-blue-600 text-white font-bold rounded-full hover:bg-blue-500 border border-blue-400 shadow-lg"
+                                        className="px-8 py-3 bg-cyan-600 text-white font-bold rounded-full hover:bg-cyan-500 border border-cyan-300 shadow-lg"
                                     >
                                         리플레이 보기
                                     </button>

@@ -2,8 +2,21 @@
     "name": "@step13/bot",
     "version": "0.1.0",
     "private": true,
+    "main": "./src/index.ts",
+    "types": "./src/index.ts",
     "scripts": {
         "build": "echo 'No build step for bot yet'",
-        "dev": "echo 'No dev step for bot yet'"
+        "dev": "echo 'No dev step for bot yet'",
+        "test": "vitest"
+    },
+    "dependencies": {
+        "@step13/core": "workspace:*",
+        "@step13/proto": "workspace:*",
+        "@step13/scoring": "workspace:*",
+        "xstate": "^5.0.0"
+    },
+    "devDependencies": {
+        "typescript": "^5.0.0",
+        "vitest": "^1.0.0"
     }
 }

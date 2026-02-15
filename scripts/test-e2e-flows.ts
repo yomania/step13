@@ -107,6 +107,36 @@ async function waitUntil(description: string, condition: () => boolean, timeoutM
     throw new Error(`Timeout waiting for: ${description}`);
 }
 
+async function advanceToHandBuildWithSelectedDora(actor: any) {
+    await waitUntil('doraSelect', () => actor.getSnapshot().value === 'doraSelect', 5000);
+    const dealer = actor.getSnapshot().context.dealer;
+    const tileId = actor.getSnapshot().context.wall[0]?.id;
+    assert.ok(dealer && tileId, 'dealer and dora tile should exist');
+    actor.send({ type: 'SELECT_DORA', playerId: dealer, tileId });
+    await waitUntil('handBuild', () => actor.getSnapshot().value === 'handBuild', 5000);
+}
+
+async function advanceToRoundEndByDiscards(actor: any, maxSteps = 120) {
+    let safety = 0;
+    while (actor.getSnapshot().value !== 'roundEnd' && safety < maxSteps) {
+        const s = actor.getSnapshot();
+        const value = s.value;
+        if (!(typeof value === 'object' && value.gameLoop === 'turn')) {
+            await tick(50);
+            safety += 1;
+            continue;
+        }
+        const playerId = s.context.currentTurn;
+        if (!playerId) break;
+        const tileId = s.context.pools[playerId]?.[0]?.id;
+        if (!tileId) break;
+        actor.send({ type: 'DISCARD', playerId, tileId });
+        await tick(20);
+        safety += 1;
+    }
+    assert.equal(actor.getSnapshot().value, 'roundEnd', 'should reach roundEnd');
+}
+
 // [시나리오 1] 내가 선일 때 도라 선택 후 handBuild로 넘어가는지
 async function testDoraSelectHumanDealer() {
     const room = new GameRoom('test-human-dealer');
@@ -269,14 +299,7 @@ async function testRonScoringFlow() {
     actor.send({ type: 'JOIN', playerId: 'p2' });
     actor.send({ type: 'START_MATCH', seed: chosenSeed });
 
-    await tick(1100);
-    const doraTileId = actor.getSnapshot().context.wall[0]?.id;
-    const dealer = actor.getSnapshot().context.dealer;
-    assert.ok(doraTileId && dealer);
-    actor.send({ type: 'SELECT_DORA', playerId: dealer, tileId: doraTileId! });
-    assert.equal(actor.getSnapshot().value, 'doraSelect');
-    await tick(3100);
-    assert.equal(actor.getSnapshot().value, 'handBuild');
+    await advanceToHandBuildWithSelectedDora(actor);
 
     // 테스트용 고정 패 생성 헬퍼
     const makeTile = (suit: 'man' | 'pin' | 'sou' | 'z', rank: number, id: string) => ({ suit, rank: rank as any, isRed: false, id });
@@ -352,15 +375,7 @@ async function testDrawAfter17AndRestart() {
     const seed = findSeedWithSubmittableHands(['p1', 'p2']);
     actor.send({ type: 'START_MATCH', seed });
 
-    await tick(1100);
-    assert.equal(actor.getSnapshot().value, 'doraSelect');
-    const doraTileId = actor.getSnapshot().context.wall[0]?.id;
-    const dealer = actor.getSnapshot().context.dealer;
-    assert.ok(doraTileId && dealer);
-    actor.send({ type: 'SELECT_DORA', playerId: dealer, tileId: doraTileId! });
-    assert.equal(actor.getSnapshot().value, 'doraSelect');
-    await tick(3100);
-    assert.equal(actor.getSnapshot().value, 'handBuild');
+    await advanceToHandBuildWithSelectedDora(actor);
 
     const c = actor.getSnapshot().context;
     const p1 = baseEngine.findTenpaiHand(c.dealtTiles.p1);
@@ -528,14 +543,7 @@ async function testTurnTimeoutAndForceDiscard() {
     const seed = findSeedWithSubmittableHands(['p1', 'p2']);
     actor.send({ type: 'START_MATCH', seed });
 
-    await tick(1000);
-    assert.equal(actor.getSnapshot().value, 'doraSelect');
-    const doraTileId = actor.getSnapshot().context.wall[0]?.id;
-    const dealer = actor.getSnapshot().context.dealer;
-    assert.ok(doraTileId && dealer);
-    actor.send({ type: 'SELECT_DORA', playerId: dealer, tileId: doraTileId });
-    await tick(3000);
-    assert.equal(actor.getSnapshot().value, 'handBuild');
+    await advanceToHandBuildWithSelectedDora(actor);
 
     const c = actor.getSnapshot().context;
     const p1 = baseEngine.findTenpaiHand(c.dealtTiles.p1);
@@ -548,6 +556,74 @@ async function testTurnTimeoutAndForceDiscard() {
     assert.ok(typeof turnSnap.value === 'object' && turnSnap.value.gameLoop === 'turn', 'game should be in turn state');
 }
 
+// [시나리오 9] ROUND_END 확인 게이트(양측 확인 전까지 대기)
+async function testRoundEndConfirmGate() {
+    const baseEngine = createEngineForRuleset('classic');
+    const engineNoAutoRon = {
+        ...baseEngine,
+        autoRonWinner: () => null,
+        canDeclareRon: () => false,
+        resolveRon: () => null
+    };
+
+    const actor = createActor(createGameMachine({ engine: engineNoAutoRon as any }));
+    actor.start();
+    actor.send({ type: 'JOIN', playerId: 'p1' });
+    actor.send({ type: 'JOIN', playerId: 'p2' });
+    actor.send({ type: 'START_MATCH', seed: findSeedWithSubmittableHands(['p1', 'p2']) });
+
+    await advanceToHandBuildWithSelectedDora(actor);
+
+    const c = actor.getSnapshot().context;
+    const p1 = baseEngine.findTenpaiHand(c.dealtTiles.p1);
+    const p2 = baseEngine.findTenpaiHand(c.dealtTiles.p2);
+    actor.send({ type: 'SUBMIT_HAND', playerId: 'p1', hand: p1.hand, pool: p1.pool });
+    actor.send({ type: 'SUBMIT_HAND', playerId: 'p2', hand: p2.hand, pool: p2.pool });
+
+    await advanceToRoundEndByDiscards(actor);
+    await tick(5000);
+    assert.equal(actor.getSnapshot().value, 'roundEnd', 'should stay in roundEnd before confirmations');
+
+    actor.send({ type: 'CONFIRM_ROUND_END', playerId: 'p1' });
+    await tick(200);
+    assert.equal(actor.getSnapshot().value, 'roundEnd', 'single confirmation should not advance');
+
+    actor.send({ type: 'CONFIRM_ROUND_END', playerId: 'p2' });
+    await waitUntil('matchStart after both confirmations', () => actor.getSnapshot().value === 'matchStart', 3000);
+}
+
+// [시나리오 10] ROUND_END에서 AI 자동 확인
+async function testRoundEndAutoConfirmBot() {
+    const baseEngine = createEngineForRuleset('classic');
+    const engineNoAutoRon = {
+        ...baseEngine,
+        autoRonWinner: () => null,
+        canDeclareRon: () => false,
+        resolveRon: () => null
+    };
+
+    const actor = createActor(createGameMachine({ engine: engineNoAutoRon as any }));
+    actor.start();
+    actor.send({ type: 'JOIN', playerId: 'p1' });
+    actor.send({ type: 'JOIN', playerId: 'bot-1' });
+    actor.send({ type: 'START_MATCH', seed: findSeedWithSubmittableHands(['p1', 'bot-1']) });
+
+    await advanceToHandBuildWithSelectedDora(actor);
+    const c = actor.getSnapshot().context;
+    const p1 = baseEngine.findTenpaiHand(c.dealtTiles.p1);
+    const b1 = baseEngine.findTenpaiHand(c.dealtTiles['bot-1']);
+    actor.send({ type: 'SUBMIT_HAND', playerId: 'p1', hand: p1.hand, pool: p1.pool });
+    actor.send({ type: 'SUBMIT_HAND', playerId: 'bot-1', hand: b1.hand, pool: b1.pool });
+
+    await advanceToRoundEndByDiscards(actor);
+    const roundEnd = actor.getSnapshot();
+    assert.equal(roundEnd.context.roundEndConfirmedBy['bot-1'], true, 'bot should auto-confirm');
+    assert.equal(roundEnd.context.roundEndConfirmedBy['p1'] ?? false, false, 'human should still need confirm');
+
+    actor.send({ type: 'CONFIRM_ROUND_END', playerId: 'p1' });
+    await waitUntil('matchStart after human confirm', () => actor.getSnapshot().value === 'matchStart', 3000);
+}
+
 async function run() {
     // 사용자 요청 순서에 맞춘 체크리스트
     const tests: Array<[string, () => Promise<void>]> = [
@@ -558,7 +634,9 @@ async function run() {
         ['17보 유국(draw) 및 RESTART', testDrawAfter17AndRestart],
         ['AI 모드 종료: 로비/재시작(도라 단계 복귀) 경로', testAiRestartFlows],
         ['Auto Ron (자동 론) 동작', testAutoRonFlow],
-        ['Turn Timeout & Force Discard (강제 타패)', testTurnTimeoutAndForceDiscard]
+        ['Turn Timeout & Force Discard (강제 타패)', testTurnTimeoutAndForceDiscard],
+        ['ROUND_END 확인 게이트(양측 확인)', testRoundEndConfirmGate],
+        ['ROUND_END AI 자동 확인', testRoundEndAutoConfirmBot]
     ];
 
     for (const [name, test] of tests) {

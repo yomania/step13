@@ -27,6 +27,7 @@ export type GameContext = {
     seatMap: Record<PlayerId, WindSeat>;
     deterministicSeed: number | null;
     timeBankRemainingMs: Record<PlayerId, number>;
+    roundEndConfirmedBy: Record<PlayerId, boolean>;
 };
 
 export type GameEvents =
@@ -42,5 +43,6 @@ export type GameEvents =
     | { type: 'ROUND_END'; reason: 'RON' | 'DRAW' }
     | { type: 'MATCH_END'; winner: PlayerId | null }
     | { type: 'GUIDE_VIEW'; playerId: PlayerId; step: string }
+    | { type: 'CONFIRM_ROUND_END'; playerId: PlayerId }
     | { type: 'RESTART' }
     | { type: 'ADD_BOT' };

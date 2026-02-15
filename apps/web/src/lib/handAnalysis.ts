@@ -1,5 +1,5 @@
 import { Tile } from '@step13/proto';
-import { ScoreOptions, calculateScore, calculateShanten } from '@step13/scoring';
+import { ScoreOptions, calculateScore, calculateShanten, Difficulty, evaluateHandQuality } from '@step13/scoring';
 
 const SUITS = ['man', 'pin', 'sou', 'z'] as const;
 
@@ -79,12 +79,19 @@ export function buildBestCandidates(
     dealtTiles: Tile[],
     doraIndicators: Tile[],
     maxCount = 8,
-    extraScoreOptions: Partial<ScoreOptions> = {}
+    extraScoreOptions: Partial<ScoreOptions> = {},
+    difficulty: Difficulty = 'MEDIUM'
 ): CandidateEvaluation[] {
     if (dealtTiles.length < 13) return [];
 
-    const attempts = 260;
-    const improveSteps = 112;
+    const params = {
+        EASY: { attempts: 200, improveSteps: 80, suitSeeds: false },
+        MEDIUM: { attempts: 300, improveSteps: 120, suitSeeds: true },
+        HARD: { attempts: 400, improveSteps: 150, suitSeeds: true }
+    }[difficulty];
+
+    const attempts = params.attempts;
+    const improveSteps = params.improveSteps;
     const unique = new Map<string, CandidateEvaluation>();
     const baseIndices = dealtTiles.map((_, index) => index);
     const randomPick = <T,>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)];
@@ -110,17 +117,61 @@ export function buildBestCandidates(
         });
     };
 
+    // Suit-focused seeding for Honitsu/Chinitsu potential
+    if (params.suitSeeds) {
+        const suits: Tile['suit'][] = ['man', 'pin', 'sou'];
+        for (const suit of suits) {
+            const suitIndices = baseIndices.filter(idx => dealtTiles[idx].suit === suit || dealtTiles[idx].suit === 'z');
+            if (suitIndices.length >= 13) {
+                // Initial seed using tiles from this suit + honors
+                let selected = suitIndices.slice(0, 13);
+                let selectedSet = new Set(selected);
+                let currentHand = getHandByIndices(selected);
+                let currentScore = evaluateHandQuality(currentHand, difficulty, doraIndicators);
+
+                // Run a quick hill climb from this seed
+                for (let step = 0; step < improveSteps; step++) {
+                    const waits = getWinningTiles(currentHand);
+                    if (waits.length > 0) {
+                        tryAddCandidate(selected);
+                        break;
+                    }
+
+                    const selectedIndex = randomPick(selected);
+                    const unselectedPool = baseIndices.filter((index) => !selectedSet.has(index));
+                    if (unselectedPool.length === 0) break;
+                    const replacementIndex = randomPick(unselectedPool);
+
+                    const nextSelected = selected.map((index) => (index === selectedIndex ? replacementIndex : index));
+                    const nextHand = getHandByIndices(nextSelected);
+                    const nextScore = evaluateHandQuality(nextHand, difficulty, doraIndicators);
+
+                    if (nextScore >= currentScore || Math.random() < 0.1) {
+                        selected = nextSelected;
+                        selectedSet = new Set(selected);
+                        currentHand = nextHand;
+                        currentScore = nextScore;
+                    }
+                }
+            }
+        }
+    }
+
+    // Standard random starts
     for (let i = 0; i < attempts; i++) {
         const shuffled = [...baseIndices].sort(() => Math.random() - 0.5).slice(0, 13);
         let selected = [...shuffled];
         let selectedSet = new Set(selected);
         let currentHand = getHandByIndices(selected);
-        let currentShanten = calculateShanten(currentHand);
+        // Use heuristic score instead of raw shanten
+        let currentScore = evaluateHandQuality(currentHand, difficulty, doraIndicators);
 
         for (let step = 0; step < improveSteps; step++) {
             const waits = getWinningTiles(currentHand);
             if (waits.length > 0) {
                 tryAddCandidate(selected);
+                // Keep searching? In Hill Climbing usually we stop or restart.
+                // Original code broke loop here.
                 break;
             }
 
@@ -131,13 +182,18 @@ export function buildBestCandidates(
 
             const nextSelected = selected.map((index) => (index === selectedIndex ? replacementIndex : index));
             const nextHand = getHandByIndices(nextSelected);
-            const nextShanten = calculateShanten(nextHand);
+            const nextScore = evaluateHandQuality(nextHand, difficulty, doraIndicators);
 
-            if (nextShanten <= currentShanten || Math.random() < 0.12) {
+            // Maximize score (Higher is better)
+            // If difficulty is EASY, we might want to stick to Shanten?
+            // currentScore from evaluateHandQuality ALREADY accounts for difficulty weights.
+            // So we just maximize it.
+
+            if (nextScore >= currentScore || Math.random() < 0.12) {
                 selected = nextSelected;
                 selectedSet = new Set(selected);
                 currentHand = nextHand;
-                currentShanten = nextShanten;
+                currentScore = nextScore;
             }
         }
     }
