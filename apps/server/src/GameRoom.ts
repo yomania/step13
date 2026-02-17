@@ -4,7 +4,7 @@ import { createGameMachine, RulesetName } from '@step13/core';
 import { PlayerId, Tile } from '@step13/proto';
 import { WebSocket } from 'ws';
 import { Bot } from './Bot';
-import { calculateScore, calculateShanten, Difficulty } from '@step13/scoring';
+import { calculateScore, calculateShanten } from '@step13/scoring';
 import { getBotPersonaProfile, isBotPersonaProfileId, listBotPersonaProfiles } from '@step13/bot';
 
 const HIDDEN_TILE: Tile = { suit: 'z', rank: 1, isRed: false, id: 'HIDDEN' };
@@ -45,21 +45,21 @@ export class GameRoom {
         });
     }
 
-    public addBot(difficulty: Difficulty = 'MEDIUM', personaId?: string) {
+    public addBot(personaId?: string) {
         // Generate a bot ID
         const botId = `bot-${Date.now()}`;
         const normalizedPersonaId = this.normalizePersonaId(personaId);
-        const bot = new Bot(botId, this.machine, this.ruleset, difficulty, normalizedPersonaId);
+        const bot = new Bot(botId, this.machine, this.ruleset, normalizedPersonaId);
         this.bots.push(bot);
 
-        const resolved = getBotPersonaProfile(normalizedPersonaId, difficulty);
+        const resolved = getBotPersonaProfile(normalizedPersonaId);
         console.log(`Adding Bot: ${botId} (${resolved.difficulty}, persona=${resolved.id})`);
         this.machine.send({ type: 'JOIN', playerId: botId });
     }
 
     public handleMessage(playerId: PlayerId, event: any) {
         if (event.type === 'ADD_BOT') {
-            this.addBot(this.normalizeDifficulty(event?.difficulty), this.normalizePersonaId(event?.personaId));
+            this.addBot(this.normalizePersonaId(event?.personaId));
             return;
         }
 
@@ -115,9 +115,8 @@ export class GameRoom {
                 // Use bot's evaluation logic for hints
                 const tempBot = new Bot('temp', this.machine as any, this.ruleset);
                 const candidates = await tempBot.buildBestCandidatesForQuery(
-                    hand,
+                    event.dealtTiles || hand, // Use full pool if available (for mini-game/debug), otherwise just hand
                     doraIndicators || [],
-                    event.difficulty || 'MEDIUM',
                     this.normalizePersonaId(event?.personaId)
                 );
                 result.candidates = candidates;
@@ -169,13 +168,6 @@ export class GameRoom {
         ]);
         if (!allowed.has(eventType)) return;
         console.log('[telemetry]', JSON.stringify({ eventType, playerId, at: Date.now(), roomId: this.roomId }));
-    }
-
-    private normalizeDifficulty(raw: unknown): Difficulty {
-        if (raw === 'EASY' || raw === 'MEDIUM' || raw === 'HARD') {
-            return raw;
-        }
-        return 'MEDIUM';
     }
 
     private normalizePersonaId(raw: unknown): string | undefined {

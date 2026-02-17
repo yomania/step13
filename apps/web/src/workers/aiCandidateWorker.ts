@@ -16,7 +16,6 @@ function buildBestCandidates(
     _doraIndicators: Tile[],
     _maxCount: number,
     _extraScoreOptions: Record<string, unknown>,
-    _difficulty: 'EASY' | 'MEDIUM' | 'HARD',
     _scoreDiff?: number
 ): CandidateEvaluation[] {
     // Worker path is currently unused in app runtime.
@@ -33,7 +32,6 @@ type WorkerRequest = {
     scoreDiff?: number;
     seatWind: 'EAST' | 'SOUTH' | 'WEST' | 'NORTH';
     roundWind: 'EAST' | 'SOUTH' | 'WEST' | 'NORTH';
-    difficulty?: 'EASY' | 'MEDIUM' | 'HARD';
 };
 
 type WorkerResponse = {
@@ -53,7 +51,6 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
         payload.doraIndicators,
         maxCount,
         {}, // extraScoreOptions (unused for now)
-        payload.difficulty ?? 'MEDIUM',
         payload.scoreDiff
     );
     const candidate = candidates[0] ?? null;

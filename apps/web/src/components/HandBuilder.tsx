@@ -194,6 +194,7 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
             onQueryAnalysis({
                 queryType: 'AI_HINT', // Heavy lifting
                 hand: selectedTiles,
+                dealtTiles: dealtTiles, // Pass full pool for substitution analysis
                 doraIndicators,
                 difficulty: 'HARD',
                 scoreDiff
@@ -261,38 +262,6 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
                     <div className="mt-2 w-full sm:w-56 h-1.5 rounded-full bg-slate-700 overflow-hidden">
                         <div className="h-full bg-gradient-to-r from-cyan-400 to-emerald-400" style={{ width: `${(selectedTiles.length / 13) * 100}%` }} />
                     </div>
-                    {singleMode && !submitted && !loading && selectedTiles.length === 13 && debugMode && (
-                        <div className="flex items-center justify-between rounded-2xl surface-panel p-3 gap-3">
-                            <div className="text-xs text-slate-300">
-                                디버그 모드: 추천 조패를 우선순위별로 확인하고 자동 적용할 수 있습니다.
-                            </div>
-                            <div className="flex gap-2">
-                                <button
-                                    onClick={() => {
-                                        const log = {
-                                            selectedHand: selectedTiles.map(t => `${t.suit}${t.rank}`),
-                                            dealtTiles: dealtTiles.map(t => `${t.suit}${t.rank}`),
-                                            doraIndicators: doraIndicators.map(t => `${t.suit}${t.rank}`),
-                                            selectedIndices: selectedIndices,
-                                            serverScore: serverPotentialScore
-                                        };
-                                        navigator.clipboard.writeText(JSON.stringify(log, null, 2))
-                                            .then(() => alert('현재 선택 패가 클립보드에 복사되었습니다.'))
-                                            .catch(() => alert('복사에 실패했습니다.'));
-                                    }}
-                                    className="px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold whitespace-nowrap"
-                                >
-                                    로그 복사
-                                </button>
-                                <button
-                                    onClick={() => setShowDebugLayer(true)}
-                                    className="px-3 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-sm font-bold whitespace-nowrap"
-                                >
-                                    디버그 추천 보기
-                                </button>
-                            </div>
-                        </div>
-                    )}
                 </div>
                 <div className="text-right flex flex-col items-end gap-2">
                     {!submitted && !loading && selectedTiles.length > 0 && (
@@ -373,6 +342,39 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
                     </div>
                 ))}
             </div>
+
+            {singleMode && !submitted && !loading && selectedTiles.length === 13 && debugMode && (
+                <div className="surface-panel rounded-2xl p-3 flex items-center justify-between gap-3">
+                    <div className="text-xs text-slate-300">
+                        <span className="font-bold text-amber-300">디버그 모드</span>: 추천 조패를 확인하고 자동 적용할 수 있습니다.
+                    </div>
+                    <div className="flex gap-2">
+                        <button
+                            onClick={() => {
+                                const log = {
+                                    selectedHand: selectedTiles.map(t => `${t.suit}${t.rank}`),
+                                    dealtTiles: dealtTiles.map(t => `${t.suit}${t.rank}`),
+                                    doraIndicators: doraIndicators.map(t => `${t.suit}${t.rank}`),
+                                    selectedIndices: selectedIndices,
+                                    serverScore: serverPotentialScore
+                                };
+                                navigator.clipboard.writeText(JSON.stringify(log, null, 2))
+                                    .then(() => alert('현재 선택 패가 클립보드에 복사되었습니다.'))
+                                    .catch(() => alert('복사에 실패했습니다.'));
+                            }}
+                            className="px-3 py-2 rounded-xl bg-blue-900/50 hover:bg-blue-800/50 text-blue-200 border border-blue-700/50 text-xs font-bold whitespace-nowrap"
+                        >
+                            로그 복사
+                        </button>
+                        <button
+                            onClick={() => setShowDebugLayer(true)}
+                            className="px-3 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-sm font-bold whitespace-nowrap shadow-lg shadow-amber-900/20"
+                        >
+                            디버그 추천 보기
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {tenpai && (
                 <div className="surface-panel rounded-2xl p-3">

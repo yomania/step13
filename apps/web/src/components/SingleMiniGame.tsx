@@ -379,8 +379,7 @@ export function SingleMiniGame({ onExit, queryAnalysis, analysisResult, debugMod
             queryType: 'AI_HINT',
             hand: [], // Not used for hint but required? Actually hint on empty hand might return best candidates from deck
             dealtTiles: targetRound.dealtTiles, // Special query for mini-game
-            doraIndicators: targetRound.doraIndicators,
-            difficulty: 'HARD'
+            doraIndicators: targetRound.doraIndicators
         });
     };
 

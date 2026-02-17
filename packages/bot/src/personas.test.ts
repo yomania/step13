@@ -2,14 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { getBotPersonaProfile, isBotPersonaProfileId, listBotPersonaProfiles } from './personas';
 
 describe('bot personas', () => {
-    it('returns fallback profile by difficulty when persona id is missing', () => {
-        expect(getBotPersonaProfile(undefined, 'EASY').id).toBe('easy_relaxed');
-        expect(getBotPersonaProfile(undefined, 'MEDIUM').id).toBe('medium_balanced');
-        expect(getBotPersonaProfile(undefined, 'HARD').id).toBe('hard_defensive');
+    it('returns default profile when persona id is missing', () => {
+        expect(getBotPersonaProfile(undefined).id).toBe('medium_balanced');
     });
 
-    it('returns explicit persona when id is valid', () => {
-        const profile = getBotPersonaProfile('hard_value', 'EASY');
+    it('returns explicit persona when id is valid and uses persona difficulty', () => {
+        const profile = getBotPersonaProfile('hard_value');
         expect(profile.id).toBe('hard_value');
         expect(profile.difficulty).toBe('HARD');
         expect(profile.discard.style).toBe('aggressive');
@@ -21,4 +19,3 @@ describe('bot personas', () => {
         expect(listBotPersonaProfiles().length).toBeGreaterThanOrEqual(5);
     });
 });
-

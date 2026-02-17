@@ -28,13 +28,12 @@ export class Bot {
         id: PlayerId,
         actor: AnyActorRef,
         ruleset: RulesetName = 'classic',
-        difficulty: Difficulty = 'MEDIUM',
         personaId?: string
     ) {
         this.id = id;
         this.actor = actor;
         this.rulesEngine = createEngineForRuleset(ruleset);
-        this.persona = getBotPersonaProfile(personaId, difficulty);
+        this.persona = getBotPersonaProfile(personaId);
         this.difficulty = this.persona.difficulty;
         this.logic = new BotLogic(id, this.difficulty);
         this.actor.subscribe((snapshot) => {
@@ -46,10 +45,9 @@ export class Bot {
     public buildBestCandidatesForQuery(
         dealtTiles: Tile[],
         doraIndicators: Tile[],
-        difficulty: Difficulty = 'MEDIUM',
         personaId?: string
     ) {
-        const profile = getBotPersonaProfile(personaId, difficulty);
+        const profile = getBotPersonaProfile(personaId);
         return this.logic.buildBestCandidates(
             dealtTiles,
             doraIndicators,

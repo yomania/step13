@@ -13,12 +13,10 @@ import { PlayerId, Tile } from '@step13/proto';
 import { preloadRealTileAssets } from './lib/tileAssets';
 import { AnimatePresence, motion } from 'framer-motion';
 
-type BotDifficulty = 'EASY' | 'MEDIUM' | 'HARD';
-
 type BotPersonaOption = {
     id: string;
     name: string;
-    difficulty: BotDifficulty;
+    difficulty: 'EASY' | 'MEDIUM' | 'HARD';
 };
 
 
@@ -76,7 +74,6 @@ export default function App() {
     });
     const [showOptions, setShowOptions] = useState(false);
     const [mainMode, setMainMode] = useState<'match' | 'mini'>('match');
-    const [botDifficulty, setBotDifficulty] = useState<BotDifficulty>('MEDIUM');
     const [botPersonaId, setBotPersonaId] = useState<string>('');
 
     // Initial connection check effect (mock)
@@ -242,17 +239,8 @@ export default function App() {
     const handleAddBot = () => {
         sendEvent({
             type: 'ADD_BOT',
-            difficulty: botDifficulty,
             personaId: botPersonaId || undefined
         });
-    };
-
-    const handleBotDifficultyChange = (nextDifficulty: BotDifficulty) => {
-        setBotDifficulty(nextDifficulty);
-        const matched = botPersonas.find((persona) => persona.difficulty === nextDifficulty);
-        if (matched) {
-            setBotPersonaId(matched.id);
-        }
     };
 
     const onSubmitHand = (hand: Tile[], pool: Tile[]) => {
@@ -371,7 +359,6 @@ export default function App() {
             if (!hasBot) {
                 sendEvent({
                     type: 'ADD_BOT',
-                    difficulty: botDifficulty,
                     personaId: botPersonaId || undefined
                 });
                 setAiRematchStep('waitBot');
@@ -392,7 +379,7 @@ export default function App() {
             sendEvent({ type: 'START_MATCH' });
             setAiRematchStep('none');
         }
-    }, [aiRematchStep, botDifficulty, botPersonaId, isIdle, context.players, playerId, sendEvent]);
+    }, [aiRematchStep, botPersonaId, isIdle, context.players, playerId, sendEvent]);
 
     useEffect(() => {
         if (botPersonas.length === 0) return;
@@ -402,14 +389,9 @@ export default function App() {
             const medium = botPersonas.find((persona) => persona.difficulty === 'MEDIUM');
             const fallback = medium ?? botPersonas[0];
             setBotPersonaId(fallback.id);
-            setBotDifficulty(fallback.difficulty);
             return;
         }
-
-        if (selected.difficulty !== botDifficulty) {
-            setBotDifficulty(selected.difficulty);
-        }
-    }, [botPersonas, botPersonaId, botDifficulty]);
+    }, [botPersonas, botPersonaId]);
 
     const onAiExitToLobby = () => {
         setShowAiExitMenu(false);
@@ -641,17 +623,7 @@ export default function App() {
                                     {context.players.includes(playerId) && context.players.length === 1 && (
                                         <>
                                             <div className="surface-panel p-4 rounded-2xl">
-                                                <label className="text-sm font-bold text-slate-300 block mb-2">AI 난이도</label>
-                                                <select
-                                                    value={botDifficulty}
-                                                    onChange={(event) => handleBotDifficultyChange(event.target.value as BotDifficulty)}
-                                                    className="w-full rounded-xl bg-slate-900/90 border border-slate-600 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-amber-400"
-                                                >
-                                                    <option value="EASY">쉬움</option>
-                                                    <option value="MEDIUM">보통</option>
-                                                    <option value="HARD">어려움</option>
-                                                </select>
-                                                <label className="text-sm font-bold text-slate-300 block mt-3 mb-2">AI 페르소나</label>
+                                                <label className="text-sm font-bold text-slate-300 block mb-2">AI 페르소나</label>
                                                 <select
                                                     value={botPersonaId}
                                                     onChange={(event) => setBotPersonaId(event.target.value)}

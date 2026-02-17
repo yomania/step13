@@ -100,11 +100,7 @@ const BOT_PERSONA_PROFILES: Record<string, BotPersonaProfile> = {
     }
 };
 
-const DEFAULT_PERSONA_BY_DIFFICULTY: Record<Difficulty, string> = {
-    EASY: 'easy_relaxed',
-    MEDIUM: 'medium_balanced',
-    HARD: 'hard_defensive'
-};
+const DEFAULT_PERSONA_ID = 'medium_balanced';
 
 export function listBotPersonaProfiles(): BotPersonaProfile[] {
     return Object.values(BOT_PERSONA_PROFILES);
@@ -114,10 +110,9 @@ export function isBotPersonaProfileId(value: unknown): value is string {
     return typeof value === 'string' && Object.prototype.hasOwnProperty.call(BOT_PERSONA_PROFILES, value);
 }
 
-export function getBotPersonaProfile(personaId?: string, fallbackDifficulty: Difficulty = 'MEDIUM'): BotPersonaProfile {
+export function getBotPersonaProfile(personaId?: string): BotPersonaProfile {
     if (personaId && BOT_PERSONA_PROFILES[personaId]) {
         return BOT_PERSONA_PROFILES[personaId];
     }
-    return BOT_PERSONA_PROFILES[DEFAULT_PERSONA_BY_DIFFICULTY[fallbackDifficulty]];
+    return BOT_PERSONA_PROFILES[DEFAULT_PERSONA_ID];
 }
-
