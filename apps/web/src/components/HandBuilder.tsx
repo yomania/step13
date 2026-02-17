@@ -157,6 +157,9 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
         }
         if (analysisResult.candidates) {
             setServerCandidates(analysisResult.candidates);
+            if (!analysisResult.scoreResult) {
+                setServerPotentialScore(analysisResult.candidates[0]?.score ?? null);
+            }
             setIsAnalyzing(false);
         }
     }, [analysisResult]);

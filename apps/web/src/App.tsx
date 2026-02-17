@@ -32,6 +32,9 @@ export default function App() {
     const { sendEvent, queryAnalysis } = useGameSocket(actor, handleServerStateUpdate, handleAnalysisResult);
 
     const [playerId] = useState(`player-${Math.floor(Math.random() * 1000)}`);
+    const queryAnalysisWithPlayer = useCallback((query: any) => {
+        queryAnalysis({ ...query, playerId });
+    }, [queryAnalysis, playerId]);
     const [isConnected, setIsConnected] = useState(false);
     const [debugMode, setDebugMode] = useState<boolean>(() => {
         if (typeof window === 'undefined') return false;
@@ -246,13 +249,13 @@ export default function App() {
         if (!myHand) return;
 
         // Query server for ron check
-        queryAnalysis({
+        queryAnalysisWithPlayer({
             queryType: 'SCORE',
             hand: myHand,
             wait: lastDiscard.tile,
             doraIndicators
         });
-    }, [context.lastDiscard, playerId, matches, doraIndicators, context.hands]);
+    }, [context.lastDiscard, playerId, matches, doraIndicators, context.hands, queryAnalysisWithPlayer]);
 
     // Update ronOpportunity when analysisResult comes back for SCORE
     useEffect(() => {
@@ -369,7 +372,7 @@ export default function App() {
                     </div>
                     <SingleMiniGame
                         onExit={() => setMainMode('match')}
-                        queryAnalysis={queryAnalysis}
+                        queryAnalysis={queryAnalysisWithPlayer}
                         analysisResult={analysisResult}
                         debugMode={debugMode}
                     />
@@ -680,7 +683,7 @@ export default function App() {
                                     <HandBuilder
                                         dealtTiles={context.dealtTiles[playerId] || []}
                                         onSubmit={onSubmitHand}
-                                        onQueryAnalysis={queryAnalysis}
+                                        onQueryAnalysis={queryAnalysisWithPlayer}
                                         analysisResult={analysisResult}
                                         submitted={myHandSubmitted}
                                         opponentSubmitted={opponentHandSubmitted}

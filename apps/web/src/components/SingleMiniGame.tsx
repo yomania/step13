@@ -526,6 +526,8 @@ export function SingleMiniGame({ onExit, queryAnalysis, analysisResult, debugMod
             <HandBuilder
                 dealtTiles={currentRound.dealtTiles}
                 onSubmit={(hand, _pool) => handleSubmit(hand)}
+                onQueryAnalysis={queryAnalysis}
+                analysisResult={analysisResult}
                 submitted={Boolean(result) || isCalculating || Boolean(selectedHistoryEntry)}
                 doraIndicators={currentRound.doraIndicators}
                 debugMode={debugMode}

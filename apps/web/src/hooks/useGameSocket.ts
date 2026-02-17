@@ -94,6 +94,11 @@ export function useGameSocket(
     };
 
     const queryAnalysis = (query: any) => {
+        const queryPlayerId = typeof query?.playerId === 'string' ? query.playerId : null;
+        if (!joinPlayerIdRef.current && queryPlayerId) {
+            joinPlayerIdRef.current = queryPlayerId;
+            sendEvent({ type: 'JOIN', playerId: queryPlayerId });
+        }
         sendEvent({
             ...query,
             type: 'QUERY_ANALYSIS',
