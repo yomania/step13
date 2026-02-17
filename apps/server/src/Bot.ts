@@ -45,16 +45,52 @@ export class Bot {
     public buildBestCandidatesForQuery(
         dealtTiles: Tile[],
         doraIndicators: Tile[],
-        personaId?: string
+        personaId?: string,
+        maxCount?: number,
+        includeNonTenpai?: boolean,
+        multiDifficulty?: boolean
     ) {
         const profile = getBotPersonaProfile(personaId);
-        return this.logic.buildBestCandidates(
-            dealtTiles,
-            doraIndicators,
-            profile.handBuild.candidateCount,
-            {},
-            profile.difficulty
-        );
+        const targetCount = maxCount ?? profile.handBuild.candidateCount;
+        const includeFallback = includeNonTenpai ?? false;
+        if (!multiDifficulty) {
+            return this.logic.buildBestCandidates(
+                dealtTiles,
+                doraIndicators,
+                targetCount,
+                {},
+                profile.difficulty,
+                undefined,
+                includeFallback
+            );
+        }
+
+        const perDifficultyCount = Math.max(targetCount, 8);
+        const difficulties: Difficulty[] = ['EASY', 'MEDIUM', 'HARD'];
+        const unique = new Map<string, CandidateEvaluation>();
+
+        for (const difficulty of difficulties) {
+            const candidates = this.logic.buildBestCandidates(
+                dealtTiles,
+                doraIndicators,
+                perDifficultyCount,
+                {},
+                difficulty,
+                undefined,
+                includeFallback
+            );
+            for (const candidate of candidates) {
+                const key = candidate.indices.join('-');
+                const existing = unique.get(key);
+                if (!existing || this.compareCandidateStrength(candidate, existing) > 0) {
+                    unique.set(key, candidate);
+                }
+            }
+        }
+
+        return [...unique.values()]
+            .sort((a, b) => this.compareCandidateStrength(b, a))
+            .slice(0, targetCount);
     }
 
     public getWinningTilesForQuery(hand: Tile[]) {

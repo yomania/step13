@@ -13,6 +13,7 @@ type MiniResult = {
         waits: Tile[];
         furitenWaits?: Tile[];
         han: number;
+        fu: number;
         points: number;
         yaku: string[];
         bestWait: Tile | null;
@@ -22,6 +23,7 @@ type MiniResult = {
         waits: Tile[];
         furitenWaits?: Tile[];
         han: number;
+        fu: number;
         points: number;
         yaku: string[];
         bestWait: Tile | null;
@@ -588,7 +590,7 @@ export function SingleMiniGame({ onExit, queryAnalysis, analysisResult, debugMod
                     <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div className="rounded-2xl bg-slate-800/80 p-3 border border-slate-700">
                             <div className="text-xs text-slate-400">내 결과</div>
-                            <div className="text-sm font-bold text-white">{visibleResult.player.han}판 / {visibleResult.player.points}점 / 대기 {visibleResult.player.waits.length}개</div>
+                            <div className="text-sm font-bold text-white">{visibleResult.player.han}판 {visibleResult.player.fu ?? 0}부 / {visibleResult.player.points}점 / 대기 {visibleResult.player.waits.length}개</div>
                             <div className="text-xs text-emerald-300 mt-2 mb-1">내 조패 (정렬 13)</div>
                             <div className="flex flex-wrap gap-1">
                                 {sortTiles(visibleResult.player.hand).map((tile, idx) => (
@@ -630,7 +632,7 @@ export function SingleMiniGame({ onExit, queryAnalysis, analysisResult, debugMod
                         </div>
                         <div className="rounded-2xl bg-slate-800/80 p-3 border border-slate-700">
                             <div className="text-xs text-slate-400">AI 예상 최대 판수 다면팅</div>
-                            <div className="text-sm font-bold text-white">{visibleResult.ai.han}판 / {visibleResult.ai.points}점 / 대기 {visibleResult.ai.waits.length}개</div>
+                            <div className="text-sm font-bold text-white">{visibleResult.ai.han}판 {visibleResult.ai.fu ?? 0}부 / {visibleResult.ai.points}점 / 대기 {visibleResult.ai.waits.length}개</div>
                             <div className="text-xs text-cyan-300 mt-2 mb-1">AI 예상 조패 (13)</div>
                             <div className="flex flex-wrap gap-1">
                                 {sortTiles(visibleResult.ai.hand).map((tile, idx) => (

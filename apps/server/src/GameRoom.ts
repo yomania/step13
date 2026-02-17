@@ -117,7 +117,10 @@ export class GameRoom {
                 const candidates = await tempBot.buildBestCandidatesForQuery(
                     event.dealtTiles || hand, // Use full pool if available (for mini-game/debug), otherwise just hand
                     doraIndicators || [],
-                    this.normalizePersonaId(event?.personaId)
+                    this.normalizePersonaId(event?.personaId),
+                    typeof event?.maxCount === 'number' ? event.maxCount : undefined,
+                    Boolean(event?.includeNonTenpai),
+                    Boolean(event?.multiDifficulty)
                 );
                 result.candidates = candidates;
             } else if (event.queryType === 'MINI_GAME_EVAL') {

@@ -5,6 +5,7 @@ import { GameContext } from '@step13/core';
 export interface PotentialScore {
     points: number;
     han: number;
+    fu: number;
     limit?: string;
     yaku: string[];
     bestWait: Tile | null;
@@ -91,6 +92,7 @@ export class BotLogic {
     ): Promise<PotentialScore | null> {
         let bestPoints = -1;
         let bestHan = -1;
+        let bestFu = 0;
         let bestLimit = '';
         let bestYaku: string[] = [];
         let bestWait: Tile | null = null;
@@ -104,6 +106,7 @@ export class BotLogic {
             if (res.points > bestPoints || (res.points === bestPoints && res.han > bestHan)) {
                 bestPoints = res.points;
                 bestHan = res.han;
+                bestFu = res.fu;
                 bestLimit = res.limit || '';
                 bestYaku = [...res.yaku];
                 bestWait = wait;
@@ -115,6 +118,7 @@ export class BotLogic {
         return {
             points: bestPoints,
             han: bestHan,
+            fu: bestFu,
             limit: bestLimit,
             yaku: bestYaku,
             bestWait
@@ -127,7 +131,8 @@ export class BotLogic {
         maxCount = 8,
         _options: { seatWind?: string; roundWind?: string } = {},
         difficulty: Difficulty = 'MEDIUM',
-        scoreDiff?: number
+        scoreDiff?: number,
+        includeNonTenpai: boolean = false
     ): CandidateEvaluation[] {
         if (dealtTiles.length < 13) return [];
 
@@ -168,7 +173,7 @@ export class BotLogic {
 
             const hand = getHandByIndices(selected);
             const waits = this.getWinningTiles(hand);
-            if (waits.length === 0) return;
+            if (!includeNonTenpai && waits.length === 0) return;
 
             // Future-danger assessment (instead of hard filter)
             const discardedTiles = baseIndices.filter(idx => !selected.includes(idx)).map(idx => dealtTiles[idx]);
@@ -206,7 +211,7 @@ export class BotLogic {
 
             for (let step = 0; step < steps; step++) {
                 const waits = this.getWinningTiles(currentHand);
-                if (waits.length > 0) tryAddCandidate(selected);
+                if (waits.length > 0 || includeNonTenpai) tryAddCandidate(selected);
 
                 const selectedIndex = randomPick(selected);
                 const replacementIndex = randomPick(baseIndices.filter(idx => !selected.includes(idx)));
@@ -368,6 +373,7 @@ export class BotLogic {
     ): PotentialScore {
         let bestPoints = -1;
         let bestHan = -1;
+        let bestFu = 0;
         let bestLimit = '';
         let bestYaku: string[] = [];
         let bestWait: Tile | null = null;
@@ -377,6 +383,7 @@ export class BotLogic {
             if (res.points > bestPoints || (res.points === bestPoints && res.han > bestHan)) {
                 bestPoints = res.points;
                 bestHan = res.han;
+                bestFu = res.fu;
                 bestLimit = res.limit || '';
                 bestYaku = [...res.yaku];
                 bestWait = wait;
@@ -399,6 +406,7 @@ export class BotLogic {
         return {
             points: Math.max(0, bestPoints), // Pure mahjong score
             han: Math.max(0, bestHan),
+            fu: Math.max(0, bestFu),
             limit: bestLimit,
             yaku: bestYaku,
             bestWait,
@@ -460,6 +468,7 @@ export class BotLogic {
                     waits: rawWaits,
                     furitenWaits,
                     han: score.han,
+                    fu: score.fu,
                     points: score.points,
                     yaku: score.yaku,
                     bestWait: score.bestWait
@@ -473,6 +482,7 @@ export class BotLogic {
                 waits: [],
                 furitenWaits: [],
                 han: 0,
+                fu: 0,
                 points: 0,
                 yaku: [],
                 bestWait: null
@@ -498,6 +508,7 @@ export class BotLogic {
                 waits: aiBest.waits,
                 furitenWaits: aiBest.furitenWaits ?? [],
                 han: aiBest.score.han,
+                fu: aiBest.score.fu,
                 points: aiBest.score.points,
                 yaku: aiBest.score.yaku,
                 bestWait: aiBest.score.bestWait

@@ -16,7 +16,7 @@ describe('BotLogic mini-game evaluation', () => {
             indices: [],
             hand: Array.from({ length: 13 }, (_, i) => tile('man', ((i % 9) + 1) as Tile['rank'], i)),
             waits: [tile('pin', 3)],
-            score: { points: 12000, han: 6, yaku: ['Riichi (Auto)'], bestWait: tile('pin', 3) }
+            score: { points: 12000, han: 6, fu: 40, yaku: ['Riichi (Auto)'], bestWait: tile('pin', 3) }
         };
 
         vi.spyOn(bot, 'buildBestCandidates').mockReturnValue([aiCandidate]);
@@ -33,7 +33,7 @@ describe('BotLogic mini-game evaluation', () => {
             indices: [],
             hand: Array.from({ length: 13 }, (_, i) => tile('sou', ((i % 9) + 1) as Tile['rank'], i)),
             waits: [],
-            score: { points: 12000, han: 6, yaku: ['Honitsu'], bestWait: tile('sou', 7) }
+            score: { points: 12000, han: 6, fu: 40, yaku: ['Honitsu'], bestWait: tile('sou', 7) }
         };
 
         vi.spyOn(bot, 'buildBestCandidates').mockReturnValue([aiCandidate]);
@@ -55,7 +55,7 @@ describe('BotLogic mini-game evaluation', () => {
             hand: Array.from({ length: 13 }, (_, i) => tile('sou', ((i % 9) + 1) as Tile['rank'], i)),
             waits: [tile('sou', 2), tile('sou', 3)],
             furitenWaits: [tile('sou', 3)],
-            score: { points: 8000, han: 4, yaku: ['Riichi (Auto)'], bestWait: tile('sou', 2) }
+            score: { points: 8000, han: 4, fu: 40, yaku: ['Riichi (Auto)'], bestWait: tile('sou', 2) }
         };
 
         vi.spyOn(bot, 'buildBestCandidates').mockReturnValue([aiCandidate]);
@@ -63,6 +63,7 @@ describe('BotLogic mini-game evaluation', () => {
         vi.spyOn(bot, 'evaluatePotentialScore').mockResolvedValue({
             points: 3900,
             han: 2,
+            fu: 30,
             yaku: ['Riichi (Auto)'],
             bestWait: tile('pin', 4)
         });

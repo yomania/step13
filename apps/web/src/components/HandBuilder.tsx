@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Tile as TileType, Wind } from '@step13/proto';
 import { Tile } from './Tile';
 
@@ -111,6 +111,16 @@ function windToKorean(wind: Wind): string {
     return map[wind];
 }
 
+function tileSortKey(tile: TileType): [number, number, number] {
+    const suitOrder: Record<TileType['suit'], number> = {
+        man: 0,
+        pin: 1,
+        sou: 2,
+        z: 3
+    };
+    return [suitOrder[tile.suit], tile.rank, tile.isRed ? 0 : 1];
+}
+
 
 
 export const HandBuilder: React.FC<HandBuilderProps> = ({
@@ -136,15 +146,21 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
 
     // Analysis State from server
     const [serverPotentialScore, setServerPotentialScore] = useState<any>(null);
-    const [serverCandidates, setServerCandidates] = useState<any[]>([]);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [showAnalyzingIndicator, setShowAnalyzingIndicator] = useState(false);
+    const [debugCandidates, setDebugCandidates] = useState<any[]>([]);
+    const [isDebugAnalyzing, setIsDebugAnalyzing] = useState(false);
+    const [debugQueryId, setDebugQueryId] = useState<string | null>(null);
+    const debugQueryIdRef = useRef<string | null>(null);
 
     useEffect(() => {
         setSelectedIndices([]);
         setShowDebugLayer(false);
         setServerPotentialScore(null);
-        setServerCandidates([]);
+        setDebugCandidates([]);
+        setIsDebugAnalyzing(false);
+        setDebugQueryId(null);
+        debugQueryIdRef.current = null;
     }, [dealtTiles]);
 
     const selectedTiles = useMemo(() => selectedIndices.map((index) => dealtTiles[index]), [selectedIndices, dealtTiles]);
@@ -157,13 +173,28 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
             setServerPotentialScore(analysisResult.scoreResult);
         }
         if (analysisResult.candidates) {
-            setServerCandidates(analysisResult.candidates);
+            const currentDebugQueryId = debugQueryIdRef.current;
+            const incomingQueryId = typeof analysisResult.queryId === 'string' ? analysisResult.queryId : null;
+            const isDebugQueryMatch = Boolean(currentDebugQueryId && incomingQueryId === currentDebugQueryId);
+            const canUseAsDebugFallback = isDebugAnalyzing && showDebugLayer && debugCandidates.length === 0;
+            if (isDebugQueryMatch || canUseAsDebugFallback) {
+                setDebugCandidates((analysisResult.candidates || []).slice(0, 5));
+                setIsDebugAnalyzing(false);
+            }
             if (!analysisResult.scoreResult) {
                 setServerPotentialScore(analysisResult.candidates[0]?.score ?? null);
             }
             setIsAnalyzing(false);
         }
-    }, [analysisResult]);
+    }, [analysisResult, debugQueryId, isDebugAnalyzing, showDebugLayer, debugCandidates.length]);
+
+    useEffect(() => {
+        if (!showDebugLayer || !isDebugAnalyzing) return;
+        const timer = setTimeout(() => {
+            setIsDebugAnalyzing(false);
+        }, 6000);
+        return () => clearTimeout(timer);
+    }, [showDebugLayer, isDebugAnalyzing]);
 
     useEffect(() => {
         if (!isAnalyzing) {
@@ -184,7 +215,6 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
         if (selectedTiles.length !== 13) {
             setIsAnalyzing(false);
             setServerPotentialScore(null);
-            setServerCandidates([]);
             return;
         }
 
@@ -234,8 +264,31 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
 
     const applyCandidate = (candidate: any) => {
         if (submitted || loading) return;
+        if (!Array.isArray(candidate?.indices)) return;
         setSelectedIndices(candidate.indices);
         setShowDebugLayer(false);
+    };
+
+    const getCandidateTiles = (candidate: any): TileType[] => {
+        if (Array.isArray(candidate?.hand) && candidate.hand.length > 0) {
+            return candidate.hand as TileType[];
+        }
+
+        if (!Array.isArray(candidate?.indices)) {
+            return [];
+        }
+
+        return (candidate.indices as number[])
+            .map((index) => dealtTiles[index])
+            .filter(Boolean);
+    };
+
+    const getSortedCandidateTiles = (candidate: any): TileType[] => {
+        return [...getCandidateTiles(candidate)].sort((a, b) => {
+            const [aSuit, aRank, aRed] = tileSortKey(a);
+            const [bSuit, bRank, bRed] = tileSortKey(b);
+            return aSuit - bSuit || aRank - bRank || aRed - bRed;
+        });
     };
 
     const handleSubmit = () => {
@@ -243,6 +296,30 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
         const hand = selectedTiles;
         const pool = dealtTiles.filter((_, index) => !selectedIndices.includes(index));
         onSubmit(hand, pool);
+    };
+
+    const openDebugLayer = () => {
+        setShowDebugLayer(true);
+        if (!onQueryAnalysis) return;
+
+        const queryId = `debug-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        debugQueryIdRef.current = queryId;
+        setDebugQueryId(queryId);
+        setDebugCandidates([]);
+        setIsDebugAnalyzing(true);
+
+        onQueryAnalysis({
+            queryId,
+            queryType: 'AI_HINT',
+            hand: selectedTiles,
+            dealtTiles,
+            doraIndicators,
+            difficulty: 'HARD',
+            scoreDiff,
+            maxCount: 5,
+            includeNonTenpai: true,
+            multiDifficulty: true
+        });
     };
 
     return (
@@ -270,7 +347,6 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
                                 if (window.confirm('선택한 패를 초기화하시겠습니까?')) {
                                     setSelectedIndices([]);
                                     setServerPotentialScore(null);
-                                    setServerCandidates([]);
                                 }
                             }}
                             className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-sm font-bold shadow-lg border border-rose-400/50 transition-all active:scale-95"
@@ -296,12 +372,14 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
                         </div>
                     )}
                     {tenpai && serverPotentialScore && (
-                        <div className="text-emerald-300 text-sm font-bold mt-1">현재 판수: {serverPotentialScore.han}판</div>
+                        <div className="text-emerald-300 text-sm font-bold mt-1">
+                            현재 판수/부수: {serverPotentialScore.han}판 {serverPotentialScore.fu ?? 0}부
+                        </div>
                     )}
                     {hasAnalysisScore && serverPotentialScore && (
                         <>
                             <div className="text-yellow-400 font-bold">
-                                예상: ({serverPotentialScore.han}/5판) {serverPotentialScore.points}점
+                                예상: ({serverPotentialScore.han}판 {serverPotentialScore.fu ?? 0}부 / 5판) {serverPotentialScore.points}점
                                 {serverPotentialScore.limit && (
                                     <span className="ml-2 px-2 py-0.5 bg-red-600 text-white text-xs rounded animate-pulse">{toKoreanLimit(serverPotentialScore.limit)}</span>
                                 )}
@@ -343,7 +421,7 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
                 ))}
             </div>
 
-            {singleMode && !submitted && !loading && selectedTiles.length === 13 && debugMode && (
+            {!submitted && !loading && debugMode && (
                 <div className="surface-panel rounded-2xl p-3 flex items-center justify-between gap-3">
                     <div className="text-xs text-slate-300">
                         <span className="font-bold text-amber-300">디버그 모드</span>: 추천 조패를 확인하고 자동 적용할 수 있습니다.
@@ -367,7 +445,7 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
                             로그 복사
                         </button>
                         <button
-                            onClick={() => setShowDebugLayer(true)}
+                            onClick={openDebugLayer}
                             className="px-3 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-sm font-bold whitespace-nowrap shadow-lg shadow-amber-900/20"
                         >
                             디버그 추천 보기
@@ -410,24 +488,24 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
                         <div className="space-y-4">
                             <h2 className="text-xl font-bold text-white mb-2">추천 조패 리스트</h2>
 
-                            {(serverCandidates.length === 0) && (
+                            {(debugCandidates.length === 0) && (
                                 <div className="text-center py-8">
                                     <div className="text-lg text-slate-300 font-medium mb-1">
-                                        {isAnalyzing ? '추천 조패 계산 중...' : '추천 조패를 찾지 못했습니다.'}
+                                        {isDebugAnalyzing ? '추천 조패 계산 중...' : '추천 조패를 찾지 못했습니다.'}
                                     </div>
-                                    {!isAnalyzing && (
+                                    {!isDebugAnalyzing && (
                                         <div className="text-sm text-slate-500">
-                                            현재 선택된 패의 조합으로는 유효한 텐파이 경로를 찾을 수 없습니다.
+                                            AI가 유효한 패효율 추천 조합을 생성하지 못했습니다.
                                         </div>
                                     )}
                                 </div>
                             )}
 
-                            {serverCandidates.map((candidate: any, idx: number) => (
-                                <div key={candidate.indices.join('-')} className="bg-slate-800/70 border border-slate-700 rounded-xl p-3">
+                            {debugCandidates.map((candidate: any, idx: number) => (
+                                <div key={Array.isArray(candidate?.indices) ? candidate.indices.join('-') : `candidate-${idx}`} className="bg-slate-800/70 border border-slate-700 rounded-xl p-3">
                                     <div className="flex items-center justify-between mb-2">
                                         <div className="text-sm font-bold text-yellow-300">
-                                            #{idx + 1} ({candidate.score.han}/5판) {candidate.score.points}점
+                                            #{idx + 1} ({candidate.score.han}판 {candidate.score.fu ?? 0}부 / 5판) {candidate.score.points}점
                                             {candidate.score.limit && (
                                                 <span className="ml-2 px-2 py-0.5 text-xs rounded bg-red-600 text-white">{toKoreanLimit(candidate.score.limit)}</span>
                                             )}
@@ -442,6 +520,15 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
 
                                     <div className="text-xs text-slate-300 mb-2">
                                         역: {candidate.score.yaku.length > 0 ? candidate.score.yaku.map(toKoreanYaku).join(', ') : '없음'}
+                                    </div>
+
+                                    <div className="text-xs text-cyan-300 mb-1">추천 13패</div>
+                                    <div className="flex flex-wrap gap-1 mb-2">
+                                        {getSortedCandidateTiles(candidate).map((tile: TileType, handIdx: number) => (
+                                            <div key={`${tile.id ?? `${tile.suit}-${tile.rank}`}-${handIdx}`} className="transform scale-90 origin-left-top">
+                                                <Tile tile={tile} disabled={true} size="sm" />
+                                            </div>
+                                        ))}
                                     </div>
 
                                     <div className="text-xs text-emerald-300 mb-1">대기패 ({candidate.waits.length})</div>

@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Tile as TileType } from '@step13/proto';
 import { getFallbackTileAssetRoot, getTileAssetRoot } from '../lib/tileAssets';
 
@@ -35,6 +35,7 @@ export function Tile({ tile, onClick, selected, disabled, size = 'md' }: TilePro
     const skin = useContext(TileSkinContext);
     const [imageLoaded, setImageLoaded] = useState(false);
     const [assetAttempt, setAssetAttempt] = useState(0);
+    const imageRef = useRef<HTMLImageElement | null>(null);
 
     const hidden = isHiddenTile(tile);
 
@@ -89,6 +90,21 @@ export function Tile({ tile, onClick, selected, disabled, size = 'md' }: TilePro
         setImageLoaded(false);
         setAssetAttempt(0);
     }, [tile.suit, tile.rank, tile.isRed, hidden]);
+
+    useEffect(() => {
+        const imageElement = imageRef.current;
+        if (!imageElement) return;
+
+        // Cached images may already be complete before React fires onLoad.
+        if (imageElement.complete && imageElement.naturalWidth > 0) {
+            setImageLoaded(true);
+            return;
+        }
+
+        if (imageElement.complete && imageElement.naturalWidth === 0 && assetAttempt < 3) {
+            setAssetAttempt((prev) => prev + 1);
+        }
+    }, [currentSrc, assetAttempt]);
 
     const sizeClasses = {
         sm: 'w-8 h-12 text-xs',
@@ -155,7 +171,7 @@ export function Tile({ tile, onClick, selected, disabled, size = 'md' }: TilePro
                         <span className="text-[10px] uppercase">{getDisplaySuit()}</span>
                     </div>
                     <img
-                        key={currentSrc}
+                        ref={imageRef}
                         src={currentSrc}
                         alt={hidden ? 'Hidden Tile' : `${tile.suit}-${tile.rank}`}
                         onLoad={() => setImageLoaded(true)}
