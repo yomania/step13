@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Tile as TileType } from '@step13/proto';
-import { getFallbackTileAssetRoot, getRealTileAssetUrl } from '../lib/tileAssets';
+import { getTileAssetRoot, getFallbackTileAssetRoot } from '../lib/tileAssets';
 
 interface TileProps {
     tile: TileType;
@@ -29,58 +29,47 @@ function isHiddenTile(tile: TileType): boolean {
     return tile.id === 'HIDDEN' || tile.id.startsWith('wall-') || tile.id.startsWith('hidden-');
 }
 
-function getRealTileAsset(tile: TileType): string {
-    if (isHiddenTile(tile)) {
-        return getRealTileAssetUrl('Back.png');
-    }
 
-    if (tile.suit === 'z') {
-        const honors = ['Ton', 'Nan', 'Shaa', 'Pei', 'Haku', 'Hatsu', 'Chun'];
-        return getRealTileAssetUrl(`${honors[tile.rank - 1]}.png`);
-    }
-
-    const suitPrefix: Record<Exclude<TileType['suit'], 'z'>, string> = {
-        man: 'Man',
-        pin: 'Pin',
-        sou: 'Sou'
-    };
-    const base = `${suitPrefix[tile.suit as Exclude<TileType['suit'], 'z'>]}${tile.rank}`;
-    const doraSuffix = tile.isRed && tile.rank === 5 ? '-Dora' : '';
-    return getRealTileAssetUrl(`${base}${doraSuffix}.png`);
-}
 
 export function Tile({ tile, onClick, selected, disabled, size = 'md' }: TileProps) {
     const skin = useContext(TileSkinContext);
     const [imageLoaded, setImageLoaded] = useState(false);
-    const [useFallbackSrc, setUseFallbackSrc] = useState(false);
+    const [assetExt, setAssetExt] = useState<'svg' | 'png'>('svg');
+    const [errorCount, setErrorCount] = useState(0);
+
     const hidden = isHiddenTile(tile);
-    const realAssetSrc = useMemo(() => getRealTileAsset(tile), [tile, hidden]);
 
-    const fallbackSrc = useMemo(() => {
-        const localRoot = getFallbackTileAssetRoot();
-        if (hidden) return getRealTileAssetUrl('Back.png', localRoot);
+    const getAssetUrl = (ext: 'svg' | 'png', root = getTileAssetRoot()) => {
+        const folder = ext === 'svg' ? 'regular' : 'regular-png';
 
-        if (tile.suit === 'z') {
+        let fileName = '';
+        if (hidden) {
+            fileName = `Back.${ext}`;
+        } else if (tile.suit === 'z') {
             const honors = ['Ton', 'Nan', 'Shaa', 'Pei', 'Haku', 'Hatsu', 'Chun'];
-            return getRealTileAssetUrl(`${honors[tile.rank - 1]}.png`, localRoot);
+            fileName = `${honors[tile.rank - 1]}.${ext}`;
+        } else {
+            const suitPrefix: Record<Exclude<TileType['suit'], 'z'>, string> = {
+                man: 'Man',
+                pin: 'Pin',
+                sou: 'Sou'
+            };
+            const base = `${suitPrefix[tile.suit as Exclude<TileType['suit'], 'z'>]}${tile.rank}`;
+            const doraSuffix = tile.isRed && tile.rank === 5 ? '-Dora' : '';
+            fileName = `${base}${doraSuffix}.${ext}`;
         }
 
-        const suitPrefix: Record<Exclude<TileType['suit'], 'z'>, string> = {
-            man: 'Man',
-            pin: 'Pin',
-            sou: 'Sou'
-        };
-        const base = `${suitPrefix[tile.suit as Exclude<TileType['suit'], 'z'>]}${tile.rank}`;
-        const doraSuffix = tile.isRed && tile.rank === 5 ? '-Dora' : '';
-        return getRealTileAssetUrl(`${base}${doraSuffix}.png`, localRoot);
-    }, [tile, hidden]);
+        return `${root}tiles/${folder}/${fileName}`;
+    };
 
-    const resolvedSrc = useFallbackSrc ? fallbackSrc : realAssetSrc;
+    const currentSrc = useMemo(() => getAssetUrl(assetExt), [tile, hidden, assetExt]);
+
 
     useEffect(() => {
         setImageLoaded(false);
-        setUseFallbackSrc(false);
-    }, [realAssetSrc]);
+        setAssetExt('svg');
+        setErrorCount(0);
+    }, [tile.suit, tile.rank, tile.isRed, hidden]);
 
     const sizeClasses = {
         sm: 'w-8 h-12 text-xs',
@@ -88,8 +77,6 @@ export function Tile({ tile, onClick, selected, disabled, size = 'md' }: TilePro
         lg: 'w-12 h-16 text-base'
     };
 
-    // Simple text representation for now. 
-    // In real app, replace with SVG or Image assets.
     const suitColors = {
         man: 'text-red-600',
         pin: 'text-blue-600',
@@ -116,6 +103,20 @@ export function Tile({ tile, onClick, selected, disabled, size = 'md' }: TilePro
         }
     };
 
+    const handleError = () => {
+        if (assetExt === 'svg') {
+            // Priority 1: Try PNG with same root
+            setAssetExt('png');
+        } else if (errorCount === 0) {
+            // Priority 2: Try local fallback root (Reset to SVG)
+            setAssetExt('svg');
+            setErrorCount(1);
+        } else {
+            // Fail
+            setImageLoaded(false);
+        }
+    };
+
     return (
         <button
             onClick={onClick}
@@ -130,26 +131,23 @@ export function Tile({ tile, onClick, selected, disabled, size = 'md' }: TilePro
                 ${skin === 'classic' ? (hidden ? 'bg-slate-300' : 'bg-slate-100 hover:bg-white') : 'bg-slate-200/90 hover:bg-slate-100'}
                 ${skin === 'classic' ? (hidden ? 'text-slate-500' : suitColors[tile.suit]) : 'text-slate-900'}
                 font-bold
+                relative
+                overflow-hidden
             `}
         >
             {skin === 'real' ? (
                 <div className="relative w-full h-full">
-                    <div className={`absolute inset-0 flex flex-col items-center justify-center leading-none transition-opacity ${imageLoaded ? 'opacity-0' : 'opacity-100'}`}>
+                    <div className={`absolute inset-0 flex flex-col items-center justify-center leading-none transition-opacity duration-300 ${imageLoaded ? 'opacity-0' : 'opacity-100'}`}>
                         <span>{getDisplayRank()}</span>
                         <span className="text-[10px] uppercase">{getDisplaySuit()}</span>
                     </div>
                     <img
-                        src={resolvedSrc}
+                        key={currentSrc}
+                        src={currentSrc}
                         alt={hidden ? 'Hidden Tile' : `${tile.suit}-${tile.rank}`}
                         onLoad={() => setImageLoaded(true)}
-                        onError={() => {
-                            if (!useFallbackSrc && fallbackSrc !== realAssetSrc) {
-                                setUseFallbackSrc(true);
-                                return;
-                            }
-                            setImageLoaded(false);
-                        }}
-                        className={`absolute inset-0 w-full h-full object-contain pointer-events-none select-none transition-opacity ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
+                        onError={handleError}
+                        className={`absolute inset-0 w-full h-full object-contain pointer-events-none select-none transition-opacity duration-300 ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
                         loading="eager"
                         decoding="async"
                         draggable={false}

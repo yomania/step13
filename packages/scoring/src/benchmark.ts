@@ -22,4 +22,4 @@ function runBenchmark() {
     console.log(`Average: ${(end - start) / 10000}ms`);
 }
 
-runBenchmark();
+// runBenchmark();

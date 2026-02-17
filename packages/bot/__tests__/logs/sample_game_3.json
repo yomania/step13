@@ -1,0 +1,78 @@
+{
+    "description": "Chinitsu Full Flush - AI should find pure flush",
+    "playerHandIds": [
+        "man1",
+        "man2",
+        "man3",
+        "man4",
+        "man5",
+        "man6",
+        "man7",
+        "man8",
+        "man9",
+        "man1",
+        "man2",
+        "man3",
+        "man4"
+    ],
+    "aiHandIds": [
+        "pin1",
+        "pin2",
+        "pin3",
+        "sou4",
+        "sou5",
+        "sou6",
+        "z1",
+        "z1",
+        "z2",
+        "z2",
+        "z3",
+        "z3",
+        "man5"
+    ],
+    "dealtTileIds": [
+        "man1",
+        "man2",
+        "man3",
+        "man4",
+        "man5",
+        "man6",
+        "man7",
+        "man8",
+        "man9",
+        "man1",
+        "man2",
+        "man3",
+        "man4",
+        "pin1",
+        "pin2",
+        "pin3",
+        "sou4",
+        "sou5",
+        "sou6",
+        "z1",
+        "z1",
+        "z2",
+        "z2",
+        "z3",
+        "z3",
+        "man5",
+        "pin4",
+        "pin5",
+        "sou7",
+        "sou8",
+        "z4",
+        "z5",
+        "z6"
+    ],
+    "doraIndicatorIds": [
+        "man2"
+    ],
+    "expectedResult": {
+        "playerShouldWin": true,
+        "minPlayerHan": 6,
+        "expectedYaku": [
+            "Chinitsu"
+        ]
+    }
+}

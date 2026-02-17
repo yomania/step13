@@ -58,18 +58,18 @@ const WEIGHTS: Record<Difficulty, HeuristicWeights> = {
         safety: 0.4
     },
     HARD: {
-        shanten: 2000, // Reduced penalty for high shanten if value is high
+        shanten: 4000,
         ukeire: 20,
         efficiency: 1,
-        honitsu: 2500, // High value for Honitsu
-        chinitsu: 4000,
-        sanshoku: 1500,
-        chanta: 1200,
-        dora: 200,
-        koutsu: 50,
-        pair: 300,
-        ryanmen: 80,
-        speedvsValue: 0.8,
+        honitsu: 6000, // Very high priority for Yaku potential
+        chinitsu: 10000,
+        sanshoku: 3000,
+        chanta: 2500,
+        dora: 300,
+        koutsu: 100,
+        pair: 500,
+        ryanmen: 150,
+        speedvsValue: 0.9, // Higher focus on value
         safety: 0.7
     }
 };
@@ -186,11 +186,28 @@ function evaluateYakuPotential(hand: Tile[], structure: HandStructure, weights: 
     const honors = suitCounts.z;
     const totalSuited = maxSuit + honors;
 
-    // Heuristic: If we have > 9 tiles of one suit+honors, strongly encourage Honitsu
-    if (totalSuited >= 10) {
-        score += weights.honitsu * (totalSuited - 9); // Scaled bonus
-        if (honors === 0 && maxSuit >= 10) {
-            score += weights.chinitsu * (maxSuit - 9);
+    // Heuristic: Honitsu/Chinitsu Gradient
+    // Start rewarding from 6 tiles to guide the search
+    // Maximize at 10+ tiles
+    if (totalSuited >= 6) {
+        // Linear ramp: 6->0.1, 7->0.2, 8->0.4, 9->0.7, 10->1.0
+        const factor = Math.max(0, (totalSuited - 5) / 5.0); // 1->0.2, 5->1.0
+
+        // Base bonus just for having many suited tiles
+        score += weights.honitsu * factor * 0.5;
+
+        // Extra bonus if high concentration
+        if (totalSuited >= 9) {
+            score += weights.honitsu * (totalSuited - 8);
+        }
+
+        // Chinitsu Check
+        if (honors === 0 && maxSuit >= 6) {
+            const cFactor = Math.max(0, (maxSuit - 5) / 5.0);
+            score += weights.chinitsu * cFactor * 0.5;
+            if (maxSuit >= 9) {
+                score += weights.chinitsu * (maxSuit - 8);
+            }
         }
     }
 
@@ -297,7 +314,14 @@ function evaluateYakuPotential(hand: Tile[], structure: HandStructure, weights: 
     }
     if (pairCount >= 5) {
         // Boost Chiitoitsu score
-        score += pairCount * 300;
+        // 5 pairs = 1-shanten to Tenpai (6 pairs). 
+        // We want this to be competitive with 2-shanten standard hands.
+        score += pairCount * 800;
+
+        if (pairCount >= 6) {
+            // Tenpai for Chiitoitsu (6 pairs + single)
+            score += 5000;
+        }
     }
 
     return score;

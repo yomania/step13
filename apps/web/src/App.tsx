@@ -371,6 +371,7 @@ export default function App() {
                         onExit={() => setMainMode('match')}
                         queryAnalysis={queryAnalysis}
                         analysisResult={analysisResult}
+                        debugMode={debugMode}
                     />
                     <YakuInfoLayer open={showYakuInfo} onClose={() => setShowYakuInfo(false)} />
                 </div>

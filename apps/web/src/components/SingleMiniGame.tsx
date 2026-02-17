@@ -75,7 +75,18 @@ function createMiniRound(): MiniRound {
     };
 }
 
-
+function buildDescription(
+    player: { han: number; waits: number; points: number },
+    ai: { han: number; waits: number; points: number },
+    rate: number
+): string {
+    const hanDiff = player.han - ai.han;
+    const waitDiff = player.waits - ai.waits;
+    if (rate >= 100) {
+        return `AI 기준을 넘겼습니다! 판수 ${hanDiff >= 0 ? '+' : ''}${hanDiff}, 대기수 ${waitDiff >= 0 ? '+' : ''}${waitDiff}로 우세했습니다.`;
+    }
+    return `AI 기준 대비 ${100 - rate}% 개선 여지가 있습니다. 판수 ${hanDiff >= 0 ? '+' : ''}${hanDiff}, 대기수 ${waitDiff >= 0 ? '+' : ''}${waitDiff}, 점수 ${player.points - ai.points >= 0 ? '+' : ''}${player.points - ai.points} 차이입니다.`;
+}
 
 function sortTiles(tiles: Tile[]): Tile[] {
     return [...tiles].sort((a, b) => {
@@ -333,9 +344,10 @@ interface SingleMiniGameProps {
     onExit: () => void;
     queryAnalysis?: (query: any) => void;
     analysisResult?: any;
+    debugMode?: boolean;
 }
 
-export function SingleMiniGame({ onExit, queryAnalysis, analysisResult }: SingleMiniGameProps) {
+export function SingleMiniGame({ onExit, queryAnalysis, analysisResult, debugMode = false }: SingleMiniGameProps) {
     const [round, setRound] = useState(1);
     const [currentRound, setCurrentRound] = useState<MiniRound>(() => createMiniRound());
     const [result, setResult] = useState<MiniResult | null>(null);
@@ -375,14 +387,24 @@ export function SingleMiniGame({ onExit, queryAnalysis, analysisResult }: Single
         }
 
         if (analysisResult.queryType === 'MINI_GAME_RESULT' && analysisResult.queryId === pendingQueryId) {
-            setResult(analysisResult.miniResult);
+            const miniResult = analysisResult.miniResult;
+
+            // Re-generate description if needed, or use the one from server
+            const description = miniResult.description || buildDescription(
+                miniResult.player,
+                miniResult.ai,
+                miniResult.rate
+            );
+
+            const updatedResult = { ...miniResult, description };
+            setResult(updatedResult);
 
             const entry: MiniHistoryEntry = {
                 id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
                 round,
                 createdAt: Date.now(),
                 roundData: currentRound,
-                result: analysisResult.miniResult
+                result: updatedResult
             };
             setHistory((prev) => {
                 const next = [entry, ...prev].slice(0, 30);
@@ -506,7 +528,7 @@ export function SingleMiniGame({ onExit, queryAnalysis, analysisResult }: Single
                 onSubmit={(hand, _pool) => handleSubmit(hand)}
                 submitted={Boolean(result) || isCalculating || Boolean(selectedHistoryEntry)}
                 doraIndicators={currentRound.doraIndicators}
-                debugMode={false}
+                debugMode={debugMode}
                 singleMode={true}
                 loading={isCalculating}
                 submitActionLabel="결과 확인"
@@ -518,26 +540,6 @@ export function SingleMiniGame({ onExit, queryAnalysis, analysisResult }: Single
                 <div className="mt-4 rounded-2xl border border-amber-500/40 bg-amber-900/20 p-4">
                     <div className="text-sm font-semibold text-amber-300">로딩 중...</div>
                     <div className="text-xs text-slate-300 mt-1">서버 전달 및 결과 계산을 진행하고 있습니다. 잠시만 기다려주세요.</div>
-                </div>
-            )}
-
-            {history.length > 0 && (
-                <div className="mt-4 rounded-2xl surface-panel p-4">
-                    <div className="text-sm font-semibold text-slate-200 mb-2">로컬 세션 히스토리</div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                        {history.map((entry) => (
-                            <button
-                                key={entry.id}
-                                onClick={() => setSelectedHistoryId(entry.id)}
-                                className={`text-left rounded-xl border px-3 py-2 ${selectedHistoryId === entry.id ? 'border-cyan-400 bg-cyan-900/30' : 'border-slate-700 bg-slate-800/80 hover:bg-slate-700'}`}
-                            >
-                                <div className="text-xs text-slate-300">
-                                    {entry.round}국 · RATE {entry.result.rate}% · {new Date(entry.createdAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
-                                </div>
-                                <div className="text-xs text-slate-400 mt-1">{entry.result.description}</div>
-                            </button>
-                        ))}
-                    </div>
                 </div>
             )}
 
@@ -659,6 +661,26 @@ export function SingleMiniGame({ onExit, queryAnalysis, analysisResult }: Single
                             다음 판 시작
                         </button>
                     )}
+                </div>
+            )}
+
+            {history.length > 0 && (
+                <div className="mt-4 rounded-2xl surface-panel p-4">
+                    <div className="text-sm font-semibold text-slate-200 mb-2">로컬 세션 히스토리</div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        {history.map((entry) => (
+                            <button
+                                key={entry.id}
+                                onClick={() => setSelectedHistoryId(entry.id)}
+                                className={`text-left rounded-xl border px-3 py-2 ${selectedHistoryId === entry.id ? 'border-cyan-400 bg-cyan-900/30' : 'border-slate-700 bg-slate-800/80 hover:bg-slate-700'}`}
+                            >
+                                <div className="text-xs text-slate-300">
+                                    {entry.round}국 · RATE {entry.result.rate}% · {new Date(entry.createdAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
+                                </div>
+                                <div className="text-xs text-slate-400 mt-1">{entry.result.description}</div>
+                            </button>
+                        ))}
+                    </div>
                 </div>
             )}
         </div>

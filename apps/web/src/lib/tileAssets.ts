@@ -48,16 +48,29 @@ export function preloadRealTileAssets(): Promise<void> {
     const root = getTileAssetRoot();
     const assetNames = buildTileAssetNames();
 
+    // PNG 외에 SVG도 우선적으로 캐싱 시도 (환경에 따라 SVG가 더 안정적일 수 있음)
+    const svgNames = assetNames.map(n => n.replace('.png', '.svg'));
+    const allToLoad = [...assetNames, ...svgNames];
+
     preloadPromise = Promise.all(
-        assetNames.map((name) => {
+        allToLoad.map((name) => {
             return new Promise<void>((resolve) => {
                 const img = new Image();
                 img.onload = () => resolve();
                 img.onerror = () => resolve();
-                img.src = getRealTileAssetUrl(name, root);
+
+                let url;
+                if (name.endsWith('.svg')) {
+                    url = `${root}tiles/regular/${name}`;
+                } else {
+                    url = getRealTileAssetUrl(name, root);
+                }
+                img.src = url;
             });
         })
-    ).then(() => undefined);
+    ).then(() => {
+        console.log('Tile assets preloaded.');
+    });
 
     return preloadPromise;
 }

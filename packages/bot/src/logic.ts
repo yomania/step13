@@ -2,13 +2,14 @@ import { Tile } from '@step13/proto';
 import { calculateShanten, getUkeire, calculateScore, ScoreOptions, evaluateHandQuality, Difficulty } from '@step13/scoring';
 import { GameContext } from '@step13/core';
 
-export type PotentialScore = {
+export interface PotentialScore {
     points: number;
     han: number;
-    limit: string;
+    limit?: string;
     yaku: string[];
     bestWait: Tile | null;
-};
+    quality?: number; // Internal heuristic score for search
+}
 
 export type CandidateEvaluation = {
     indices: number[];
@@ -63,6 +64,11 @@ export class BotLogic {
     // --- Ported Logic from Client HandAnalysis ---
 
     public getWinningTiles(hand: Tile[]): Tile[] {
+        // Optimization: If hand is not Tenpai (shanten > 0), no single tile can make it a win
+        if (calculateShanten(hand) > 0) {
+            return [];
+        }
+
         const waits: Tile[] = [];
         for (const suit of SUITS) {
             const maxRank = suit === 'z' ? 7 : 9;
@@ -89,7 +95,11 @@ export class BotLogic {
         let bestWait: Tile | null = null;
 
         for (const wait of waits) {
-            const res = calculateScore(hand, wait, false, doraIndicators, SCORE_OPTIONS);
+            const res = calculateScore(hand, wait, false, doraIndicators, {
+                ...SCORE_OPTIONS,
+                seatWind: _options?.seatWind as any,
+                roundWind: _options?.roundWind as any
+            });
             if (res.points > bestPoints || (res.points === bestPoints && res.han > bestHan)) {
                 bestPoints = res.points;
                 bestHan = res.han;
@@ -122,12 +132,13 @@ export class BotLogic {
 
         const params = {
             EASY: { attempts: 100, improveSteps: 50, suitSeeds: false },
-            MEDIUM: { attempts: 200, improveSteps: 80, suitSeeds: true },
+            MEDIUM: { attempts: 10, improveSteps: 60, suitSeeds: true },
             HARD: { attempts: 300, improveSteps: 120, suitSeeds: true }
         }[difficulty];
 
         const attempts = params.attempts;
         const improveSteps = params.improveSteps;
+
         const unique = new Map<string, CandidateEvaluation>();
         const baseIndices = dealtTiles.map((_, index) => index);
         const randomPick = <T,>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)];
@@ -158,22 +169,33 @@ export class BotLogic {
             const waits = this.getWinningTiles(hand);
             if (waits.length === 0) return;
 
-            // Furiten-like check
+            // Future-danger assessment (instead of hard filter)
             const discardedTiles = baseIndices.filter(idx => !selected.includes(idx)).map(idx => dealtTiles[idx]);
-            const availableWaits = waits.filter(wait => {
+            const furitenWaits = waits.filter(wait => {
                 const discardedCount = discardedTiles.filter(dt => dt.suit === wait.suit && dt.rank === wait.rank).length;
-                const poolCount = poolCounts[`${wait.suit}${wait.rank}`] || 0;
+                const poolCount = poolCounts[`${wait.suit}${wait.rank} `] || 0;
                 return discardedCount < poolCount;
             });
 
-            if (availableWaits.length === 0) return;
+            // Current wait count if we were to discard now
+            const availableWaits = furitenWaits;
 
-            const score = this.calculateCandidateScoreHeuristic(hand, availableWaits, doraIndicators, dangerMap, scoreDiff, difficulty);
+            // Calculate score with internal quality
+            const score = this.calculateCandidateScoreHeuristic(
+                hand,
+                waits, // Pass all possible waits for score calculation
+                doraIndicators,
+                dangerMap,
+                scoreDiff,
+                difficulty,
+                discardedTiles, // Pass discarded tiles for furiten penalty
+                poolCounts
+            );
 
             unique.set(key, {
                 indices: selected,
                 hand,
-                waits: availableWaits,
+                waits: availableWaits, // This acts as 'effective' waits for UI but score reflects all
                 score
             });
         };
@@ -203,7 +225,121 @@ export class BotLogic {
             }
         };
 
+        if (params.suitSeeds) {
+            // Seed with flushed hands logic
+            const suits = ['man', 'pin', 'sou'] as const;
+            for (const suit of suits) {
+                // Try to fill hand with THIS suit + honors
+                const suitIndices: number[] = [];
+                const honorIndices: number[] = [];
+                const otherIndices: number[] = [];
+
+                baseIndices.forEach(idx => {
+                    const t = dealtTiles[idx];
+                    if (t.suit === suit) suitIndices.push(idx);
+                    else if (t.suit === 'z') honorIndices.push(idx);
+                    else otherIndices.push(idx);
+                });
+
+                // Strategy 1: Maximize suit + honors (Honitsu)
+                let attemptIndices = [...suitIndices, ...honorIndices];
+
+                // Fill remaining with random others if needed
+                if (attemptIndices.length < 13) {
+                    const others = [...otherIndices].sort(() => Math.random() - 0.5);
+                    attemptIndices.push(...others.slice(0, 13 - attemptIndices.length));
+                } else {
+                    attemptIndices = attemptIndices.slice(0, 13);
+                }
+
+                // Run specialized search for this suit
+                runHillClimb(attemptIndices, improveSteps);
+
+                // Strategy 2: Maximize suit ONLY (Chinitsu)
+                let chinitsuIndices = [...suitIndices];
+                if (chinitsuIndices.length < 13) {
+                    const others = [...honorIndices, ...otherIndices].sort(() => Math.random() - 0.5);
+                    chinitsuIndices.push(...others.slice(0, 13 - chinitsuIndices.length));
+                } else {
+                    chinitsuIndices = chinitsuIndices.slice(0, 13);
+                }
+                runHillClimb(chinitsuIndices, improveSteps);
+            }
+
+            // Strategy 3: Chiitoitsu (Seven Pairs) Strategy
+            // Identify all pairs in dealtTiles and try to maximize pair count
+            const pairMap: Record<string, number[]> = {};
+            baseIndices.forEach(idx => {
+                const t = dealtTiles[idx];
+                const key = `${t.suit}${t.rank}`;
+                if (!pairMap[key]) pairMap[key] = [];
+                pairMap[key].push(idx);
+            });
+
+            const pairIndices: number[] = [];
+            const singleIndices: number[] = [];
+
+            Object.values(pairMap).forEach(indices => {
+                if (indices.length >= 2) {
+                    // Take first two as pair
+                    pairIndices.push(indices[0], indices[1]);
+                    // Remainder to singles
+                    for (let i = 2; i < indices.length; i++) singleIndices.push(indices[i]);
+                } else {
+                    singleIndices.push(indices[0]);
+                }
+            });
+
+            // If we have many pairs, this is a good candidate
+            if (pairIndices.length >= 8) { // 4 pairs (8 tiles)
+                let chiitoiIndices = [...pairIndices];
+                // Fill rest with strict singles (try to avoid creating triplets if possible, 
+                // but for Chiitoitsu we just need unique tiles mostly, 
+                // wait, Chiitoitsu needs 7 DISTINCT pairs.
+                // If we have 4 of same tile, that's 2 pairs? No. 4 identical tiles = 2 pairs is NOT allowed in standard Chiitoitsu.
+                // Standard Chiitoitsu must use 7 DIFFERENT pairs.
+                // But 4 identical tiles can be considered 2 pairs? No.
+                // Actually most rules say 4 identical tiles cannot form 2 pairs for Chiitoitsu.
+                // So we should pick max 2 per tile type.
+
+                // My pairMap logic above picked 2 if available. 
+                // If 3, picked 2, 1 single.
+                // If 4, picked 2, 2 singles? 
+                // Wait, `values.length >= 2`. indices[0], indices[1].
+                // If 4 tiles, indices: [0,1,2,3]. 
+                // Pushed [0,1]. [2,3] went to singleIndices.
+                // So we only picked 1 pair per tile key. Correct.
+
+                // Now fill the rest to 13.
+                // We have `pairIndices` (2 * N tiles).
+                // We need 13 tiles total.
+                const needed = 13 - chiitoiIndices.length;
+                if (needed > 0) {
+                    // Prefer tiles that are NOT already in pairIndices (to avoid triplets)
+                    // But we already separated them.
+                    const others = [...singleIndices].sort(() => Math.random() - 0.5);
+                    chiitoiIndices.push(...others.slice(0, needed));
+                } else if (needed < 0) {
+                    // We have too many pairs? (e.g. 7 pairs = 14 tiles? No, hand is 13)
+                    // Tennpai for Chiitoitsu is 6 pairs + 1 single = 13 tiles.
+                    // If we have 7 pairs (14 tiles) in dealt tiles... we need to discard one.
+                    // The input `dealtTiles` might be 14 (if it's turn) but here `dealtTiles` is usually the full pool provided by HandBuilder?
+                    // Verify: HandBuilder passes `dealtTiles` which is usually ~34 tiles?
+                    // No, dealtTiles is the pool of ALL valid tiles for the user to select from?
+                    // Ah, HandBuilder `dealtTiles` indicates the "Starting Hand + Draws"?
+                    // In the supplied JSON: "dealtTiles" has 34 items.
+                    // So we select 13 from 34.
+
+                    // So we just take top 13 from our constructed list.
+                    chiitoiIndices = chiitoiIndices.slice(0, 13);
+                }
+
+                runHillClimb(chiitoiIndices, improveSteps);
+            }
+        }
+
         for (let i = 0; i < attempts; i++) {
+
             const shuffled = [...baseIndices].sort(() => Math.random() - 0.5).slice(0, 13);
             runHillClimb(shuffled, improveSteps);
         }
@@ -211,7 +347,11 @@ export class BotLogic {
         tryAddCandidate(baseIndices.slice(0, 13));
 
         return [...unique.values()]
-            .sort((a, b) => b.score.points - a.score.points || b.waits.length - a.waits.length)
+            .sort((a, b) => {
+                const aTotal = a.score.points + (a.score.quality ?? 0);
+                const bTotal = b.score.points + (b.score.quality ?? 0);
+                return bTotal - aTotal || b.waits.length - a.waits.length;
+            })
             .slice(0, maxCount);
     }
 
@@ -221,7 +361,9 @@ export class BotLogic {
         doraIndicators: Tile[],
         dangerMap: Record<string, number>,
         scoreDiff: number | undefined,
-        difficulty: Difficulty
+        difficulty: Difficulty,
+        discardedTiles: Tile[] = [],
+        poolCounts: Record<string, number> = {}
     ): PotentialScore {
         let bestPoints = -1;
         let bestHan = -1;
@@ -240,14 +382,26 @@ export class BotLogic {
             }
         }
 
-        const quality = evaluateHandQuality(hand, difficulty, doraIndicators, dangerMap, scoreDiff);
+        let quality = evaluateHandQuality(hand, difficulty, doraIndicators, dangerMap, scoreDiff);
+
+        // Apply soft penalty for potential furiten
+        const waitIsFuriten = waits.some(wait => {
+            const discardedCount = discardedTiles.filter(dt => dt.suit === wait.suit && dt.rank === wait.rank).length;
+            const poolCount = poolCounts[`${wait.suit}${wait.rank} `] || 0;
+            return discardedCount >= poolCount;
+        });
+
+        if (waitIsFuriten) {
+            quality -= 5000; // Deduct from search quality but don't ruin actual points
+        }
 
         return {
-            points: Math.max(0, bestPoints) + quality,
+            points: Math.max(0, bestPoints), // Pure mahjong score
             han: Math.max(0, bestHan),
             limit: bestLimit,
             yaku: bestYaku,
-            bestWait
+            bestWait,
+            quality // Separate heuristic score
         };
     }
 
@@ -259,21 +413,47 @@ export class BotLogic {
     public async evaluateMiniGame(
         playerHand: Tile[],
         dealtTiles: Tile[],
-        doraIndicators: Tile[]
+        doraIndicators: Tile[],
+        scoreDiff?: number
     ): Promise<any> {
-        const candidates = this.buildBestCandidates(dealtTiles, doraIndicators, 1, { seatWind: 'EAST', roundWind: 'EAST' }, 'HARD', 0);
+        const candidates = this.buildBestCandidates(
+            dealtTiles,
+            doraIndicators,
+            1,
+            { seatWind: 'EAST', roundWind: 'EAST' },
+            'HARD',
+            scoreDiff
+        );
         const aiBest = candidates[0];
 
         if (!aiBest) return null;
 
+        const poolCounts: Record<string, number> = {};
+        for (const t of dealtTiles) {
+            const key = `${t.suit}${t.rank}`;
+            poolCounts[key] = (poolCounts[key] || 0) + 1;
+        }
+
         let playerResult = null;
         if (playerHand.length === 13) {
-            const waits = this.getWinningTiles(playerHand);
-            const score = await this.evaluatePotentialScore(playerHand, waits, doraIndicators);
+            const rawWaits = this.getWinningTiles(playerHand);
+
+            // Fair Furiten Check for player
+            const playerDiscarded = dealtTiles.filter(t => !playerHand.some(ph => ph.id === t.id));
+            const effectiveWaits = rawWaits.filter(wait => {
+                const discardedCount = playerDiscarded.filter(dt => dt.suit === wait.suit && dt.rank === wait.rank).length;
+                const poolCount = poolCounts[`${wait.suit}${wait.rank} `] || 0;
+                return discardedCount < poolCount;
+            });
+
+            const score = await this.evaluatePotentialScore(playerHand, rawWaits, doraIndicators, {
+                seatWind: 'EAST', // Mini-game default, or from context
+                roundWind: 'EAST'
+            });
             if (score) {
                 playerResult = {
                     hand: playerHand,
-                    waits,
+                    waits: effectiveWaits,
                     han: score.han,
                     points: score.points,
                     yaku: score.yaku,
@@ -293,6 +473,7 @@ export class BotLogic {
             };
         }
 
+        // Rate calculation using pure points + waits bonus
         const playerMetric = this.scoreCandidateForRate({ waits: playerResult.waits, score: playerResult as any });
         const aiMetric = this.scoreCandidateForRate({ waits: aiBest.waits, score: aiBest.score });
 
@@ -310,7 +491,7 @@ export class BotLogic {
                 bestWait: aiBest.score.bestWait
             },
             rate,
-            description: `AI 점수(${aiBest.score.points}) 대비 ${rate}% 효율입니다.`
+            description: rate >= 100 ? 'AI 수준의 훌륭한 조패입니다!' : `AI 결과 대비 ${100 - rate}% 개선 여지가 있습니다.`
         };
     }
 

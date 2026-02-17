@@ -226,13 +226,59 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
                 <div>
                     <span className="font-bold mr-4">선택됨: {selectedTiles.length} / 13</span>
                     <span className={`text-sm font-bold ${tenpai ? 'text-green-400' : 'text-red-400'}`}>
-                        {tenpai ? '텐파이 (청패)' : '텐파이 아님'}
+                        {tenpai ? '텐파이' : '텐파이 아님'}
                     </span>
                     <div className="mt-2 w-full sm:w-56 h-1.5 rounded-full bg-slate-700 overflow-hidden">
                         <div className="h-full bg-gradient-to-r from-cyan-400 to-emerald-400" style={{ width: `${(selectedTiles.length / 13) * 100}%` }} />
                     </div>
+                    {singleMode && !submitted && !loading && selectedTiles.length === 13 && debugMode && (
+                        <div className="flex items-center justify-between rounded-2xl surface-panel p-3 gap-3">
+                            <div className="text-xs text-slate-300">
+                                디버그 모드: 추천 조패를 우선순위별로 확인하고 자동 적용할 수 있습니다.
+                            </div>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => {
+                                        const log = {
+                                            selectedHand: selectedTiles.map(t => `${t.suit}${t.rank}`),
+                                            dealtTiles: dealtTiles.map(t => `${t.suit}${t.rank}`),
+                                            doraIndicators: doraIndicators.map(t => `${t.suit}${t.rank}`),
+                                            selectedIndices: selectedIndices,
+                                            serverScore: serverPotentialScore
+                                        };
+                                        navigator.clipboard.writeText(JSON.stringify(log, null, 2))
+                                            .then(() => alert('현재 선택 패가 클립보드에 복사되었습니다.'))
+                                            .catch(() => alert('복사에 실패했습니다.'));
+                                    }}
+                                    className="px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold whitespace-nowrap"
+                                >
+                                    로그 복사
+                                </button>
+                                <button
+                                    onClick={() => setShowDebugLayer(true)}
+                                    className="px-3 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-sm font-bold whitespace-nowrap"
+                                >
+                                    디버그 추천 보기
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
-                <div className="text-right">
+                <div className="text-right flex flex-col items-end gap-2">
+                    {!submitted && !loading && selectedTiles.length > 0 && (
+                        <button
+                            onClick={() => {
+                                if (window.confirm('선택한 패를 초기화하시겠습니까?')) {
+                                    setSelectedIndices([]);
+                                    setServerPotentialScore(null);
+                                    setServerCandidates([]);
+                                }
+                            }}
+                            className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-sm font-bold shadow-lg border border-rose-400/50 transition-all active:scale-95"
+                        >
+                            선택 초기화
+                        </button>
+                    )}
                     <div className="text-cyan-300 font-mono font-bold">남은 시간: {formatBuildTime(buildTimeRemainingMs)}</div>
                     <div className="text-xs text-slate-300 mt-1">
                         도라: {doraIndicators.length > 0 ? `${doraIndicators.length}장 공개` : '오모테도라 미공개'}
@@ -308,27 +354,37 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
                 </div>
             )}
 
-            {debugMode && !submitted && !loading && (
-                <div className="flex items-center justify-between rounded-2xl surface-panel p-3">
-                    <div className="text-xs text-slate-300">
-                        디버그 모드: 추천 조패를 우선순위별로 확인하고 자동 적용할 수 있습니다.
-                    </div>
-                    <button
-                        onClick={() => setShowDebugLayer(true)}
-                        className="px-3 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-sm font-bold"
-                    >
-                        디버그 추천 보기
-                    </button>
-                </div>
-            )}
-
             {showDebugLayer && (
-                <div className="fixed inset-0 z-[90] bg-black/70 flex items-center justify-center p-4">
-                    <div className="w-full max-w-4xl max-h-[80vh] overflow-y-auto thin-scrollbar glass-panel rounded-2xl p-4 shadow-2xl">
-                        <div className="space-y-3">
+                <div
+                    className="fixed inset-0 z-[90] bg-black/70 flex items-center justify-center p-4"
+                    onClick={() => setShowDebugLayer(false)}
+                >
+                    <div
+                        className="w-full max-w-4xl max-h-[80vh] overflow-y-auto thin-scrollbar glass-panel rounded-2xl p-6 shadow-2xl relative"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <button
+                            onClick={() => setShowDebugLayer(false)}
+                            className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white transition-colors"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+
+                        <div className="space-y-4">
+                            <h2 className="text-xl font-bold text-white mb-2">추천 조패 리스트</h2>
+
                             {(serverCandidates.length === 0) && (
-                                <div className="text-sm text-slate-400">
-                                    {isAnalyzing ? '추천 조패 계산 중...' : '추천 조패를 찾지 못했습니다.'}
+                                <div className="text-center py-8">
+                                    <div className="text-lg text-slate-300 font-medium mb-1">
+                                        {isAnalyzing ? '추천 조패 계산 중...' : '추천 조패를 찾지 못했습니다.'}
+                                    </div>
+                                    {!isAnalyzing && (
+                                        <div className="text-sm text-slate-500">
+                                            현재 선택된 패의 조합으로는 유효한 텐파이 경로를 찾을 수 없습니다.
+                                        </div>
+                                    )}
                                 </div>
                             )}
 
