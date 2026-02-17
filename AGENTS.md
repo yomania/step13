@@ -33,6 +33,9 @@ Prefer placing reusable domain logic in `packages/*` and keeping app-specific wi
 - Test files: `*.test.ts`, colocated with source (example: `packages/core/src/replayMachine.test.ts`).
 - Focus tests on deterministic state transitions, event flows, and scoring edge cases.
 - Run tests before opening a PR, especially when touching shared packages.
+- When making code changes, run the tests that cover the directly affected logic and adjacent integration paths; do not skip impacted test scopes.
+- If no existing test covers the changed behavior, add or update tests first, then run them.
+- In every code-change report/PR, include the exact test commands executed and their results (pass/fail).
 
 ## Commit & Pull Request Guidelines
 - Commit messages should be short, imperative, and scoped (example: `Fix replay step bounds in core machine`).
