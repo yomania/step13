@@ -4,15 +4,17 @@
 
 ```
 packages/bot/
-├── __tests__/
+├── test-data/
 │   ├── logs/                    # 게임 로그 JSON 파일들
 │   │   ├── sample_game_1.json   # Honitsu vs Mixed Hand
 │   │   ├── sample_game_2.json   # Chiitoitsu vs Standard
 │   │   └── sample_game_3.json   # Chinitsu Full Flush
-│   └── log_based.test.ts        # 로그 기반 테스트 로직
+│   └── README.md
 └── src/
     ├── logic.ts                 # BotLogic 구현
-    └── analyze_log.test.ts      # 기존 단일 로그 테스트
+    ├── analyze_log.test.ts
+    ├── log_based.test.ts        # 로그 기반 테스트 로직
+    └── log_based_simple.test.ts
 ```
 
 ## 🎯 목적
@@ -25,7 +27,7 @@ packages/bot/
 
 ## 📝 로그 파일 형식
 
-`__tests__/logs/` 폴더에 JSON 파일을 추가하면 자동으로 테스트에 포함됩니다.
+`test-data/logs/` 폴더에 JSON 파일을 추가하면 자동으로 테스트에 포함됩니다.
 
 ### JSON 스키마
 
@@ -75,19 +77,19 @@ packages/bot/
 ### 전체 테스트 실행
 
 ```bash
-npm run test
+pnpm --filter @step13/bot test
 ```
 
 ### 로그 기반 테스트만 실행
 
 ```bash
-npm run test -- log_based.test.ts
+pnpm --filter @step13/bot test -- log_based.test.ts
 ```
 
 ### Watch 모드로 실행
 
 ```bash
-npm run test -- --watch log_based.test.ts
+pnpm --filter @step13/bot test -- --watch log_based.test.ts
 ```
 
 ## 📊 테스트 항목
@@ -136,7 +138,7 @@ AI 역: Honitsu, Toitoi
 
 ## 🔧 새 로그 추가 방법
 
-1. `__tests__/logs/` 폴더에 새 JSON 파일 생성
+1. `test-data/logs/` 폴더에 새 JSON 파일 생성
 2. 위의 JSON 스키마에 맞춰 데이터 작성
 3. 테스트 실행 - 자동으로 새 로그가 포함됨
 

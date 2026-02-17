@@ -601,8 +601,8 @@ export function SingleMiniGame({ onExit, queryAnalysis, analysisResult, debugMod
                             <div className="text-xs text-emerald-300 mt-2 mb-1">내 대기패</div>
                             <div className="flex flex-wrap gap-1">
                                 {visibleResult.player.waits.map((tile, idx) => (
-                                    <div key={`player-wait-${tile.suit}-${tile.rank}-${idx}`} className="transform scale-90 origin-left-top relative">
-                                        <TileView tile={tile} disabled={true} size="sm" />
+                                    <div key={`player-wait-${tile.suit}-${tile.rank}-${idx}`} className="transform scale-75 origin-left-top relative">
+                                        <TileView tile={tile} disabled={true} size="md" />
                                         {isFuritenWait(tile, visibleResult.player.furitenWaits) && (
                                             <span className="absolute -top-1 -right-1 px-1 py-[1px] rounded bg-rose-700 text-white text-[9px] font-bold leading-none">
                                                 후리텐
@@ -610,6 +610,9 @@ export function SingleMiniGame({ onExit, queryAnalysis, analysisResult, debugMod
                                         )}
                                     </div>
                                 ))}
+                                {visibleResult.player.waits.length === 0 && (
+                                    <span className="text-xs text-slate-400">없음</span>
+                                )}
                             </div>
                             <div className="text-xs text-emerald-300 mt-2 mb-1">내 역</div>
                             {visibleResult.player.yaku.length > 0 ? (
@@ -640,8 +643,8 @@ export function SingleMiniGame({ onExit, queryAnalysis, analysisResult, debugMod
                             <div className="text-xs text-cyan-300 mt-2 mb-1">AI 대기패</div>
                             <div className="flex flex-wrap gap-1">
                                 {visibleResult.ai.waits.map((tile, idx) => (
-                                    <div key={`ai-wait-${tile.suit}-${tile.rank}-${idx}`} className="transform scale-90 origin-left-top relative">
-                                        <TileView tile={tile} disabled={true} size="sm" />
+                                    <div key={`ai-wait-${tile.suit}-${tile.rank}-${idx}`} className="transform scale-75 origin-left-top relative">
+                                        <TileView tile={tile} disabled={true} size="md" />
                                         {isFuritenWait(tile, visibleResult.ai.furitenWaits) && (
                                             <span className="absolute -top-1 -right-1 px-1 py-[1px] rounded bg-rose-700 text-white text-[9px] font-bold leading-none">
                                                 후리텐
@@ -649,6 +652,9 @@ export function SingleMiniGame({ onExit, queryAnalysis, analysisResult, debugMod
                                         )}
                                     </div>
                                 ))}
+                                {visibleResult.ai.waits.length === 0 && (
+                                    <span className="text-xs text-slate-400">없음</span>
+                                )}
                             </div>
                             <div className="text-xs text-cyan-300 mt-2 mb-1">AI 역</div>
                             {visibleResult.ai.yaku.length > 0 ? (
@@ -667,6 +673,14 @@ export function SingleMiniGame({ onExit, queryAnalysis, analysisResult, debugMod
                         </div>
                     </div>
                     <div className="mt-3 rounded-2xl bg-slate-800/70 border border-slate-700 p-3">
+                        <div className="text-xs text-amber-300 mb-2">도라</div>
+                        <div className="flex flex-wrap gap-1 mb-3">
+                            {visibleRound.doraIndicators.map((tile, idx) => (
+                                <div key={`dealt-dora-${tile.id ?? `${tile.suit}-${tile.rank}`}-${idx}`} className="transform scale-90 origin-left-top">
+                                    <TileView tile={tile} disabled={true} size="sm" />
+                                </div>
+                            ))}
+                        </div>
                         <div className="text-xs text-slate-400 mb-2">이번 판 제시 패 (34)</div>
                         <div className="flex flex-wrap gap-1">
                             {sortedVisibleDealtTiles.map((tile, idx) => (
@@ -701,34 +715,6 @@ export function SingleMiniGame({ onExit, queryAnalysis, analysisResult, debugMod
                                     {entry.round}국 · RATE {entry.result.rate}% · {new Date(entry.createdAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
                                 </div>
                                 <div className="text-xs text-slate-400 mt-1">{entry.result.description}</div>
-                                <div className="mt-2">
-                                    <div className="text-[11px] text-amber-300 mb-1">도라 표시패</div>
-                                    <div className="flex flex-wrap gap-1">
-                                        {entry.roundData.doraIndicators.map((tile, idx) => (
-                                            <div key={`history-dora-${entry.id}-${tile.id ?? `${tile.suit}-${tile.rank}`}-${idx}`} className="transform scale-75 origin-left-top">
-                                                <TileView tile={tile} disabled={true} size="sm" />
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                                <div className="mt-2">
-                                    <div className="text-[11px] text-emerald-300 mb-1">내 대기패 ({entry.result.player.waits.length})</div>
-                                    <div className="flex flex-wrap gap-1">
-                                        {entry.result.player.waits.map((tile, idx) => (
-                                            <div key={`history-player-wait-${entry.id}-${tile.suit}-${tile.rank}-${idx}`} className="transform scale-75 origin-left-top relative">
-                                                <TileView tile={tile} disabled={true} size="sm" />
-                                                {isFuritenWait(tile, entry.result.player.furitenWaits) && (
-                                                    <span className="absolute -top-1 -right-1 px-1 py-[1px] rounded bg-rose-700 text-white text-[9px] font-bold leading-none">
-                                                        후리텐
-                                                    </span>
-                                                )}
-                                            </div>
-                                        ))}
-                                        {entry.result.player.waits.length === 0 && (
-                                            <span className="text-[11px] text-slate-500">없음</span>
-                                        )}
-                                    </div>
-                                </div>
                             </button>
                         ))}
                     </div>

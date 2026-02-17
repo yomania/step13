@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { Tile } from '@step13/proto';
 import { evaluateHandQuality, Difficulty } from '@step13/scoring';
-import { BotLogic } from '../src/logic';
+import { BotLogic } from './logic';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -19,6 +19,17 @@ interface GameLog {
     };
 }
 
+function isGameLog(value: unknown): value is GameLog {
+    if (!value || typeof value !== 'object') return false;
+    const candidate = value as Partial<GameLog>;
+    return Array.isArray(candidate.playerHandIds)
+        && Array.isArray(candidate.aiHandIds)
+        && Array.isArray(candidate.dealtTileIds)
+        && Array.isArray(candidate.doraIndicatorIds)
+        && typeof candidate.expectedResult === 'object'
+        && candidate.expectedResult !== null;
+}
+
 function parseTile(id: string): Tile {
     const match = id.match(/([a-z]+)(\d+)/);
     if (!match) throw new Error(`Invalid tile id: ${id}`);
@@ -28,7 +39,7 @@ function parseTile(id: string): Tile {
 }
 
 function loadGameLogs(): GameLog[] {
-    const logsDir = path.join(__dirname, 'logs');
+    const logsDir = path.join(__dirname, '../test-data/logs');
 
     if (!fs.existsSync(logsDir)) {
         console.warn(`로그 디렉토리가 존재하지 않습니다: ${logsDir}`);
@@ -42,7 +53,12 @@ function loadGameLogs(): GameLog[] {
         const filePath = path.join(logsDir, file);
         const content = fs.readFileSync(filePath, 'utf-8');
         try {
-            const log = JSON.parse(content) as GameLog;
+            const parsed = JSON.parse(content) as unknown;
+            if (!isGameLog(parsed)) {
+                console.warn(`로그 스키마가 달라 건너뜁니다: ${file}`);
+                continue;
+            }
+            const log = parsed as GameLog;
             logs.push(log);
         } catch (error) {
             console.error(`로그 파일 파싱 실패: ${file}`, error);

@@ -1,0 +1,484 @@
+{
+    "round": {
+        "dealtTiles": [
+            {
+                "suit": "pin",
+                "rank": 7,
+                "isRed": false,
+                "id": "pin7-2"
+            },
+            {
+                "suit": "man",
+                "rank": 4,
+                "isRed": false,
+                "id": "man4-3"
+            },
+            {
+                "suit": "pin",
+                "rank": 6,
+                "isRed": false,
+                "id": "pin6-1"
+            },
+            {
+                "suit": "z",
+                "rank": 7,
+                "isRed": false,
+                "id": "z7-3"
+            },
+            {
+                "suit": "sou",
+                "rank": 6,
+                "isRed": false,
+                "id": "sou6-1"
+            },
+            {
+                "suit": "man",
+                "rank": 2,
+                "isRed": false,
+                "id": "man2-0"
+            },
+            {
+                "suit": "man",
+                "rank": 9,
+                "isRed": false,
+                "id": "man9-0"
+            },
+            {
+                "suit": "man",
+                "rank": 8,
+                "isRed": false,
+                "id": "man8-0"
+            },
+            {
+                "suit": "pin",
+                "rank": 6,
+                "isRed": false,
+                "id": "pin6-0"
+            },
+            {
+                "suit": "sou",
+                "rank": 6,
+                "isRed": false,
+                "id": "sou6-2"
+            },
+            {
+                "suit": "z",
+                "rank": 6,
+                "isRed": false,
+                "id": "z6-2"
+            },
+            {
+                "suit": "z",
+                "rank": 5,
+                "isRed": false,
+                "id": "z5-0"
+            },
+            {
+                "suit": "man",
+                "rank": 9,
+                "isRed": false,
+                "id": "man9-1"
+            },
+            {
+                "suit": "sou",
+                "rank": 2,
+                "isRed": false,
+                "id": "sou2-3"
+            },
+            {
+                "suit": "sou",
+                "rank": 3,
+                "isRed": false,
+                "id": "sou3-1"
+            },
+            {
+                "suit": "z",
+                "rank": 3,
+                "isRed": false,
+                "id": "z3-2"
+            },
+            {
+                "suit": "pin",
+                "rank": 8,
+                "isRed": false,
+                "id": "pin8-1"
+            },
+            {
+                "suit": "z",
+                "rank": 1,
+                "isRed": false,
+                "id": "z1-0"
+            },
+            {
+                "suit": "z",
+                "rank": 2,
+                "isRed": false,
+                "id": "z2-3"
+            },
+            {
+                "suit": "pin",
+                "rank": 1,
+                "isRed": false,
+                "id": "pin1-0"
+            },
+            {
+                "suit": "man",
+                "rank": 1,
+                "isRed": false,
+                "id": "man1-2"
+            },
+            {
+                "suit": "z",
+                "rank": 3,
+                "isRed": false,
+                "id": "z3-1"
+            },
+            {
+                "suit": "pin",
+                "rank": 4,
+                "isRed": false,
+                "id": "pin4-1"
+            },
+            {
+                "suit": "sou",
+                "rank": 7,
+                "isRed": false,
+                "id": "sou7-2"
+            },
+            {
+                "suit": "z",
+                "rank": 5,
+                "isRed": false,
+                "id": "z5-3"
+            },
+            {
+                "suit": "sou",
+                "rank": 5,
+                "isRed": false,
+                "id": "sou5-3"
+            },
+            {
+                "suit": "sou",
+                "rank": 5,
+                "isRed": false,
+                "id": "sou5-0"
+            },
+            {
+                "suit": "pin",
+                "rank": 7,
+                "isRed": false,
+                "id": "pin7-3"
+            },
+            {
+                "suit": "z",
+                "rank": 1,
+                "isRed": false,
+                "id": "z1-2"
+            },
+            {
+                "suit": "sou",
+                "rank": 7,
+                "isRed": false,
+                "id": "sou7-3"
+            },
+            {
+                "suit": "sou",
+                "rank": 1,
+                "isRed": false,
+                "id": "sou1-2"
+            },
+            {
+                "suit": "man",
+                "rank": 6,
+                "isRed": false,
+                "id": "man6-1"
+            },
+            {
+                "suit": "man",
+                "rank": 7,
+                "isRed": false,
+                "id": "man7-2"
+            },
+            {
+                "suit": "z",
+                "rank": 5,
+                "isRed": false,
+                "id": "z5-1"
+            }
+        ],
+        "doraIndicators": [
+            {
+                "suit": "pin",
+                "rank": 4,
+                "isRed": false,
+                "id": "pin4-3"
+            }
+        ]
+    },
+    "result": {
+        "player": {
+            "hand": [
+                {
+                    "suit": "sou",
+                    "rank": 6,
+                    "isRed": false,
+                    "id": "sou6-2"
+                },
+                {
+                    "suit": "sou",
+                    "rank": 7,
+                    "isRed": false,
+                    "id": "sou7-2"
+                },
+                {
+                    "suit": "sou",
+                    "rank": 5,
+                    "isRed": false,
+                    "id": "sou5-0"
+                },
+                {
+                    "suit": "sou",
+                    "rank": 6,
+                    "isRed": false,
+                    "id": "sou6-1"
+                },
+                {
+                    "suit": "sou",
+                    "rank": 7,
+                    "isRed": false,
+                    "id": "sou7-3"
+                },
+                {
+                    "suit": "sou",
+                    "rank": 5,
+                    "isRed": false,
+                    "id": "sou5-3"
+                },
+                {
+                    "suit": "z",
+                    "rank": 5,
+                    "isRed": false,
+                    "id": "z5-0"
+                },
+                {
+                    "suit": "z",
+                    "rank": 5,
+                    "isRed": false,
+                    "id": "z5-3"
+                },
+                {
+                    "suit": "z",
+                    "rank": 5,
+                    "isRed": false,
+                    "id": "z5-1"
+                },
+                {
+                    "suit": "z",
+                    "rank": 1,
+                    "isRed": false,
+                    "id": "z1-0"
+                },
+                {
+                    "suit": "z",
+                    "rank": 1,
+                    "isRed": false,
+                    "id": "z1-2"
+                },
+                {
+                    "suit": "z",
+                    "rank": 3,
+                    "isRed": false,
+                    "id": "z3-2"
+                },
+                {
+                    "suit": "z",
+                    "rank": 3,
+                    "isRed": false,
+                    "id": "z3-1"
+                }
+            ],
+            "waits": [],
+            "han": 8,
+            "points": 16000,
+            "yaku": [
+                "Honitsu",
+                "Iipeikou",
+                "Yakuhai: z5",
+                "Yakuhai(Seat): z1",
+                "Yakuhai(Round): z1",
+                "Riichi (Auto)"
+            ],
+            "bestWait": {
+                "suit": "z",
+                "rank": 1,
+                "isRed": false
+            }
+        },
+        "ai": {
+            "hand": [
+                {
+                    "suit": "sou",
+                    "rank": 6,
+                    "isRed": false,
+                    "id": "sou6-1"
+                },
+                {
+                    "suit": "sou",
+                    "rank": 6,
+                    "isRed": false,
+                    "id": "sou6-2"
+                },
+                {
+                    "suit": "z",
+                    "rank": 6,
+                    "isRed": false,
+                    "id": "z6-2"
+                },
+                {
+                    "suit": "z",
+                    "rank": 3,
+                    "isRed": false,
+                    "id": "z3-2"
+                },
+                {
+                    "suit": "z",
+                    "rank": 1,
+                    "isRed": false,
+                    "id": "z1-0"
+                },
+                {
+                    "suit": "z",
+                    "rank": 3,
+                    "isRed": false,
+                    "id": "z3-1"
+                },
+                {
+                    "suit": "sou",
+                    "rank": 7,
+                    "isRed": false,
+                    "id": "sou7-2"
+                },
+                {
+                    "suit": "z",
+                    "rank": 5,
+                    "isRed": false,
+                    "id": "z5-3"
+                },
+                {
+                    "suit": "sou",
+                    "rank": 5,
+                    "isRed": false,
+                    "id": "sou5-3"
+                },
+                {
+                    "suit": "sou",
+                    "rank": 5,
+                    "isRed": false,
+                    "id": "sou5-0"
+                },
+                {
+                    "suit": "z",
+                    "rank": 1,
+                    "isRed": false,
+                    "id": "z1-2"
+                },
+                {
+                    "suit": "sou",
+                    "rank": 7,
+                    "isRed": false,
+                    "id": "sou7-3"
+                },
+                {
+                    "suit": "z",
+                    "rank": 5,
+                    "isRed": false,
+                    "id": "z5-1"
+                }
+            ],
+            "waits": [],
+            "han": 6,
+            "points": 12000,
+            "yaku": [
+                "Chiitoitsu",
+                "Honitsu",
+                "Riichi (Auto)"
+            ],
+            "bestWait": {
+                "suit": "z",
+                "rank": 6,
+                "isRed": false
+            }
+        },
+        "rate": 100,
+        "description": "AI 수준의 훌륭한 조패입니다!"
+    },
+    "dealt": [
+        "pin7",
+        "man4",
+        "pin6",
+        "z7",
+        "sou6",
+        "man2",
+        "man9",
+        "man8",
+        "pin6",
+        "sou6",
+        "z6",
+        "z5",
+        "man9",
+        "sou2",
+        "sou3",
+        "z3",
+        "pin8",
+        "z1",
+        "z2",
+        "pin1",
+        "man1",
+        "z3",
+        "pin4",
+        "sou7",
+        "z5",
+        "sou5",
+        "sou5",
+        "pin7",
+        "z1",
+        "sou7",
+        "sou1",
+        "man6",
+        "man7",
+        "z5"
+    ],
+    "doraCheck": [
+        "pin4"
+    ],
+    "playerHand": [
+        "sou6",
+        "sou7",
+        "sou5",
+        "sou6",
+        "sou7",
+        "sou5",
+        "z5",
+        "z5",
+        "z5",
+        "z1",
+        "z1",
+        "z3",
+        "z3"
+    ],
+    "aiHand": [
+        "sou6",
+        "sou6",
+        "z6",
+        "z3",
+        "z1",
+        "z3",
+        "sou7",
+        "z5",
+        "sou5",
+        "sou5",
+        "z1",
+        "sou7",
+        "z5"
+    ]
+}
