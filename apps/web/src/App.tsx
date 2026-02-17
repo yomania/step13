@@ -14,28 +14,11 @@ import { preloadRealTileAssets } from './lib/tileAssets';
 import { AnimatePresence, motion } from 'framer-motion';
 
 type BotDifficulty = 'EASY' | 'MEDIUM' | 'HARD';
-type BotPersonaId = 'easy_relaxed' | 'medium_balanced' | 'medium_flush' | 'hard_defensive' | 'hard_value';
 
-const BOT_PERSONA_OPTIONS: Array<{ id: BotPersonaId; label: string; difficulty: BotDifficulty }> = [
-    { id: 'easy_relaxed', label: '느긋한 입문자', difficulty: 'EASY' },
-    { id: 'medium_balanced', label: '균형형 실전파', difficulty: 'MEDIUM' },
-    { id: 'medium_flush', label: '염색 선호가', difficulty: 'MEDIUM' },
-    { id: 'hard_defensive', label: '철벽 수비가', difficulty: 'HARD' },
-    { id: 'hard_value', label: '고타점 헌터', difficulty: 'HARD' }
-];
-
-const BOT_PERSONA_TO_DIFFICULTY: Record<BotPersonaId, BotDifficulty> = {
-    easy_relaxed: 'EASY',
-    medium_balanced: 'MEDIUM',
-    medium_flush: 'MEDIUM',
-    hard_defensive: 'HARD',
-    hard_value: 'HARD'
-};
-
-const DEFAULT_PERSONA_BY_DIFFICULTY: Record<BotDifficulty, BotPersonaId> = {
-    EASY: 'easy_relaxed',
-    MEDIUM: 'medium_balanced',
-    HARD: 'hard_defensive'
+type BotPersonaOption = {
+    id: string;
+    name: string;
+    difficulty: BotDifficulty;
 };
 
 
@@ -44,6 +27,7 @@ export default function App() {
     const [localState, , actor] = useMachine(gameMachine);
     const [serverState, setServerState] = useState<any>(null);
     const [analysisResult, setAnalysisResult] = useState<any>(null);
+    const [botPersonas, setBotPersonas] = useState<BotPersonaOption[]>([]);
 
     // Pass the actor and a callback to update serverState
     const handleServerStateUpdate = useCallback((newState: any) => {
@@ -54,7 +38,23 @@ export default function App() {
         setAnalysisResult(result);
     }, []);
 
-    const { sendEvent, queryAnalysis } = useGameSocket(actor, handleServerStateUpdate, handleAnalysisResult);
+    const handlePersonaListResult = useCallback((result: any) => {
+        if (!Array.isArray(result?.personas)) return;
+        const personas = result.personas.filter((persona: any) =>
+            persona &&
+            typeof persona.id === 'string' &&
+            typeof persona.name === 'string' &&
+            (persona.difficulty === 'EASY' || persona.difficulty === 'MEDIUM' || persona.difficulty === 'HARD')
+        ) as BotPersonaOption[];
+        setBotPersonas(personas);
+    }, []);
+
+    const { sendEvent, queryAnalysis, queryPersonas } = useGameSocket(
+        actor,
+        handleServerStateUpdate,
+        handleAnalysisResult,
+        handlePersonaListResult
+    );
 
     const [playerId] = useState(`player-${Math.floor(Math.random() * 1000)}`);
     const queryAnalysisWithPlayer = useCallback((query: any) => {
@@ -73,7 +73,7 @@ export default function App() {
     const [showOptions, setShowOptions] = useState(false);
     const [mainMode, setMainMode] = useState<'match' | 'mini'>('match');
     const [botDifficulty, setBotDifficulty] = useState<BotDifficulty>('MEDIUM');
-    const [botPersonaId, setBotPersonaId] = useState<BotPersonaId>('medium_balanced');
+    const [botPersonaId, setBotPersonaId] = useState<string>('');
 
     // Initial connection check effect (mock)
     useEffect(() => {
@@ -94,6 +94,10 @@ export default function App() {
         // Warm image cache early so switching to real skin feels instant.
         preloadRealTileAssets().catch(() => undefined);
     }, []);
+
+    useEffect(() => {
+        queryPersonas({ playerId });
+    }, [queryPersonas, playerId]);
 
     // Helper to abstract state source (Server > Local)
     const context = serverState ? serverState.context : localState.context;
@@ -231,12 +235,19 @@ export default function App() {
     };
 
     const handleAddBot = () => {
-        sendEvent({ type: 'ADD_BOT', difficulty: botDifficulty, personaId: botPersonaId });
+        sendEvent({
+            type: 'ADD_BOT',
+            difficulty: botDifficulty,
+            personaId: botPersonaId || undefined
+        });
     };
 
     const handleBotDifficultyChange = (nextDifficulty: BotDifficulty) => {
         setBotDifficulty(nextDifficulty);
-        setBotPersonaId(DEFAULT_PERSONA_BY_DIFFICULTY[nextDifficulty]);
+        const matched = botPersonas.find((persona) => persona.difficulty === nextDifficulty);
+        if (matched) {
+            setBotPersonaId(matched.id);
+        }
     };
 
     const onSubmitHand = (hand: Tile[], pool: Tile[]) => {
@@ -347,7 +358,11 @@ export default function App() {
 
         if (aiRematchStep === 'addBot') {
             if (!hasBot) {
-                sendEvent({ type: 'ADD_BOT', difficulty: botDifficulty, personaId: botPersonaId });
+                sendEvent({
+                    type: 'ADD_BOT',
+                    difficulty: botDifficulty,
+                    personaId: botPersonaId || undefined
+                });
                 setAiRematchStep('waitBot');
                 return;
             }
@@ -369,8 +384,21 @@ export default function App() {
     }, [aiRematchStep, botDifficulty, botPersonaId, isIdle, context.players, playerId, sendEvent]);
 
     useEffect(() => {
-        setBotDifficulty(BOT_PERSONA_TO_DIFFICULTY[botPersonaId]);
-    }, [botPersonaId]);
+        if (botPersonas.length === 0) return;
+
+        const selected = botPersonas.find((persona) => persona.id === botPersonaId);
+        if (!selected) {
+            const medium = botPersonas.find((persona) => persona.difficulty === 'MEDIUM');
+            const fallback = medium ?? botPersonas[0];
+            setBotPersonaId(fallback.id);
+            setBotDifficulty(fallback.difficulty);
+            return;
+        }
+
+        if (selected.difficulty !== botDifficulty) {
+            setBotDifficulty(selected.difficulty);
+        }
+    }, [botPersonas, botPersonaId, botDifficulty]);
 
     const onAiExitToLobby = () => {
         setShowAiExitMenu(false);
@@ -615,12 +643,16 @@ export default function App() {
                                                 <label className="text-sm font-bold text-slate-300 block mt-3 mb-2">AI 페르소나</label>
                                                 <select
                                                     value={botPersonaId}
-                                                    onChange={(event) => setBotPersonaId(event.target.value as BotPersonaId)}
+                                                    onChange={(event) => setBotPersonaId(event.target.value)}
                                                     className="w-full rounded-xl bg-slate-900/90 border border-slate-600 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-cyan-400"
+                                                    disabled={botPersonas.length === 0}
                                                 >
-                                                    {BOT_PERSONA_OPTIONS.map((persona) => (
+                                                    {botPersonas.length === 0 && (
+                                                        <option value="">페르소나 목록 불러오는 중...</option>
+                                                    )}
+                                                    {botPersonas.map((persona) => (
                                                         <option key={persona.id} value={persona.id}>
-                                                            {persona.label} ({persona.difficulty})
+                                                            {persona.name} ({persona.difficulty})
                                                         </option>
                                                     ))}
                                                 </select>

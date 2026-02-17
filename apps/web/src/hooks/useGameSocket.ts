@@ -4,7 +4,8 @@ import { AnyActorRef } from 'xstate';
 export function useGameSocket(
     _actor: AnyActorRef,
     onStateChange?: (state: any) => void,
-    onAnalysisResult?: (result: any) => void
+    onAnalysisResult?: (result: any) => void,
+    onPersonaListResult?: (result: any) => void
 ) {
     const socketRef = useRef<WebSocket | null>(null);
     const joinPlayerIdRef = useRef<string | null>(null);
@@ -52,6 +53,9 @@ export function useGameSocket(
                 if (data.type === 'ANALYSIS_RESULT') {
                     onAnalysisResult?.(data);
                 }
+                if (data.type === 'PERSONA_LIST_RESULT') {
+                    onPersonaListResult?.(data);
+                }
                 if (data.type === 'REJECTED_EVENT') {
                     console.warn('Server rejected event:', data.reason);
 
@@ -76,7 +80,7 @@ export function useGameSocket(
         return () => {
             socket.close();
         };
-    }, [onStateChange, onAnalysisResult]);
+    }, [onStateChange, onAnalysisResult, onPersonaListResult]);
 
     const sendEvent = useCallback((event: any) => {
         if (event?.type === 'JOIN' && typeof event.playerId === 'string') {
@@ -106,5 +110,17 @@ export function useGameSocket(
         });
     }, [sendEvent]);
 
-    return { sendEvent, queryAnalysis };
+    const queryPersonas = useCallback((payload?: { playerId?: string }) => {
+        const queryPlayerId = typeof payload?.playerId === 'string' ? payload.playerId : null;
+        if (!joinPlayerIdRef.current && queryPlayerId) {
+            joinPlayerIdRef.current = queryPlayerId;
+            sendEvent({ type: 'JOIN', playerId: queryPlayerId });
+        }
+        sendEvent({
+            type: 'QUERY_PERSONAS',
+            playerId: queryPlayerId ?? joinPlayerIdRef.current
+        });
+    }, [sendEvent]);
+
+    return { sendEvent, queryAnalysis, queryPersonas };
 }

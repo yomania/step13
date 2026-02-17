@@ -5,7 +5,7 @@ import { PlayerId, Tile } from '@step13/proto';
 import { WebSocket } from 'ws';
 import { Bot } from './Bot';
 import { calculateScore, calculateShanten, Difficulty } from '@step13/scoring';
-import { getBotPersonaProfile, isBotPersonaProfileId } from '@step13/bot';
+import { getBotPersonaProfile, isBotPersonaProfileId, listBotPersonaProfiles } from '@step13/bot';
 
 const HIDDEN_TILE: Tile = { suit: 'z', rank: 1, isRed: false, id: 'HIDDEN' };
 
@@ -91,6 +91,10 @@ export class GameRoom {
             this.handleAnalysisQuery(playerId, event);
             return;
         }
+        if (event.type === 'QUERY_PERSONAS') {
+            this.handlePersonaListQuery(playerId);
+            return;
+        }
 
         console.log(`Processing event from ${playerId}:`, event.type);
         this.machine.send(event);
@@ -130,6 +134,24 @@ export class GameRoom {
         } catch (e) {
             console.error('Analysis query failed:', e);
         }
+    }
+
+    private handlePersonaListQuery(playerId: PlayerId) {
+        const ws = this.clients.get(playerId);
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+            return;
+        }
+
+        ws.send(JSON.stringify({
+            type: 'PERSONA_LIST_RESULT',
+            personas: listBotPersonaProfiles().map((persona) => ({
+                id: persona.id,
+                name: persona.name,
+                difficulty: persona.difficulty,
+                handBuild: persona.handBuild,
+                discard: persona.discard
+            }))
+        }));
     }
 
     public hasPlayer(playerId: PlayerId): boolean {
