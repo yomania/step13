@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Tile as TileType } from '@step13/proto';
-import { getTileAssetRoot } from '../lib/tileAssets';
+import { getFallbackTileAssetRoot, getTileAssetRoot } from '../lib/tileAssets';
 
 interface TileProps {
     tile: TileType;
@@ -34,8 +34,7 @@ function isHiddenTile(tile: TileType): boolean {
 export function Tile({ tile, onClick, selected, disabled, size = 'md' }: TileProps) {
     const skin = useContext(TileSkinContext);
     const [imageLoaded, setImageLoaded] = useState(false);
-    const [assetExt, setAssetExt] = useState<'svg' | 'png'>('svg');
-    const [errorCount, setErrorCount] = useState(0);
+    const [assetAttempt, setAssetAttempt] = useState(0);
 
     const hidden = isHiddenTile(tile);
 
@@ -62,13 +61,33 @@ export function Tile({ tile, onClick, selected, disabled, size = 'md' }: TilePro
         return `${root}tiles/${folder}/${fileName}`;
     };
 
-    const currentSrc = useMemo(() => getAssetUrl(assetExt), [tile, hidden, assetExt]);
+    const sourceConfig = useMemo(() => {
+        const primaryRoot = getTileAssetRoot();
+        const fallbackRoot = getFallbackTileAssetRoot();
+
+        switch (assetAttempt) {
+            case 0:
+                return { ext: 'svg' as const, root: primaryRoot };
+            case 1:
+                return { ext: 'png' as const, root: primaryRoot };
+            case 2:
+                return { ext: 'svg' as const, root: fallbackRoot };
+            case 3:
+                return { ext: 'png' as const, root: fallbackRoot };
+            default:
+                return { ext: 'png' as const, root: fallbackRoot };
+        }
+    }, [assetAttempt]);
+
+    const currentSrc = useMemo(
+        () => getAssetUrl(sourceConfig.ext, sourceConfig.root),
+        [tile, hidden, sourceConfig]
+    );
 
 
     useEffect(() => {
         setImageLoaded(false);
-        setAssetExt('svg');
-        setErrorCount(0);
+        setAssetAttempt(0);
     }, [tile.suit, tile.rank, tile.isRed, hidden]);
 
     const sizeClasses = {
@@ -104,17 +123,11 @@ export function Tile({ tile, onClick, selected, disabled, size = 'md' }: TilePro
     };
 
     const handleError = () => {
-        if (assetExt === 'svg') {
-            // Priority 1: Try PNG with same root
-            setAssetExt('png');
-        } else if (errorCount === 0) {
-            // Priority 2: Try local fallback root (Reset to SVG)
-            setAssetExt('svg');
-            setErrorCount(1);
-        } else {
-            // Fail
-            setImageLoaded(false);
+        if (assetAttempt < 3) {
+            setAssetAttempt((prev) => prev + 1);
+            return;
         }
+        setImageLoaded(false);
     };
 
     return (

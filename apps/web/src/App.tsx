@@ -27,6 +27,7 @@ export default function App() {
     const [localState, , actor] = useMachine(gameMachine);
     const [serverState, setServerState] = useState<any>(null);
     const [analysisResult, setAnalysisResult] = useState<any>(null);
+    const [hintCandidates, setHintCandidates] = useState<any[]>([]);
     const [botPersonas, setBotPersonas] = useState<BotPersonaOption[]>([]);
 
     // Pass the actor and a callback to update serverState
@@ -36,6 +37,9 @@ export default function App() {
 
     const handleAnalysisResult = useCallback((result: any) => {
         setAnalysisResult(result);
+        if (Array.isArray(result?.candidates)) {
+            setHintCandidates(result.candidates);
+        }
     }, []);
 
     const handlePersonaListResult = useCallback((result: any) => {
@@ -118,14 +122,14 @@ export default function App() {
 
     // Use analysis results from server
     const myWaitKeys = useMemo(() => {
-        if (!analysisResult?.candidates?.[0]) return new Set<string>();
-        return new Set<string>((analysisResult.candidates[0].waits || []).map((t: Tile) => `${t.suit}-${t.rank}`));
-    }, [analysisResult]);
+        if (!hintCandidates[0]) return new Set<string>();
+        return new Set<string>((hintCandidates[0].waits || []).map((t: Tile) => `${t.suit}-${t.rank}`));
+    }, [hintCandidates]);
 
     const myWaitTiles = useMemo(() => {
-        if (!analysisResult?.candidates?.[0]) return [];
-        return analysisResult.candidates[0].waits || [];
-    }, [analysisResult]);
+        if (!hintCandidates[0]) return [];
+        return hintCandidates[0].waits || [];
+    }, [hintCandidates]);
 
     const isFuriten = useMemo(() => {
         return myDiscards.some((tile: Tile) => myWaitKeys.has(`${tile.suit}-${tile.rank}`));
@@ -155,6 +159,7 @@ export default function App() {
     const isIdle = matches('idle');
     const isHandBuild = matches('handBuild');
     const isDoraSelect = matches('doraSelect');
+    const isGameLoop = matches('gameLoop');
 
     const scoreDiff = useMemo(() => {
         const opponentId = context.players.find((p: PlayerId) => p !== playerId);
@@ -282,7 +287,7 @@ export default function App() {
     const [ronOpportunity, setRonOpportunity] = useState<any>(null);
 
     useEffect(() => {
-        if (!matches('gameLoop')) {
+        if (!isGameLoop) {
             setRonOpportunity(null);
             return;
         }
@@ -302,7 +307,7 @@ export default function App() {
             wait: lastDiscard.tile,
             doraIndicators
         });
-    }, [context.lastDiscard, playerId, matches, doraIndicators, context.hands, queryAnalysisWithPlayer]);
+    }, [context.lastDiscard, playerId, isGameLoop, doraIndicators, context.hands, queryAnalysisWithPlayer]);
 
     // Update ronOpportunity when analysisResult comes back for SCORE
     useEffect(() => {
@@ -314,6 +319,12 @@ export default function App() {
             }
         }
     }, [analysisResult]);
+
+    useEffect(() => {
+        if (!isGameLoop) {
+            setHintCandidates([]);
+        }
+    }, [isGameLoop]);
 
     const [showReplay, setShowReplay] = useState(false);
     const [showYakuInfo, setShowYakuInfo] = useState(false);

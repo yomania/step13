@@ -4,7 +4,7 @@ import { Tile } from '@step13/proto';
 
 const t = (suit: Tile['suit'], rank: number): Tile => ({ suit, rank: rank as any, isRed: false });
 
-function runBenchmark() {
+export function runBenchmark() {
     const hand: Tile[] = [
         t('man', 1), t('man', 2), t('man', 3),
         t('pin', 4), t('pin', 5), t('pin', 6),
