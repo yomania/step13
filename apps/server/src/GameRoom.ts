@@ -1,9 +1,12 @@
 
 import { createActor, SnapshotFrom } from 'xstate';
 import { createGameMachine, RulesetName } from '@step13/core';
-import { PlayerId } from '@step13/proto';
+import { PlayerId, Tile } from '@step13/proto';
 import { WebSocket } from 'ws';
 import { Bot } from './Bot';
+import { calculateScore, calculateShanten } from '@step13/scoring';
+
+const HIDDEN_TILE: Tile = { suit: 'z', rank: 1, isRed: false, id: 'HIDDEN' };
 
 type MachineLogic = ReturnType<typeof createGameMachine>;
 
@@ -57,6 +60,19 @@ export class GameRoom {
             return;
         }
 
+        // Translation for Hidden Wall Tiles (Fog of War)
+        if (event.type === 'SELECT_DORA' && typeof event.tileId === 'string' && event.tileId.startsWith('wall-')) {
+            const index = parseInt(event.tileId.split('-')[1], 10);
+            const currentContext = this.machine.getSnapshot().context;
+            const realTile = currentContext.wall?.[index];
+            if (realTile && realTile.id) {
+                console.log(`[Security] Translating wall index ${index} to tileId ${realTile.id}`);
+                event.tileId = realTile.id;
+            } else {
+                console.warn(`[Security] Invalid wall index in SELECT_DORA: ${event.tileId}`);
+            }
+        }
+
         // Basic validation: Ensure event comes from the claimed player
         if (event.playerId && event.playerId !== playerId) {
             console.warn(`Player ${playerId} tried to send event for ${event.playerId}`);
@@ -68,9 +84,44 @@ export class GameRoom {
             return;
         }
 
+        if (event.type === 'QUERY_ANALYSIS') {
+            this.handleAnalysisQuery(playerId, event);
+            return;
+        }
+
         console.log(`Processing event from ${playerId}:`, event.type);
         this.machine.send(event);
         this.emitTelemetry(event.type, playerId);
+    }
+
+    private async handleAnalysisQuery(playerId: PlayerId, event: any) {
+        const { queryId, hand, doraIndicators, options } = event;
+        const result: any = { type: 'ANALYSIS_RESULT', queryId };
+
+        try {
+            if (event.queryType === 'SHANTEN') {
+                result.shanten = calculateShanten(hand);
+            } else if (event.queryType === 'SCORE') {
+                const wait = event.wait;
+                result.scoreResult = calculateScore(hand, wait, false, doraIndicators || [], options || {});
+            } else if (event.queryType === 'AI_HINT') {
+                // Use bot's evaluation logic for hints
+                const tempBot = new Bot('temp', this.machine as any, this.ruleset);
+                const candidates = await tempBot.buildBestCandidatesForQuery(hand, doraIndicators || [], event.difficulty || 'MEDIUM');
+                result.candidates = candidates;
+            } else if (event.queryType === 'MINI_GAME_EVAL') {
+                const tempBot = new Bot('temp', this.machine as any, this.ruleset);
+                const miniResult = await tempBot.evaluateMiniGameForQuery(hand, event.dealtTiles || [], doraIndicators || []);
+                result.miniResult = miniResult;
+            }
+
+            const ws = this.clients.get(playerId);
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify(result));
+            }
+        } catch (e) {
+            console.error('Analysis query failed:', e);
+        }
     }
 
     public hasPlayer(playerId: PlayerId): boolean {
@@ -90,21 +141,120 @@ export class GameRoom {
         console.log('[telemetry]', JSON.stringify({ eventType, playerId, at: Date.now(), roomId: this.roomId }));
     }
 
-    private broadcastState(snapshot: SnapshotFrom<MachineLogic>) {
-        const state = {
+    private sanitizeState(snapshot: SnapshotFrom<MachineLogic>, playerId: PlayerId) {
+        // Deep copy context to ensure we don't mutate the original state or shared references
+        const context = JSON.parse(JSON.stringify(snapshot.context));
+        const isRoundEnd = context.phase === 'ROUND_END' || context.phase === 'MATCH_END';
+
+        // 1. Mask Wall (Fog of War)
+        // Reveal only tiles that are already public (in doraIndicators)
+        if (context.wall) {
+            const revealedIds = new Set((context.doraIndicators || []).map((t: Tile) => t.id));
+            context.wall = context.wall.map((t: Tile, idx: number) => {
+                if (t.id && revealedIds.has(t.id)) {
+                    return t;
+                }
+                // Mask hidden tiles, but provide a predictable ID for interaction (e.g. discard/select)
+                // Note: For SELECT_DORA, we explicitly translate 'wall-{idx}' back to real ID in handleMessage
+                return { ...HIDDEN_TILE, id: `wall-${idx}` };
+            });
+        }
+
+        // 2. Mask Opponent Hands & Pools
+        if (context.hands) {
+            Object.keys(context.hands).forEach((pid) => {
+                if (pid !== playerId && !isRoundEnd) {
+                    context.hands[pid] = context.hands[pid].map((_: Tile, idx: number) => ({
+                        ...HIDDEN_TILE,
+                        id: `hidden-hand-${pid}-${idx}`
+                    }));
+                }
+            });
+        }
+        if (context.pools) {
+            Object.keys(context.pools).forEach((pid) => {
+                if (pid !== playerId && !isRoundEnd) {
+                    context.pools[pid] = context.pools[pid].map((_: Tile, idx: number) => ({
+                        ...HIDDEN_TILE,
+                        id: `hidden-pool-${pid}-${idx}`
+                    }));
+                }
+            });
+        }
+
+        // 3. Mask Opponent Dealt Tiles (Hand Building Phase)
+        if (context.dealtTiles) {
+            Object.keys(context.dealtTiles).forEach((pid) => {
+                if (pid !== playerId) {
+                    // Just show count/hidden tiles
+                    context.dealtTiles[pid] = context.dealtTiles[pid].map((_: Tile, idx: number) => ({
+                        ...HIDDEN_TILE,
+                        id: `hidden-dealt-${pid}-${idx}`
+                    }));
+                }
+            });
+        }
+
+        // 4. Sanitize Event Log (Prevent history leaks)
+        if (context.eventLog) {
+            context.eventLog = context.eventLog.map((event: any) => {
+                // Mask START_MATCH details
+                if (event.type === 'START_MATCH') {
+                    const sanitizedEvent = { ...event };
+
+                    // Mask seed
+                    if (sanitizedEvent.seed !== undefined) {
+                        sanitizedEvent.seed = 0;
+                    }
+
+                    // Mask dealtTiles
+                    if (sanitizedEvent.dealtTiles) {
+                        const sanitizedDealt = { ...sanitizedEvent.dealtTiles };
+                        Object.keys(sanitizedDealt).forEach((pid) => {
+                            if (pid !== playerId) {
+                                sanitizedDealt[pid] = sanitizedDealt[pid].map((_: Tile, idx: number) => ({
+                                    ...HIDDEN_TILE,
+                                    id: `hidden-dealt-log-${pid}-${idx}`
+                                }));
+                            }
+                        });
+                        sanitizedEvent.dealtTiles = sanitizedDealt;
+                    }
+                    return sanitizedEvent;
+                }
+
+                // Mask SUBMIT_HAND details for opponents until round end
+                if (event.type === 'SUBMIT_HAND' && event.playerId !== playerId && !isRoundEnd) {
+                    return {
+                        ...event,
+                        hand: event.hand.map((_: Tile, idx: number) => ({ ...HIDDEN_TILE, id: `hidden-hand-log-${idx}` })),
+                        pool: event.pool.map((_: Tile, idx: number) => ({ ...HIDDEN_TILE, id: `hidden-pool-log-${idx}` }))
+                    };
+                }
+
+                return event;
+            });
+        }
+
+        // 5. Mask Seeds & Sensitive Metadata
+        if (context.deterministicSeed !== undefined) {
+            context.deterministicSeed = null;
+        }
+
+        return {
             value: snapshot.value,
-            context: snapshot.context,
-            // Add other needed metadata
+            context: context
         };
+    }
 
-        const message = JSON.stringify({
-            type: 'UPDATE',
-            state: state
-        });
-
-        this.clients.forEach((ws) => {
+    private broadcastState(snapshot: SnapshotFrom<MachineLogic>) {
+        this.clients.forEach((ws, playerId) => {
             if (ws.readyState === WebSocket.OPEN) {
-                ws.send(message);
+                const sanitizedState = this.sanitizeState(snapshot, playerId);
+                ws.send(JSON.stringify({
+                    type: 'UPDATE',
+                    state: sanitizedState
+                }));
             }
         });
     }

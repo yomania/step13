@@ -2,11 +2,17 @@
     "name": "@step13/bot",
     "version": "0.1.0",
     "private": true,
-    "main": "./src/index.ts",
-    "types": "./src/index.ts",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+        }
+    },
     "scripts": {
-        "build": "echo 'No build step for bot yet'",
-        "dev": "echo 'No dev step for bot yet'",
+        "build": "tsc",
+        "dev": "tsc --watch",
         "test": "vitest"
     },
     "dependencies": {

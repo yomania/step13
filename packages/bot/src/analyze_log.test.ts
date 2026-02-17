@@ -2,28 +2,38 @@
 import { describe, it, expect } from 'vitest';
 import { Tile } from '../../proto/src';
 import { evaluateHandQuality, Difficulty } from '../../scoring/src';
+import { buildBestCandidates } from '../../../apps/web/src/lib/handAnalysis';
 
 function parseTile(id: string): Tile {
     // Format: "pin1", "z6", "man5"
     const match = id.match(/([a-z]+)(\d+)/);
     if (!match) throw new Error(`Invalid tile id: ${id}`);
     const suit = match[1] as any;
-    const rank = parseInt(match[2], 10);
+    const rank = parseInt(match[2], 10) as any; // Cast to any to avoid rank range lint
     return { suit, rank, isRed: false };
 }
 
 describe('Analyze User Log', () => {
-    it('compares Player Hand (Honitsu) vs AI Hand (Chiitoitsu)', () => {
-        const playerHandIds = [
-            "z7", "z7", "z2", "z2", "z3", "z3",
-            "pin2", "pin2", "pin7", "pin7", "pin4", "pin4",
-            "z4"
-        ];
-        const aiHandIds = [
-            "sou5", "pin4", "man8", "pin4", "sou5", "sou4",
-            "man1", "man1", "pin2", "man9", "man9", "pin2", "sou4"
-        ];
+    const playerHandIds = [
+        "z7", "z7", "z2", "z2", "z3", "z3",
+        "pin2", "pin2", "pin7", "pin7", "pin4", "pin4",
+        "z4"
+    ];
+    const aiHandIds = [
+        "sou5", "pin4", "man8", "pin4", "sou5", "sou4",
+        "man1", "man1", "pin2", "man9", "man9", "pin2", "sou4"
+    ];
 
+    const dealtTileIds = [
+        "pin1", "z6", "man5", "sou5", "z4", "z2", "pin4", "man8", "sou2", "z3",
+        "man7", "man3", "pin8", "pin4", "sou8", "pin7", "sou5", "sou4", "man1", "man1",
+        "z7", "pin7", "pin2", "sou3", "man9", "z7", "man9", "z7", "z3", "pin2",
+        "z2", "pin6", "pin5", "sou4"
+    ];
+
+    const doraIndicatorIds = ["pin1"];
+
+    it('compares Player Hand (Honitsu) vs AI Hand (Chiitoitsu)', () => {
         const playerHand = playerHandIds.map(parseTile);
         const aiHand = aiHandIds.map(parseTile);
 
@@ -36,5 +46,23 @@ describe('Analyze User Log', () => {
         console.log(`AI Score (Mixed): ${aiScore}`);
 
         expect(playerScore).toBeGreaterThan(aiScore);
+    });
+
+    it('finds high-value Honitsu hand from user log using improved search', () => {
+        const dealtTiles = dealtTileIds.map(parseTile);
+        const doraIndicators = doraIndicatorIds.map(parseTile);
+
+        // Run search with HARD difficulty
+        const candidates = buildBestCandidates(dealtTiles, doraIndicators, 8, {}, 'HARD');
+
+        console.log(`Found ${candidates.length} candidates`);
+        candidates.forEach((c, idx) => {
+            console.log(`Candidate ${idx}: ${c.score.han} han, ${c.score.points} pts, Yaku: ${c.score.yaku.join(', ')}`);
+        });
+
+        // The best candidate should ideally be the Honitsu hand or better
+        const best = candidates[0];
+        expect(best.score.yaku).toContain('Honitsu');
+        expect(best.score.han).toBeGreaterThanOrEqual(8);
     });
 });

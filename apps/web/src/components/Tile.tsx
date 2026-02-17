@@ -23,7 +23,17 @@ export function TileSkinProvider({ skin, children }: TileSkinProviderProps) {
     return <TileSkinContext.Provider value={skin}>{children}</TileSkinContext.Provider>;
 }
 
+// Helper to detect hidden tiles (Fog of War)
+function isHiddenTile(tile: TileType): boolean {
+    if (!tile.id) return false;
+    return tile.id === 'HIDDEN' || tile.id.startsWith('wall-') || tile.id.startsWith('hidden-');
+}
+
 function getRealTileAsset(tile: TileType): string {
+    if (isHiddenTile(tile)) {
+        return getRealTileAssetUrl('Back.png');
+    }
+
     if (tile.suit === 'z') {
         const honors = ['Ton', 'Nan', 'Shaa', 'Pei', 'Haku', 'Hatsu', 'Chun'];
         return getRealTileAssetUrl(`${honors[tile.rank - 1]}.png`);
@@ -43,9 +53,13 @@ export function Tile({ tile, onClick, selected, disabled, size = 'md' }: TilePro
     const skin = useContext(TileSkinContext);
     const [imageLoaded, setImageLoaded] = useState(false);
     const [useFallbackSrc, setUseFallbackSrc] = useState(false);
-    const realAssetSrc = useMemo(() => getRealTileAsset(tile), [tile]);
+    const hidden = isHiddenTile(tile);
+    const realAssetSrc = useMemo(() => getRealTileAsset(tile), [tile, hidden]);
+
     const fallbackSrc = useMemo(() => {
         const localRoot = getFallbackTileAssetRoot();
+        if (hidden) return getRealTileAssetUrl('Back.png', localRoot);
+
         if (tile.suit === 'z') {
             const honors = ['Ton', 'Nan', 'Shaa', 'Pei', 'Haku', 'Hatsu', 'Chun'];
             return getRealTileAssetUrl(`${honors[tile.rank - 1]}.png`, localRoot);
@@ -59,7 +73,8 @@ export function Tile({ tile, onClick, selected, disabled, size = 'md' }: TilePro
         const base = `${suitPrefix[tile.suit as Exclude<TileType['suit'], 'z'>]}${tile.rank}`;
         const doraSuffix = tile.isRed && tile.rank === 5 ? '-Dora' : '';
         return getRealTileAssetUrl(`${base}${doraSuffix}.png`, localRoot);
-    }, [tile]);
+    }, [tile, hidden]);
+
     const resolvedSrc = useFallbackSrc ? fallbackSrc : realAssetSrc;
 
     useEffect(() => {
@@ -83,6 +98,7 @@ export function Tile({ tile, onClick, selected, disabled, size = 'md' }: TilePro
     };
 
     const getDisplayRank = () => {
+        if (hidden) return '?';
         if (tile.suit === 'z') {
             return ['동', '남', '서', '북', '백', '발', '중'][tile.rank - 1];
         }
@@ -90,6 +106,7 @@ export function Tile({ tile, onClick, selected, disabled, size = 'md' }: TilePro
     };
 
     const getDisplaySuit = () => {
+        if (hidden) return 'BACK';
         switch (tile.suit) {
             case 'man': return '만';
             case 'pin': return '통';
@@ -110,8 +127,8 @@ export function Tile({ tile, onClick, selected, disabled, size = 'md' }: TilePro
                 shadow-md transition-all
                 ${selected ? 'border-yellow-400 -translate-y-2' : 'border-slate-300'}
                 ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
-                ${skin === 'classic' ? 'bg-slate-100 hover:bg-white' : 'bg-slate-200/90 hover:bg-slate-100'}
-                ${skin === 'classic' ? suitColors[tile.suit] : 'text-slate-900'}
+                ${skin === 'classic' ? (hidden ? 'bg-slate-300' : 'bg-slate-100 hover:bg-white') : 'bg-slate-200/90 hover:bg-slate-100'}
+                ${skin === 'classic' ? (hidden ? 'text-slate-500' : suitColors[tile.suit]) : 'text-slate-900'}
                 font-bold
             `}
         >
@@ -123,7 +140,7 @@ export function Tile({ tile, onClick, selected, disabled, size = 'md' }: TilePro
                     </div>
                     <img
                         src={resolvedSrc}
-                        alt={`${tile.suit}-${tile.rank}`}
+                        alt={hidden ? 'Hidden Tile' : `${tile.suit}-${tile.rank}`}
                         onLoad={() => setImageLoaded(true)}
                         onError={() => {
                             if (!useFallbackSrc && fallbackSrc !== realAssetSrc) {
@@ -140,8 +157,14 @@ export function Tile({ tile, onClick, selected, disabled, size = 'md' }: TilePro
                 </div>
             ) : (
                 <div className="flex flex-col items-center leading-none">
-                    <span>{getDisplayRank()}</span>
-                    <span className="text-[10px] uppercase">{getDisplaySuit()}</span>
+                    {hidden ? (
+                        <span className="text-xs">BACK</span>
+                    ) : (
+                        <>
+                            <span>{getDisplayRank()}</span>
+                            <span className="text-[10px] uppercase">{getDisplaySuit()}</span>
+                        </>
+                    )}
                 </div>
             )}
         </button>

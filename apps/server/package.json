@@ -13,6 +13,7 @@
     "@step13/core": "workspace:*",
     "@step13/proto": "workspace:*",
     "@step13/scoring": "workspace:*",
+    "@step13/bot": "workspace:*",
     "dotenv": "^16.0.0",
     "fastify": "^4.20.0",
     "xstate": "^5.28.0"

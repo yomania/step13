@@ -2,6 +2,7 @@ import { AnyActorRef } from 'xstate';
 import { PlayerId, Tile } from '@step13/proto';
 import { calculateScore, calculateShanten } from '@step13/scoring';
 import { createEngineForRuleset, RulesetName } from '@step13/core';
+import { BotLogic } from '@step13/bot';
 
 const SCORE_OPTIONS = {
     requireManganMinimum: true,
@@ -19,15 +20,29 @@ export class Bot {
     private preparedHand: Tile[] | null = null;
     private preparedPool: Tile[] | null = null;
     private preparingHand: boolean = false;
+    private logic: BotLogic;
 
     constructor(id: PlayerId, actor: AnyActorRef, ruleset: RulesetName = 'classic') {
         this.id = id;
         this.actor = actor;
         this.rulesEngine = createEngineForRuleset(ruleset);
+        this.logic = new BotLogic(id, 'HARD');
         this.actor.subscribe((snapshot) => {
             this.state = snapshot;
             this.decide();
         });
+    }
+
+    public buildBestCandidatesForQuery(dealtTiles: Tile[], doraIndicators: Tile[], difficulty: any = 'MEDIUM') {
+        return this.logic.buildBestCandidates(dealtTiles, doraIndicators, 8, {}, difficulty);
+    }
+
+    public getWinningTilesForQuery(hand: Tile[]) {
+        return this.logic.getWinningTiles(hand);
+    }
+
+    public evaluateMiniGameForQuery(playerHand: Tile[], dealtTiles: Tile[], doraIndicators: Tile[]) {
+        return this.logic.evaluateMiniGame(playerHand, dealtTiles, doraIndicators);
     }
 
     private decide() {

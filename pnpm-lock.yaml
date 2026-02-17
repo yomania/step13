@@ -26,6 +26,9 @@ importers:
       '@fastify/websocket':
         specifier: ^9.0.0
         version: 9.0.0
+      '@step13/bot':
+        specifier: workspace:*
+        version: link:../../packages/bot
       '@step13/core':
         specifier: workspace:*
         version: link:../../packages/core

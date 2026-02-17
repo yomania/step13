@@ -1,0 +1,37 @@
+
+ RUN  v1.6.1 /home/dreamdh/works/git/step13/packages/bot
+
+stdout | runBenchmark (/home/dreamdh/works/git/step13/packages/scoring/src/benchmark.ts:21:13)
+10000 iterations took 529.4922ms
+
+stdout | runBenchmark (/home/dreamdh/works/git/step13/packages/scoring/src/benchmark.ts:22:13)
+Average: 0.052949220000000005ms
+
+stdout | runBenchmark (/home/dreamdh/works/git/step13/packages/scoring/dist/index.js:619:11)
+10000 iterations took 520.9394990000001ms
+
+stdout | runBenchmark (/home/dreamdh/works/git/step13/packages/scoring/dist/index.js:620:11)
+Average: 0.052093949900000006ms
+
+stdout | src/analyze_log.test.ts > Analyze User Log > compares Player Hand (Honitsu) vs AI Hand (Chiitoitsu)
+Player Score (Honitsu): 33300
+AI Score (Mixed): 22950
+
+stdout | src/analyze_log.test.ts > Analyze User Log > finds high-value Honitsu hand from user log using improved search
+Found 8 candidates
+Candidate 0: 8 han, 16000 pts, Yaku: Chiitoitsu, Honitsu, Dora 2, Riichi (Auto)
+Candidate 1: 5 han, 8000 pts, Yaku: Pinfu, Iipeikou, Dora 2, Riichi (Auto)
+Candidate 2: 5 han, 8000 pts, Yaku: Chiitoitsu, Dora 2, Riichi (Auto)
+Candidate 3: 4 han, 0 pts, Yaku: Yakuhai: z7, Dora 2, Riichi (Auto)
+Candidate 4: 4 han, 0 pts, Yaku: Yakuhai: z7, Dora 2, Riichi (Auto)
+Candidate 5: 4 han, 0 pts, Yaku: Dora 3, Riichi (Auto)
+Candidate 6: 4 han, 0 pts, Yaku: Yakuhai: z7, Dora 2, Riichi (Auto)
+Candidate 7: 3 han, 0 pts, Yaku: Yakuhai: z7, Dora 1, Riichi (Auto)
+
+ ✓ src/analyze_log.test.ts  (2 tests) 54162ms
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  02:59:32
+   Duration  55.72s (transform 107ms, setup 0ms, collect 1.18s, tests 54.16s, environment 0ms, prepare 75ms)
+

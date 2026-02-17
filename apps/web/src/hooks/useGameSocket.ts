@@ -1,7 +1,11 @@
 import { useEffect, useRef } from 'react';
 import { AnyActorRef } from 'xstate';
 
-export function useGameSocket(_actor: AnyActorRef, onStateChange?: (state: any) => void) {
+export function useGameSocket(
+    _actor: AnyActorRef,
+    onStateChange?: (state: any) => void,
+    onAnalysisResult?: (result: any) => void
+) {
     const socketRef = useRef<WebSocket | null>(null);
     const joinPlayerIdRef = useRef<string | null>(null);
     const pendingEventsRef = useRef<any[]>([]);
@@ -45,6 +49,9 @@ export function useGameSocket(_actor: AnyActorRef, onStateChange?: (state: any) 
                 if (data.type === 'SYNC' || data.type === 'UPDATE') {
                     onStateChange?.(data.state);
                 }
+                if (data.type === 'ANALYSIS_RESULT') {
+                    onAnalysisResult?.(data);
+                }
                 if (data.type === 'REJECTED_EVENT') {
                     console.warn('Server rejected event:', data.reason);
 
@@ -86,5 +93,13 @@ export function useGameSocket(_actor: AnyActorRef, onStateChange?: (state: any) 
         }
     };
 
-    return { sendEvent };
+    const queryAnalysis = (query: any) => {
+        sendEvent({
+            ...query,
+            type: 'QUERY_ANALYSIS',
+            queryId: Math.random().toString(36).substring(7)
+        });
+    };
+
+    return { sendEvent, queryAnalysis };
 }

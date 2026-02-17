@@ -1,22 +1,24 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Tile as TileType, Wind } from '@step13/proto';
 import { Tile } from './Tile';
-import { calculateScore } from '@step13/scoring';
-import { CandidateEvaluation, SCORE_OPTIONS, buildBestCandidates, evaluatePotentialScore, getWinningTiles } from '../lib/handAnalysis';
 
 interface HandBuilderProps {
     dealtTiles: TileType[];
+    initialSelectedIndices?: number[];
+    doraIndicators: TileType[];
     onSubmit: (hand: TileType[], pool: TileType[]) => void;
+    onQueryAnalysis?: (query: any) => void;
+    analysisResult?: any;
+    loading?: boolean;
     submitted?: boolean;
     opponentSubmitted?: boolean;
     buildTimeRemainingMs?: number | null;
-    doraIndicators?: TileType[];
     debugMode?: boolean;
     singleMode?: boolean;
-    loading?: boolean;
     submitActionLabel?: string;
     loadingLabel?: string;
     seatWind?: Wind;
+    scoreDiff?: number;
 }
 
 function toKoreanLimit(limit: string): string {
@@ -109,53 +111,75 @@ function windToKorean(wind: Wind): string {
     return map[wind];
 }
 
-function tileToKoreanLabel(tile: TileType): string {
-    if (tile.suit === 'z') {
-        const honors = ['동', '남', '서', '북', '백', '발', '중'];
-        return honors[tile.rank - 1] ?? `${tile.rank}자`;
-    }
-    const suitMap: Record<'man' | 'pin' | 'sou', string> = {
-        man: '만',
-        pin: '통',
-        sou: '삭'
-    };
-    return `${tile.rank}${suitMap[tile.suit]}`;
-}
 
-export function HandBuilder({
+
+export const HandBuilder: React.FC<HandBuilderProps> = ({
     dealtTiles,
+    initialSelectedIndices = [],
+    doraIndicators = [],
     onSubmit,
+    onQueryAnalysis,
+    analysisResult,
+    loading = false,
     submitted = false,
     opponentSubmitted = false,
     buildTimeRemainingMs = null,
-    doraIndicators = [],
     debugMode = false,
     singleMode = false,
-    loading = false,
     submitActionLabel,
     loadingLabel = '로딩 중...',
-    seatWind
-}: HandBuilderProps) {
-    const [selectedIndices, setSelectedIndices] = useState<number[]>([]);
+    seatWind,
+    scoreDiff
+}) => {
+    const [selectedIndices, setSelectedIndices] = useState<number[]>(initialSelectedIndices);
     const [showDebugLayer, setShowDebugLayer] = useState(false);
-    const [debugCandidates, setDebugCandidates] = useState<CandidateEvaluation[]>([]);
-    const [debugCandidatesLoading, setDebugCandidatesLoading] = useState(false);
-    const debugWorkerRef = useRef<Worker | null>(null);
-    const debugRequestIdRef = useRef(0);
+
+    // Analysis State from server
+    const [serverPotentialScore, setServerPotentialScore] = useState<any>(null);
+    const [serverCandidates, setServerCandidates] = useState<any[]>([]);
+    const [isAnalyzing, setIsAnalyzing] = useState(false);
 
     useEffect(() => {
         setSelectedIndices([]);
         setShowDebugLayer(false);
-        setDebugCandidates([]);
-        setDebugCandidatesLoading(false);
+        setServerPotentialScore(null);
+        setServerCandidates([]);
     }, [dealtTiles]);
 
+    const selectedTiles = useMemo(() => selectedIndices.map((index) => dealtTiles[index]), [selectedIndices, dealtTiles]);
+
+    // Handle incoming analysis results
     useEffect(() => {
-        return () => {
-            debugWorkerRef.current?.terminate();
-            debugWorkerRef.current = null;
-        };
-    }, []);
+        if (!analysisResult) return;
+
+        if (analysisResult.scoreResult) {
+            setServerPotentialScore(analysisResult.scoreResult);
+        }
+        if (analysisResult.candidates) {
+            setServerCandidates(analysisResult.candidates);
+            setIsAnalyzing(false);
+        }
+    }, [analysisResult]);
+
+    // Request analysis when selection changes (Debounced)
+    useEffect(() => {
+        if (!onQueryAnalysis || submitted) return;
+
+        const timer = setTimeout(() => {
+            // In 17-step, we always want to know if it's Tenpai (shanten -1) and what's the best score
+            // We'll bundle these into a single custom server query or multiple
+            onQueryAnalysis({
+                queryType: 'AI_HINT', // Heavy lifting
+                hand: selectedTiles,
+                doraIndicators,
+                difficulty: 'HARD',
+                scoreDiff
+            });
+            setIsAnalyzing(true);
+        }, 500);
+
+        return () => clearTimeout(timer);
+    }, [selectedIndices, onQueryAnalysis, submitted, doraIndicators, scoreDiff]);
 
     const sortedTilesWithIndices = useMemo(() => {
         return dealtTiles
@@ -166,86 +190,8 @@ export function HandBuilder({
             });
     }, [dealtTiles]);
 
-    const selectedTiles = useMemo(() => selectedIndices.map((index) => dealtTiles[index]), [selectedIndices, dealtTiles]);
-
-    const winningTiles = useMemo(() => getWinningTiles(selectedTiles), [selectedTiles]);
-    const waitEvaluations = useMemo(() => {
-        return winningTiles.map((wait) => {
-            const score = calculateScore(selectedTiles, wait, false, doraIndicators, {
-                ...SCORE_OPTIONS,
-                seatWind,
-                roundWind: 'EAST'
-            });
-            return { wait, score };
-        });
-    }, [winningTiles, selectedTiles, doraIndicators, seatWind]);
-    const insufficientWaits = useMemo(
-        () => waitEvaluations.filter((item) => item.score.points === 0),
-        [waitEvaluations]
-    );
-    const validWaits = useMemo(
-        () => waitEvaluations.filter((item) => item.score.points > 0),
-        [waitEvaluations]
-    );
-    const potentialScoreWithWind = useMemo(
-        () => evaluatePotentialScore(selectedTiles, winningTiles, doraIndicators, { seatWind, roundWind: 'EAST' }),
-        [selectedTiles, winningTiles, doraIndicators, seatWind]
-    );
-
-    useEffect(() => {
-        if (!debugMode || submitted || !showDebugLayer) return;
-        setDebugCandidatesLoading(true);
-
-        const currentRequestId = ++debugRequestIdRef.current;
-        const worker = new Worker(new URL('../workers/aiCandidateWorker.ts', import.meta.url), { type: 'module' });
-        debugWorkerRef.current?.terminate();
-        debugWorkerRef.current = worker;
-
-        worker.onmessage = (
-            event: MessageEvent<{ type: 'PREFETCH_RESULT'; requestId: number; candidate: CandidateEvaluation | null; candidates?: CandidateEvaluation[] }>
-        ) => {
-            const payload = event.data;
-            if (payload.type !== 'PREFETCH_RESULT') return;
-            if (payload.requestId !== currentRequestId) return;
-            setDebugCandidates(payload.candidates ?? (payload.candidate ? [payload.candidate] : []));
-            setDebugCandidatesLoading(false);
-            worker.terminate();
-            if (debugWorkerRef.current === worker) {
-                debugWorkerRef.current = null;
-            }
-        };
-
-        worker.onerror = () => {
-            // Worker fallback: keep functionality by using local calculation.
-            const next = buildBestCandidates(dealtTiles, doraIndicators, 8, { seatWind, roundWind: 'EAST' });
-            setDebugCandidates(next);
-            setDebugCandidatesLoading(false);
-            worker.terminate();
-            if (debugWorkerRef.current === worker) {
-                debugWorkerRef.current = null;
-            }
-        };
-
-        worker.postMessage({
-            type: 'PREFETCH',
-            requestId: currentRequestId,
-            dealtTiles,
-            doraIndicators,
-            maxCount: 8,
-            seatWind: seatWind ?? 'EAST',
-            roundWind: 'EAST'
-        });
-
-        return () => {
-            worker.terminate();
-            if (debugWorkerRef.current === worker) {
-                debugWorkerRef.current = null;
-            }
-        };
-    }, [debugMode, submitted, showDebugLayer, dealtTiles, doraIndicators, seatWind]);
-
-    const tenpai = winningTiles.length > 0;
-    const isMangan = potentialScoreWithWind ? potentialScoreWithWind.points >= 8000 : false;
+    const tenpai = serverPotentialScore && serverPotentialScore.points > 0;
+    const isMangan = serverPotentialScore ? serverPotentialScore.points >= 8000 : false;
     const canSubmit = tenpai && !submitted && !loading;
 
     const toggleTile = (originalIndex: number) => {
@@ -261,7 +207,7 @@ export function HandBuilder({
         }
     };
 
-    const applyCandidate = (candidate: CandidateEvaluation) => {
+    const applyCandidate = (candidate: any) => {
         if (submitted || loading) return;
         setSelectedIndices(candidate.indices);
         setShowDebugLayer(false);
@@ -304,21 +250,21 @@ export function HandBuilder({
                             <Tile tile={windToTile(seatWind)} disabled={true} size="sm" />
                         </div>
                     )}
-                    {tenpai && potentialScoreWithWind && (
-                        <div className="text-emerald-300 text-sm font-bold mt-1">현재 판수: {potentialScoreWithWind.han}판</div>
+                    {tenpai && serverPotentialScore && (
+                        <div className="text-emerald-300 text-sm font-bold mt-1">현재 판수: {serverPotentialScore.han}판</div>
                     )}
-                    {tenpai && potentialScoreWithWind && (
+                    {tenpai && serverPotentialScore && (
                         <>
                             <div className="text-yellow-400 font-bold">
-                                예상: ({potentialScoreWithWind.han}/5판) {potentialScoreWithWind.points}점
-                                {potentialScoreWithWind.limit && (
-                                    <span className="ml-2 px-2 py-0.5 bg-red-600 text-white text-xs rounded animate-pulse">{toKoreanLimit(potentialScoreWithWind.limit)}</span>
+                                예상: ({serverPotentialScore.han}/5판) {serverPotentialScore.points}점
+                                {serverPotentialScore.limit && (
+                                    <span className="ml-2 px-2 py-0.5 bg-red-600 text-white text-xs rounded animate-pulse">{toKoreanLimit(serverPotentialScore.limit)}</span>
                                 )}
                             </div>
                             <div className="text-xs text-gray-400">(현재판수/최소화료판수, 최대 타점 기준)</div>
-                            {potentialScoreWithWind.yaku.length > 0 && (
+                            {serverPotentialScore.yaku.length > 0 && (
                                 <div className="flex flex-wrap justify-end gap-1 mt-1 max-w-[360px] ml-auto">
-                                    {potentialScoreWithWind.yaku.map((yaku) => (
+                                    {serverPotentialScore.yaku.map((yaku: string) => (
                                         <span key={yaku} className="px-2 py-0.5 text-[10px] rounded bg-blue-900/60 border border-blue-700 text-blue-200">
                                             {toKoreanYaku(yaku)}
                                         </span>
@@ -351,25 +297,14 @@ export function HandBuilder({
 
             {tenpai && (
                 <div className="surface-panel rounded-2xl p-3">
-                    <div className="text-sm font-bold text-emerald-300 mb-2">대기패 ({winningTiles.length})</div>
+                    <div className="text-sm font-bold text-emerald-300 mb-2">서버 분석 결과 (TENPAI)</div>
                     <div className="flex flex-wrap gap-1">
-                        {waitEvaluations.map(({ wait, score }, idx) => (
-                            <div key={`${wait.suit}-${wait.rank}-${idx}`} className="transform scale-90 origin-left-top relative">
-                                <Tile tile={wait} disabled={true} size="sm" />
-                                {score.points === 0 && (
-                                    <span className="absolute -top-2 -right-2 bg-red-600 text-white text-[9px] px-1 rounded">불가</span>
-                                )}
+                        {serverPotentialScore?.bestWait && (
+                            <div className="transform scale-90 origin-left-top relative">
+                                <Tile tile={serverPotentialScore.bestWait} disabled={true} size="sm" />
                             </div>
-                        ))}
+                        )}
                     </div>
-                    <div className="mt-2 text-xs text-slate-300">
-                        유효 대기 {validWaits.length}개 / 판수 부족 {insufficientWaits.length}개
-                    </div>
-                    {insufficientWaits.length > 0 && (
-                        <div className="mt-1 text-xs text-rose-300">
-                            판수 부족(17보 화료불가): {insufficientWaits.map((item) => tileToKoreanLabel(item.wait)).join(', ')}
-                        </div>
-                    )}
                 </div>
             )}
 
@@ -390,24 +325,14 @@ export function HandBuilder({
             {showDebugLayer && (
                 <div className="fixed inset-0 z-[90] bg-black/70 flex items-center justify-center p-4">
                     <div className="w-full max-w-4xl max-h-[80vh] overflow-y-auto thin-scrollbar glass-panel rounded-2xl p-4 shadow-2xl">
-                        <div className="flex items-center justify-between mb-4">
-                            <h3 className="text-lg font-bold text-white">디버그 조패 추천 (상위 {debugCandidates.length}개)</h3>
-                            <button
-                                onClick={() => setShowDebugLayer(false)}
-                                className="px-3 py-1 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm"
-                            >
-                                닫기
-                            </button>
-                        </div>
-
                         <div className="space-y-3">
-                            {debugCandidates.length === 0 && (
+                            {(serverCandidates.length === 0) && (
                                 <div className="text-sm text-slate-400">
-                                    {debugCandidatesLoading ? '추천 조패 계산 중...' : '추천 조패를 찾지 못했습니다.'}
+                                    {isAnalyzing ? '추천 조패 계산 중...' : '추천 조패를 찾지 못했습니다.'}
                                 </div>
                             )}
 
-                            {debugCandidates.map((candidate, idx) => (
+                            {serverCandidates.map((candidate: any, idx: number) => (
                                 <div key={candidate.indices.join('-')} className="bg-slate-800/70 border border-slate-700 rounded-xl p-3">
                                     <div className="flex items-center justify-between mb-2">
                                         <div className="text-sm font-bold text-yellow-300">
@@ -430,7 +355,7 @@ export function HandBuilder({
 
                                     <div className="text-xs text-emerald-300 mb-1">대기패 ({candidate.waits.length})</div>
                                     <div className="flex flex-wrap gap-1">
-                                        {candidate.waits.map((tile, waitIdx) => (
+                                        {candidate.waits.map((tile: any, waitIdx: number) => (
                                             <div key={`${tile.suit}-${tile.rank}-${waitIdx}`} className="transform scale-90 origin-left-top">
                                                 <Tile tile={tile} disabled={true} size="sm" />
                                             </div>
@@ -456,10 +381,10 @@ export function HandBuilder({
                 {loading
                     ? loadingLabel
                     : submitted
-                    ? (singleMode ? '제출 완료' : (opponentSubmitted ? '모두 준비 완료, 시작 중...' : '준비 완료 - 상대 대기 중'))
-                    : (canSubmit
-                        ? (submitActionLabel ?? (isMangan ? '만관 확정! 준비 완료' : '준비 완료 (만관 미만 주의)'))
-                        : '패를 완성해주세요')}
+                        ? (singleMode ? '제출 완료' : (opponentSubmitted ? '모두 준비 완료, 시작 중...' : '준비 완료 - 상대 대기 중'))
+                        : (canSubmit
+                            ? (submitActionLabel ?? (isMangan ? '만관 확정! 준비 완료' : '준비 완료 (만관 미만 주의)'))
+                            : '패를 완성해주세요')}
             </button>
         </div>
     );

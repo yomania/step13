@@ -1,0 +1,262 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Tile as TileType, Wind } from '@step13/proto';
+import { Tile } from './Tile';
+import { calculateScore } from '@step13/scoring';
+import { CandidateEvaluation, SCORE_OPTIONS, buildBestCandidates, evaluatePotentialScore, getWinningTiles } from '../lib/handAnalysis';
+
+interface HandBuilderProps {
+    dealtTiles: TileType[];
+    initialSelectedIndices?: number[];
+    doraIndicators: TileType[];
+    onSubmit: (hand: TileType[], pool: TileType[]) => void;
+    loading?: boolean;
+    submitted?: boolean;
+    opponentSubmitted?: boolean;
+    buildTimeRemainingMs?: number | null;
+    debugMode?: boolean;
+    singleMode?: boolean;
+    submitActionLabel?: string;
+    loadingLabel?: string;
+    seatWind?: Wind;
+    scoreDiff?: number;
+}
+
+function toKoreanLimit(limit: string): string {
+    const map: Record<string, string> = {
+        Mangan: '만관',
+        Haneman: '하네만',
+        Baiman: '배만',
+        Sanbaiman: '삼배만',
+        Yakuman: '역만'
+    };
+    return map[limit] ?? limit;
+}
+
+function toKoreanYaku(yaku: string): string {
+    if (yaku.startsWith('Dora ')) {
+        const count = yaku.replace('Dora ', '');
+        return `도라 ${count}`;
+    }
+    if (yaku.startsWith('Yakuhai')) {
+        const honor = yaku.split(': ')[1] ?? '';
+        const honorMap: Record<string, string> = {
+            z1: '동',
+            z2: '남',
+            z3: '서',
+            z4: '북',
+            z5: '백',
+            z6: '발',
+            z7: '중'
+        };
+        if (yaku.startsWith('Yakuhai(Seat):')) {
+            return `자풍패(${honorMap[honor] ?? honor})`;
+        }
+        if (yaku.startsWith('Yakuhai(Round):')) {
+            return `장풍패(${honorMap[honor] ?? honor})`;
+        }
+        return `역패(${honorMap[honor] ?? honor})`;
+    }
+
+    const map: Record<string, string> = {
+        Chiitoitsu: '치또이츠',
+        Pinfu: '핑후',
+        SanshokuDoukou: '삼색동각',
+        SanshokuDoujun: '삼색동순',
+        Toitoi: '또이또이',
+        Sanankou: '삼암각',
+        Chanta: '찬타',
+        Junchan: '준찬',
+        Honroutou: '혼노두',
+        Shousangen: '소삼원',
+        Tanyao: '탕야오',
+        Chinitsu: '청일색',
+        Honitsu: '혼일색',
+        Ittsuu: '일기통관',
+        Iipeikou: '이페코',
+        'Riichi (Auto)': '리치(자동)'
+    };
+    return map[yaku] ?? yaku;
+}
+
+function formatBuildTime(ms: number | null | undefined): string {
+    if (ms == null) return '--:--';
+    const safeMs = Math.max(0, ms);
+    const totalSeconds = Math.ceil(safeMs / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+function windToTile(wind: Wind): TileType {
+    const rankMap: Record<Wind, TileType['rank']> = {
+        EAST: 1,
+        SOUTH: 2,
+        WEST: 3,
+        NORTH: 4
+    };
+    return {
+        suit: 'z',
+        rank: rankMap[wind],
+        isRed: false
+    };
+}
+
+function windToKorean(wind: Wind): string {
+    const map: Record<Wind, string> = {
+        EAST: '동',
+        SOUTH: '남',
+        WEST: '서',
+        NORTH: '북'
+    };
+    return map[wind];
+}
+
+function tileToKoreanLabel(tile: TileType): string {
+    if (tile.suit === 'z') {
+        const honors = ['동', '남', '서', '북', '백', '발', '중'];
+        return honors[tile.rank - 1] ?? `${tile.rank}자`;
+    }
+    const suitMap: Record<'man' | 'pin' | 'sou', string> = {
+        man: '만',
+        pin: '통',
+        sou: '삭'
+    };
+    return `${tile.rank}${suitMap[tile.suit]}`;
+}
+
+export const HandBuilder: React.FC<HandBuilderProps> = ({
+    dealtTiles,
+    initialSelectedIndices = [],
+    doraIndicators = [],
+    onSubmit,
+    loading = false,
+    submitted = false,
+    opponentSubmitted = false,
+    buildTimeRemainingMs = null,
+    debugMode = false,
+    singleMode = false,
+    submitActionLabel,
+    loadingLabel = '로딩 중...',
+    seatWind,
+    scoreDiff
+}) => {
+    const [selectedIndices, setSelectedIndices] = useState<number[]>(initialSelectedIndices);
+    const [showDebugLayer, setShowDebugLayer] = useState(false);
+    const [debugCandidates, setDebugCandidates] = useState<CandidateEvaluation[]>([]);
+    const [debugCandidatesLoading, setDebugCandidatesLoading] = useState(false);
+    const debugWorkerRef = useRef<Worker | null>(null);
+    const debugRequestIdRef = useRef(0);
+
+    useEffect(() => {
+        if (initialSelectedIndices.length > 0) {
+            setSelectedIndices(initialSelectedIndices);
+        }
+    }, [initialSelectedIndices]);
+
+    useEffect(() => {
+        setDebugCandidates([]);
+        setDebugCandidatesLoading(false);
+    }, [dealtTiles]);
+
+    useEffect(() => {
+        return () => {
+            debugWorkerRef.current?.terminate();
+            debugWorkerRef.current = null;
+        };
+    }, []);
+
+    const sortedTilesWithIndices = useMemo(() => {
+        return dealtTiles
+            .map((tile, index) => ({ tile, index }))
+            .sort((a, b) => {
+                if (a.tile.suit !== b.tile.suit) return a.tile.suit.localeCompare(b.tile.suit);
+                return a.tile.rank - b.tile.rank;
+            });
+    }, [dealtTiles]);
+
+    const selectedTiles = useMemo(() => selectedIndices.map((index) => dealtTiles[index]), [selectedIndices, dealtTiles]);
+
+    const winningTiles = useMemo(() => getWinningTiles(selectedTiles), [selectedTiles]);
+    const waitEvaluations = useMemo(() => {
+        return winningTiles.map((wait) => {
+            const score = calculateScore(selectedTiles, wait, false, doraIndicators, {
+                ...SCORE_OPTIONS,
+                seatWind,
+                roundWind: 'EAST'
+            });
+            return { wait, score };
+        });
+    }, [winningTiles, selectedTiles, doraIndicators, seatWind]);
+    const insufficientWaits = useMemo(
+        () => waitEvaluations.filter((item) => item.score.points === 0),
+        [waitEvaluations]
+    );
+    const validWaits = useMemo(
+        () => waitEvaluations.filter((item) => item.score.points > 0),
+        [waitEvaluations]
+    );
+    const potentialScoreWithWind = useMemo(
+        () => evaluatePotentialScore(selectedTiles, winningTiles, doraIndicators, { seatWind, roundWind: 'EAST' }),
+        [selectedTiles, winningTiles, doraIndicators, seatWind]
+    );
+
+    useEffect(() => {
+        if (!debugMode || submitted || !showDebugLayer) return;
+        setDebugCandidatesLoading(true);
+
+        const currentRequestId = ++debugRequestIdRef.current;
+        const worker = new Worker(new URL('../workers/aiCandidateWorker.ts', import.meta.url), { type: 'module' });
+        debugWorkerRef.current?.terminate();
+        debugWorkerRef.current = worker;
+
+        worker.onmessage = (
+            event: MessageEvent<{ type: 'PREFETCH_RESULT'; requestId: number; candidate: CandidateEvaluation | null; candidates?: CandidateEvaluation[] }>
+        ) => {
+            const payload = event.data;
+            if (payload.type !== 'PREFETCH_RESULT') return;
+            if (payload.requestId !== currentRequestId) return;
+            setDebugCandidates(payload.candidates ?? (payload.candidate ? [payload.candidate] : []));
+            setDebugCandidatesLoading(false);
+            worker.terminate();
+            if (debugWorkerRef.current === worker) {
+                debugWorkerRef.current = null;
+            }
+        };
+
+        worker.onerror = () => {
+            // Worker fallback: keep functionality by using local calculation.
+            const next = buildBestCandidates(dealtTiles, doraIndicators, 8, { seatWind, roundWind: 'EAST' }, 'HARD', scoreDiff);
+            setDebugCandidates(next);
+            setDebugCandidatesLoading(false);
+            worker.terminate();
+            if (debugWorkerRef.current === worker) {
+                debugWorkerRef.current = null;
+            }
+        };
+
+        worker.postMessage({
+            type: 'PREFETCH',
+            requestId: currentRequestId,
+            dealtTiles,
+            doraIndicators,
+            maxCount: 8,
+            seatWind: seatWind ?? 'EAST',
+            roundWind: 'EAST',
+            scoreDiff
+        });
+
+        return () => {
+            worker.terminate();
+            if (debugWorkerRef.current === worker) {
+                debugWorkerRef.current = null;
+            }
+        };
+    }, [debugMode, submitted, showDebugLayer, dealtTiles, doraIndicators, seatWind, scoreDiff]);
+
+    const tenpai = winningTiles.length > 0;
+    const isMangan = potentialScoreWithWind ? potentialScoreWithWind.points >= 8000 : false;
+    const canSubmit = tenpai && !submitted && !loading;
+
+    // Remaining parts of the file...
+    // I will use replace_file_content for the rest if it's too long, but let's assume I can write the full file or at least the logic part.
+    // Actually, I should probably use replace_file_content to avoid losing the JSX part.

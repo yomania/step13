@@ -1,8 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
 import { Tile } from '@step13/proto';
 import { HandBuilder } from './HandBuilder';
 import { Tile as TileView } from './Tile';
-import { CandidateEvaluation, buildBestCandidates, evaluatePotentialScore, getWinningTiles, scoreCandidateForRate } from '../lib/handAnalysis';
 
 type MiniRound = {
     dealtTiles: Tile[];
@@ -77,18 +75,7 @@ function createMiniRound(): MiniRound {
     };
 }
 
-function buildDescription(
-    player: { han: number; waits: number; points: number },
-    ai: { han: number; waits: number; points: number },
-    rate: number
-): string {
-    const hanDiff = player.han - ai.han;
-    const waitDiff = player.waits - ai.waits;
-    if (rate >= 100) {
-        return `AI 기준을 넘겼습니다. 판수 ${hanDiff >= 0 ? '+' : ''}${hanDiff}, 대기수 ${waitDiff >= 0 ? '+' : ''}${waitDiff}로 우세했습니다.`;
-    }
-    return `AI 기준 대비 ${100 - rate}% 부족합니다. 판수 ${hanDiff >= 0 ? '+' : ''}${hanDiff}, 대기수 ${waitDiff >= 0 ? '+' : ''}${waitDiff}, 점수 ${player.points - ai.points >= 0 ? '+' : ''}${player.points - ai.points} 차이입니다.`;
-}
+
 
 function sortTiles(tiles: Tile[]): Tile[] {
     return [...tiles].sort((a, b) => {
@@ -340,22 +327,26 @@ function writeMiniHistory(entries: MiniHistoryEntry[]) {
     window.sessionStorage.setItem(SINGLE_MINI_GAME_HISTORY_KEY, JSON.stringify(entries));
 }
 
+import { useEffect, useState } from 'react';
+
 interface SingleMiniGameProps {
     onExit: () => void;
+    queryAnalysis?: (query: any) => void;
+    analysisResult?: any;
 }
 
-export function SingleMiniGame({ onExit }: SingleMiniGameProps) {
+export function SingleMiniGame({ onExit, queryAnalysis, analysisResult }: SingleMiniGameProps) {
     const [round, setRound] = useState(1);
     const [currentRound, setCurrentRound] = useState<MiniRound>(() => createMiniRound());
     const [result, setResult] = useState<MiniResult | null>(null);
     const [history, setHistory] = useState<MiniHistoryEntry[]>([]);
     const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
     const [isCalculating, setIsCalculating] = useState(false);
-    const [aiPrefetch, setAiPrefetch] = useState<CandidateEvaluation | null>(null);
-    const [isPreloading, setIsPreloading] = useState(true);
-    const workerRef = useRef<Worker | null>(null);
-    const requestIdRef = useRef(0);
-    const pendingResolversRef = useRef(new Map<number, (candidate: CandidateEvaluation | null) => void>());
+    const [aiResults, setAiResults] = useState<any>(null);
+    const [isPreloading, setIsPreloading] = useState(false);
+
+    // Track pending query
+    const [pendingQueryId, setPendingQueryId] = useState<string | null>(null);
 
     const selectedHistoryEntry = selectedHistoryId ? history.find((entry) => entry.id === selectedHistoryId) ?? null : null;
     const visibleRound = selectedHistoryEntry?.roundData ?? currentRound;
@@ -363,55 +354,46 @@ export function SingleMiniGame({ onExit }: SingleMiniGameProps) {
     const sortedVisibleDealtTiles = sortTiles(visibleRound.dealtTiles);
 
     const prefetchAi = (targetRound: MiniRound) => {
-        const worker = workerRef.current;
-        if (!worker) return;
+        if (!queryAnalysis) return;
         setIsPreloading(true);
-        setAiPrefetch(null);
-
-        requestIdRef.current += 1;
-        const requestId = requestIdRef.current;
-        worker.postMessage({
-            type: 'PREFETCH',
-            requestId,
-            dealtTiles: targetRound.dealtTiles,
+        queryAnalysis({
+            queryType: 'AI_HINT',
+            hand: [], // Not used for hint but required? Actually hint on empty hand might return best candidates from deck
+            dealtTiles: targetRound.dealtTiles, // Special query for mini-game
             doraIndicators: targetRound.doraIndicators,
-            seatWind: 'EAST',
-            roundWind: 'EAST'
+            difficulty: 'HARD'
         });
     };
 
-    const requestAiCandidate = (targetRound: MiniRound): Promise<CandidateEvaluation | null> => {
-        if (workerRef.current) {
-            return new Promise<CandidateEvaluation | null>((resolve) => {
-                const id = Math.random();
-                const handler = (event: MessageEvent) => {
-                    if (event.data.type === 'PREFETCH_RESULT' && event.data.requestId === id) {
-                        workerRef.current?.removeEventListener('message', handler);
-                        resolve(event.data.candidate);
-                    }
-                };
-                workerRef.current?.addEventListener('message', handler);
-                workerRef.current?.postMessage({
-                    type: 'PREFETCH',
-                    requestId: id,
-                    dealtTiles: targetRound.dealtTiles,
-                    doraIndicators: targetRound.doraIndicators,
-                    maxCount: 1,
-                    seatWind: 'EAST',
-                    roundWind: 'EAST',
-                    difficulty: 'HARD'
-                });
-            });
+    // Replace the old useEffects and worker logic with analysisResult handling
+    useEffect(() => {
+        if (!analysisResult) return;
+
+        if (analysisResult.queryType === 'AI_HINT' && !result) {
+            setAiResults(analysisResult.candidates?.[0]);
+            setIsPreloading(false);
         }
 
-        return Promise.resolve(buildBestCandidates(
-            targetRound.dealtTiles,
-            targetRound.doraIndicators,
-            1,
-            { seatWind: 'EAST', roundWind: 'EAST' },
-            'HARD'
-        )[0] ?? null);
-    };
+        if (analysisResult.queryType === 'MINI_GAME_RESULT' && analysisResult.queryId === pendingQueryId) {
+            setResult(analysisResult.miniResult);
+
+            const entry: MiniHistoryEntry = {
+                id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+                round,
+                createdAt: Date.now(),
+                roundData: currentRound,
+                result: analysisResult.miniResult
+            };
+            setHistory((prev) => {
+                const next = [entry, ...prev].slice(0, 30);
+                writeMiniHistory(next);
+                return next;
+            });
+
+            setPendingQueryId(null);
+            setIsCalculating(false);
+        }
+    }, [analysisResult, result, round, currentRound, pendingQueryId]);
 
     useEffect(() => {
         const loaded = readMiniHistory();
@@ -419,96 +401,27 @@ export function SingleMiniGame({ onExit }: SingleMiniGameProps) {
     }, []);
 
     useEffect(() => {
-        const worker = new Worker(new URL('../workers/aiCandidateWorker.ts', import.meta.url), { type: 'module' });
-        workerRef.current = worker;
-
-        worker.onmessage = (event: MessageEvent<{ type: 'PREFETCH_RESULT'; requestId: number; candidate: CandidateEvaluation | null }>) => {
-            const payload = event.data;
-            if (payload.type !== 'PREFETCH_RESULT') return;
-
-            const resolver = pendingResolversRef.current.get(payload.requestId);
-            if (resolver) {
-                pendingResolversRef.current.delete(payload.requestId);
-                resolver(payload.candidate);
-                return;
-            }
-
-            if (payload.requestId === requestIdRef.current) {
-                setAiPrefetch(payload.candidate);
-                setIsPreloading(false);
-            }
-        };
-
-        return () => {
-            pendingResolversRef.current.forEach((resolve) => resolve(null));
-            pendingResolversRef.current.clear();
-            worker.terminate();
-            workerRef.current = null;
-        };
-    }, []);
-
-    useEffect(() => {
-        if (!workerRef.current) return;
-        if (!isPreloading || aiPrefetch) return;
+        if (!queryAnalysis || isPreloading || aiResults) return;
         prefetchAi(currentRound);
-    }, [currentRound, aiPrefetch, isPreloading]);
+    }, [currentRound, aiResults, isPreloading, queryAnalysis]);
+
+
 
     const handleSubmit = async (hand: Tile[]) => {
-        if (isCalculating || result) return;
+        if (isCalculating || result || !queryAnalysis) return;
         setIsCalculating(true);
 
-        const aiExpected = aiPrefetch ?? await requestAiCandidate(currentRound);
-        const waits = getWinningTiles(hand);
-        const score = evaluatePotentialScore(hand, waits, currentRound.doraIndicators, { seatWind: 'EAST', roundWind: 'EAST' });
-        if (!score || !aiExpected) {
-            setIsCalculating(false);
-            return;
-        }
+        const qId = Math.random().toString(36).substring(7);
+        setPendingQueryId(qId);
 
-        const playerMetric = scoreCandidateForRate({ waits, score });
-        const aiMetric = scoreCandidateForRate({ waits: aiExpected.waits, score: aiExpected.score });
-        const rawRate = aiMetric <= 0 ? 100 : Math.round((playerMetric / aiMetric) * 100);
-        const clampedRate = Math.max(0, Math.min(150, rawRate));
-
-        const nextResult: MiniResult = {
-            player: {
-                hand,
-                waits,
-                han: score.han,
-                points: score.points,
-                yaku: score.yaku,
-                bestWait: score.bestWait
-            },
-            ai: {
-                hand: aiExpected.hand,
-                waits: aiExpected.waits,
-                han: aiExpected.score.han,
-                points: aiExpected.score.points,
-                yaku: aiExpected.score.yaku,
-                bestWait: aiExpected.score.bestWait
-            },
-            rate: clampedRate,
-            description: buildDescription(
-                { han: score.han, waits: waits.length, points: score.points },
-                { han: aiExpected.score.han, waits: aiExpected.waits.length, points: aiExpected.score.points },
-                clampedRate
-            )
-        };
-        setResult(nextResult);
-        const entry: MiniHistoryEntry = {
-            id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-            round,
-            createdAt: Date.now(),
-            roundData: currentRound,
-            result: nextResult
-        };
-        setHistory((prev) => {
-            const next = [entry, ...prev].slice(0, 30);
-            writeMiniHistory(next);
-            return next;
+        queryAnalysis({
+            type: 'QUERY_ANALYSIS', // This will be handled by App.tsx helper but let's be explicit
+            queryId: qId,
+            queryType: 'MINI_GAME_EVAL',
+            hand,
+            dealtTiles: currentRound.dealtTiles,
+            doraIndicators: currentRound.doraIndicators
         });
-        setSelectedHistoryId(null);
-        setIsCalculating(false);
     };
 
     const handleNextRound = () => {
@@ -516,59 +429,26 @@ export function SingleMiniGame({ onExit }: SingleMiniGameProps) {
         setCurrentRound(nextRound);
         setResult(null);
         setIsCalculating(false);
-        setAiPrefetch(null);
+        setAiResults(null);
         setIsPreloading(true);
         setRound((prev) => prev + 1);
+        setPendingQueryId(null);
     };
 
     const handleGiveUp = () => {
-        if (isCalculating || result) return;
+        if (isCalculating || result || !queryAnalysis) return;
         setIsCalculating(true);
 
-        const runGiveUp = async () => {
-            const aiExpected = aiPrefetch ?? await requestAiCandidate(currentRound);
+        const qId = Math.random().toString(36).substring(7);
+        setPendingQueryId(qId);
 
-            const nextResult: MiniResult = {
-                player: {
-                    hand: [],
-                    waits: [],
-                    han: 0,
-                    points: 0,
-                    yaku: [],
-                    bestWait: null
-                },
-                ai: {
-                    hand: aiExpected?.hand ?? [],
-                    waits: aiExpected?.waits ?? [],
-                    han: aiExpected?.score.han ?? 0,
-                    points: aiExpected?.score.points ?? 0,
-                    yaku: aiExpected?.score.yaku ?? [],
-                    bestWait: aiExpected?.score.bestWait ?? null
-                },
-                rate: 0,
-                description: '이번 판은 포기했습니다. AI 기준 조패를 참고해서 다음 판에서 갱신해보세요.',
-                gaveUp: true
-            };
-            setResult(nextResult);
-            const entry: MiniHistoryEntry = {
-                id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-                round,
-                createdAt: Date.now(),
-                roundData: currentRound,
-                result: nextResult
-            };
-            setHistory((prev) => {
-                const next = [entry, ...prev].slice(0, 30);
-                writeMiniHistory(next);
-                return next;
-            });
-            setSelectedHistoryId(null);
-            setIsCalculating(false);
-        };
-
-        setTimeout(() => {
-            runGiveUp().catch(() => setIsCalculating(false));
-        }, 100);
+        queryAnalysis({
+            queryId: qId,
+            queryType: 'MINI_GAME_EVAL',
+            hand: [], // empty means give up/fail
+            dealtTiles: currentRound.dealtTiles,
+            doraIndicators: currentRound.doraIndicators
+        });
     };
 
     return (
@@ -714,7 +594,7 @@ export function SingleMiniGame({ onExit }: SingleMiniGameProps) {
                             <div className="text-xs text-emerald-300 mt-2 mb-1">내 역</div>
                             {visibleResult.player.yaku.length > 0 ? (
                                 <div className="space-y-1">
-                                    {visibleResult.player.yaku.map((yaku) => (
+                                    {visibleResult.player.yaku.map((yaku: string) => (
                                         <div key={`player-yaku-${yaku}`} className="text-xs text-slate-200">
                                             {shouldHideYakuDetail(yaku)
                                                 ? toKoreanYakuName(yaku)
@@ -748,7 +628,7 @@ export function SingleMiniGame({ onExit }: SingleMiniGameProps) {
                             <div className="text-xs text-cyan-300 mt-2 mb-1">AI 역</div>
                             {visibleResult.ai.yaku.length > 0 ? (
                                 <div className="space-y-1">
-                                    {visibleResult.ai.yaku.map((yaku) => (
+                                    {visibleResult.ai.yaku.map((yaku: string) => (
                                         <div key={`ai-yaku-${yaku}`} className="text-xs text-slate-200">
                                             {shouldHideYakuDetail(yaku)
                                                 ? toKoreanYakuName(yaku)

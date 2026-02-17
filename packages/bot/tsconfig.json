@@ -5,9 +5,15 @@
         "rootDir": "./src",
         "module": "commonjs",
         "target": "es2020",
-        "declaration": true
+        "declaration": true,
+        "skipLibCheck": true
     },
     "include": [
         "src/**/*"
+    ],
+    "exclude": [
+        "src/**/*.test.ts",
+        "node_modules",
+        "dist"
     ]
 }
