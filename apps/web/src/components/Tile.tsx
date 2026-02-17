@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Tile as TileType } from '@step13/proto';
-import { getTileAssetRoot, getFallbackTileAssetRoot } from '../lib/tileAssets';
+import { getTileAssetRoot } from '../lib/tileAssets';
 
 interface TileProps {
     tile: TileType;

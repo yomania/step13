@@ -11,6 +11,7 @@ type MiniResult = {
     player: {
         hand: Tile[];
         waits: Tile[];
+        furitenWaits?: Tile[];
         han: number;
         points: number;
         yaku: string[];
@@ -19,6 +20,7 @@ type MiniResult = {
     ai: {
         hand: Tile[];
         waits: Tile[];
+        furitenWaits?: Tile[];
         han: number;
         points: number;
         yaku: string[];
@@ -117,6 +119,11 @@ function parseTileKey(key: string): Tile {
     const suit = key.slice(0, key.length - 1) as Tile['suit'];
     const rank = Number(key.slice(-1)) as Tile['rank'];
     return { suit, rank, isRed: false };
+}
+
+function isFuritenWait(tile: Tile, furitenWaits?: Tile[]): boolean {
+    if (!furitenWaits || furitenWaits.length === 0) return false;
+    return furitenWaits.some((w) => w.suit === tile.suit && w.rank === tile.rank);
 }
 
 function countTiles(tiles: Tile[]): Record<string, number> {
@@ -354,8 +361,8 @@ export function SingleMiniGame({ onExit, queryAnalysis, analysisResult, debugMod
     const [history, setHistory] = useState<MiniHistoryEntry[]>([]);
     const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
     const [isCalculating, setIsCalculating] = useState(false);
-    const [aiResults, setAiResults] = useState<any>(null);
     const [isPreloading, setIsPreloading] = useState(false);
+    const [aiPrefetchDone, setAiPrefetchDone] = useState(false);
 
     // Track pending query
     const [pendingQueryId, setPendingQueryId] = useState<string | null>(null);
@@ -381,12 +388,16 @@ export function SingleMiniGame({ onExit, queryAnalysis, analysisResult, debugMod
     useEffect(() => {
         if (!analysisResult) return;
 
-        if (analysisResult.queryType === 'AI_HINT' && !result) {
-            setAiResults(analysisResult.candidates?.[0]);
+        if (analysisResult.type === 'ANALYSIS_RESULT' && analysisResult.candidates && !result) {
             setIsPreloading(false);
+            setAiPrefetchDone(true);
         }
 
-        if (analysisResult.queryType === 'MINI_GAME_RESULT' && analysisResult.queryId === pendingQueryId) {
+        if (
+            analysisResult.type === 'ANALYSIS_RESULT' &&
+            analysisResult.miniResult &&
+            analysisResult.queryId === pendingQueryId
+        ) {
             const miniResult = analysisResult.miniResult;
 
             // Re-generate description if needed, or use the one from server
@@ -423,9 +434,9 @@ export function SingleMiniGame({ onExit, queryAnalysis, analysisResult, debugMod
     }, []);
 
     useEffect(() => {
-        if (!queryAnalysis || isPreloading || aiResults) return;
+        if (!queryAnalysis || isPreloading || aiPrefetchDone) return;
         prefetchAi(currentRound);
-    }, [currentRound, aiResults, isPreloading, queryAnalysis]);
+    }, [currentRound, isPreloading, aiPrefetchDone, queryAnalysis]);
 
 
 
@@ -451,8 +462,8 @@ export function SingleMiniGame({ onExit, queryAnalysis, analysisResult, debugMod
         setCurrentRound(nextRound);
         setResult(null);
         setIsCalculating(false);
-        setAiResults(null);
         setIsPreloading(true);
+        setAiPrefetchDone(false);
         setRound((prev) => prev + 1);
         setPendingQueryId(null);
     };
@@ -590,8 +601,13 @@ export function SingleMiniGame({ onExit, queryAnalysis, analysisResult, debugMod
                             <div className="text-xs text-emerald-300 mt-2 mb-1">내 대기패</div>
                             <div className="flex flex-wrap gap-1">
                                 {visibleResult.player.waits.map((tile, idx) => (
-                                    <div key={`player-wait-${tile.suit}-${tile.rank}-${idx}`} className="transform scale-90 origin-left-top">
+                                    <div key={`player-wait-${tile.suit}-${tile.rank}-${idx}`} className="transform scale-90 origin-left-top relative">
                                         <TileView tile={tile} disabled={true} size="sm" />
+                                        {isFuritenWait(tile, visibleResult.player.furitenWaits) && (
+                                            <span className="absolute -top-1 -right-1 px-1 py-[1px] rounded bg-rose-700 text-white text-[9px] font-bold leading-none">
+                                                후리텐
+                                            </span>
+                                        )}
                                     </div>
                                 ))}
                             </div>
@@ -624,8 +640,13 @@ export function SingleMiniGame({ onExit, queryAnalysis, analysisResult, debugMod
                             <div className="text-xs text-cyan-300 mt-2 mb-1">AI 대기패</div>
                             <div className="flex flex-wrap gap-1">
                                 {visibleResult.ai.waits.map((tile, idx) => (
-                                    <div key={`ai-wait-${tile.suit}-${tile.rank}-${idx}`} className="transform scale-90 origin-left-top">
+                                    <div key={`ai-wait-${tile.suit}-${tile.rank}-${idx}`} className="transform scale-90 origin-left-top relative">
                                         <TileView tile={tile} disabled={true} size="sm" />
+                                        {isFuritenWait(tile, visibleResult.ai.furitenWaits) && (
+                                            <span className="absolute -top-1 -right-1 px-1 py-[1px] rounded bg-rose-700 text-white text-[9px] font-bold leading-none">
+                                                후리텐
+                                            </span>
+                                        )}
                                     </div>
                                 ))}
                             </div>
@@ -680,6 +701,34 @@ export function SingleMiniGame({ onExit, queryAnalysis, analysisResult, debugMod
                                     {entry.round}국 · RATE {entry.result.rate}% · {new Date(entry.createdAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
                                 </div>
                                 <div className="text-xs text-slate-400 mt-1">{entry.result.description}</div>
+                                <div className="mt-2">
+                                    <div className="text-[11px] text-amber-300 mb-1">도라 표시패</div>
+                                    <div className="flex flex-wrap gap-1">
+                                        {entry.roundData.doraIndicators.map((tile, idx) => (
+                                            <div key={`history-dora-${entry.id}-${tile.id ?? `${tile.suit}-${tile.rank}`}-${idx}`} className="transform scale-75 origin-left-top">
+                                                <TileView tile={tile} disabled={true} size="sm" />
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="mt-2">
+                                    <div className="text-[11px] text-emerald-300 mb-1">내 대기패 ({entry.result.player.waits.length})</div>
+                                    <div className="flex flex-wrap gap-1">
+                                        {entry.result.player.waits.map((tile, idx) => (
+                                            <div key={`history-player-wait-${entry.id}-${tile.suit}-${tile.rank}-${idx}`} className="transform scale-75 origin-left-top relative">
+                                                <TileView tile={tile} disabled={true} size="sm" />
+                                                {isFuritenWait(tile, entry.result.player.furitenWaits) && (
+                                                    <span className="absolute -top-1 -right-1 px-1 py-[1px] rounded bg-rose-700 text-white text-[9px] font-bold leading-none">
+                                                        후리텐
+                                                    </span>
+                                                )}
+                                            </div>
+                                        ))}
+                                        {entry.result.player.waits.length === 0 && (
+                                            <span className="text-[11px] text-slate-500">없음</span>
+                                        )}
+                                    </div>
+                                </div>
                             </button>
                         ))}
                     </div>

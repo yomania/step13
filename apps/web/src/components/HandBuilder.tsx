@@ -138,6 +138,7 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
     const [serverPotentialScore, setServerPotentialScore] = useState<any>(null);
     const [serverCandidates, setServerCandidates] = useState<any[]>([]);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [showAnalyzingIndicator, setShowAnalyzingIndicator] = useState(false);
 
     useEffect(() => {
         setSelectedIndices([]);
@@ -164,9 +165,28 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
         }
     }, [analysisResult]);
 
+    useEffect(() => {
+        if (!isAnalyzing) {
+            setShowAnalyzingIndicator(false);
+            return;
+        }
+
+        const timer = setTimeout(() => {
+            setShowAnalyzingIndicator(true);
+        }, 250);
+
+        return () => clearTimeout(timer);
+    }, [isAnalyzing]);
+
     // Request analysis when selection changes (Debounced)
     useEffect(() => {
         if (!onQueryAnalysis || submitted) return;
+        if (selectedTiles.length !== 13) {
+            setIsAnalyzing(false);
+            setServerPotentialScore(null);
+            setServerCandidates([]);
+            return;
+        }
 
         const timer = setTimeout(() => {
             // In 17-step, we always want to know if it's Tenpai (shanten -1) and what's the best score
@@ -182,7 +202,7 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
         }, 500);
 
         return () => clearTimeout(timer);
-    }, [selectedIndices, onQueryAnalysis, submitted, doraIndicators, scoreDiff]);
+    }, [selectedTiles, onQueryAnalysis, submitted, doraIndicators, scoreDiff]);
 
     const sortedTilesWithIndices = useMemo(() => {
         return dealtTiles
@@ -194,6 +214,7 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
     }, [dealtTiles]);
 
     const tenpai = serverPotentialScore && serverPotentialScore.points > 0;
+    const hasAnalysisScore = Boolean(serverPotentialScore);
     const isMangan = serverPotentialScore ? serverPotentialScore.points >= 8000 : false;
     const canSubmit = tenpai && !submitted && !loading;
 
@@ -231,6 +252,12 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
                     <span className={`text-sm font-bold ${tenpai ? 'text-green-400' : 'text-red-400'}`}>
                         {tenpai ? '텐파이' : '텐파이 아님'}
                     </span>
+                    {selectedTiles.length === 13 && showAnalyzingIndicator && (
+                        <span className="ml-2 inline-flex items-center gap-1 rounded-full border border-cyan-400/50 bg-cyan-900/30 px-2 py-0.5 text-[11px] font-semibold text-cyan-200">
+                            <span className="h-1.5 w-1.5 rounded-full bg-cyan-300 animate-pulse" />
+                            분석 중...
+                        </span>
+                    )}
                     <div className="mt-2 w-full sm:w-56 h-1.5 rounded-full bg-slate-700 overflow-hidden">
                         <div className="h-full bg-gradient-to-r from-cyan-400 to-emerald-400" style={{ width: `${(selectedTiles.length / 13) * 100}%` }} />
                     </div>
@@ -302,7 +329,7 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
                     {tenpai && serverPotentialScore && (
                         <div className="text-emerald-300 text-sm font-bold mt-1">현재 판수: {serverPotentialScore.han}판</div>
                     )}
-                    {tenpai && serverPotentialScore && (
+                    {hasAnalysisScore && serverPotentialScore && (
                         <>
                             <div className="text-yellow-400 font-bold">
                                 예상: ({serverPotentialScore.han}/5판) {serverPotentialScore.points}점
@@ -311,6 +338,9 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
                                 )}
                             </div>
                             <div className="text-xs text-gray-400">(현재판수/최소화료판수, 최대 타점 기준)</div>
+                            {!tenpai && (
+                                <div className="text-xs text-amber-300">현재 조합은 만관 조건 미달입니다.</div>
+                            )}
                             {serverPotentialScore.yaku.length > 0 && (
                                 <div className="flex flex-wrap justify-end gap-1 mt-1 max-w-[360px] ml-auto">
                                     {serverPotentialScore.yaku.map((yaku: string) => (
@@ -346,7 +376,7 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
 
             {tenpai && (
                 <div className="surface-panel rounded-2xl p-3">
-                    <div className="text-sm font-bold text-emerald-300 mb-2">서버 분석 결과 (TENPAI)</div>
+                    <div className="text-sm font-bold text-emerald-300 mb-2">대기패</div>
                     <div className="flex flex-wrap gap-1">
                         {serverPotentialScore?.bestWait && (
                             <div className="transform scale-90 origin-left-top relative">

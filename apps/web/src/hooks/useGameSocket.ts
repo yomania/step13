@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { AnyActorRef } from 'xstate';
 
 export function useGameSocket(
@@ -76,9 +76,9 @@ export function useGameSocket(
         return () => {
             socket.close();
         };
-    }, [onStateChange]);
+    }, [onStateChange, onAnalysisResult]);
 
-    const sendEvent = (event: any) => {
+    const sendEvent = useCallback((event: any) => {
         if (event?.type === 'JOIN' && typeof event.playerId === 'string') {
             joinPlayerIdRef.current = event.playerId;
         } else {
@@ -91,9 +91,9 @@ export function useGameSocket(
             console.warn('Socket not open, cannot send:', event);
             pendingEventsRef.current.push(event);
         }
-    };
+    }, []);
 
-    const queryAnalysis = (query: any) => {
+    const queryAnalysis = useCallback((query: any) => {
         const queryPlayerId = typeof query?.playerId === 'string' ? query.playerId : null;
         if (!joinPlayerIdRef.current && queryPlayerId) {
             joinPlayerIdRef.current = queryPlayerId;
@@ -102,9 +102,9 @@ export function useGameSocket(
         sendEvent({
             ...query,
             type: 'QUERY_ANALYSIS',
-            queryId: Math.random().toString(36).substring(7)
+            queryId: query?.queryId ?? Math.random().toString(36).substring(7)
         });
-    };
+    }, [sendEvent]);
 
     return { sendEvent, queryAnalysis };
 }

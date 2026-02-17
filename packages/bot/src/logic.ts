@@ -15,6 +15,7 @@ export type CandidateEvaluation = {
     indices: number[];
     hand: Tile[];
     waits: Tile[];
+    furitenWaits?: Tile[];
     score: PotentialScore;
 };
 
@@ -173,12 +174,9 @@ export class BotLogic {
             const discardedTiles = baseIndices.filter(idx => !selected.includes(idx)).map(idx => dealtTiles[idx]);
             const furitenWaits = waits.filter(wait => {
                 const discardedCount = discardedTiles.filter(dt => dt.suit === wait.suit && dt.rank === wait.rank).length;
-                const poolCount = poolCounts[`${wait.suit}${wait.rank} `] || 0;
-                return discardedCount < poolCount;
+                const poolCount = poolCounts[`${wait.suit}${wait.rank}`] || 0;
+                return discardedCount >= poolCount;
             });
-
-            // Current wait count if we were to discard now
-            const availableWaits = furitenWaits;
 
             // Calculate score with internal quality
             const score = this.calculateCandidateScoreHeuristic(
@@ -195,7 +193,8 @@ export class BotLogic {
             unique.set(key, {
                 indices: selected,
                 hand,
-                waits: availableWaits, // This acts as 'effective' waits for UI but score reflects all
+                waits,
+                furitenWaits,
                 score
             });
         };
@@ -350,7 +349,9 @@ export class BotLogic {
             .sort((a, b) => {
                 const aTotal = a.score.points + (a.score.quality ?? 0);
                 const bTotal = b.score.points + (b.score.quality ?? 0);
-                return bTotal - aTotal || b.waits.length - a.waits.length;
+                const aEffectiveWaits = a.waits.length - (a.furitenWaits?.length ?? 0);
+                const bEffectiveWaits = b.waits.length - (b.furitenWaits?.length ?? 0);
+                return bTotal - aTotal || bEffectiveWaits - aEffectiveWaits;
             })
             .slice(0, maxCount);
     }
@@ -387,7 +388,7 @@ export class BotLogic {
         // Apply soft penalty for potential furiten
         const waitIsFuriten = waits.some(wait => {
             const discardedCount = discardedTiles.filter(dt => dt.suit === wait.suit && dt.rank === wait.rank).length;
-            const poolCount = poolCounts[`${wait.suit}${wait.rank} `] || 0;
+            const poolCount = poolCounts[`${wait.suit}${wait.rank}`] || 0;
             return discardedCount >= poolCount;
         });
 
@@ -406,8 +407,9 @@ export class BotLogic {
     }
 
     public scoreCandidateForRate(candidate: { waits: Tile[]; score: PotentialScore }): number {
-        if (candidate.waits.length === 0) return 0;
-        return candidate.score.points + (candidate.waits.length * 100);
+        if (candidate.waits.length === 0 && candidate.score.points <= 0) return 0;
+        const waitBonus = Math.max(1, candidate.waits.length) * 100;
+        return Math.max(0, candidate.score.points) + waitBonus;
     }
 
     public async evaluateMiniGame(
@@ -434,16 +436,18 @@ export class BotLogic {
             poolCounts[key] = (poolCounts[key] || 0) + 1;
         }
 
+        const gaveUp = playerHand.length === 0;
+        const tileKey = (tile: Tile) => `${tile.suit}${tile.rank}`;
         let playerResult = null;
         if (playerHand.length === 13) {
             const rawWaits = this.getWinningTiles(playerHand);
 
             // Fair Furiten Check for player
             const playerDiscarded = dealtTiles.filter(t => !playerHand.some(ph => ph.id === t.id));
-            const effectiveWaits = rawWaits.filter(wait => {
+            const furitenWaits = rawWaits.filter(wait => {
                 const discardedCount = playerDiscarded.filter(dt => dt.suit === wait.suit && dt.rank === wait.rank).length;
-                const poolCount = poolCounts[`${wait.suit}${wait.rank} `] || 0;
-                return discardedCount < poolCount;
+                const poolCount = poolCounts[`${wait.suit}${wait.rank}`] || 0;
+                return discardedCount >= poolCount;
             });
 
             const score = await this.evaluatePotentialScore(playerHand, rawWaits, doraIndicators, {
@@ -453,7 +457,8 @@ export class BotLogic {
             if (score) {
                 playerResult = {
                     hand: playerHand,
-                    waits: effectiveWaits,
+                    waits: rawWaits,
+                    furitenWaits,
                     han: score.han,
                     points: score.points,
                     yaku: score.yaku,
@@ -466,6 +471,7 @@ export class BotLogic {
             playerResult = {
                 hand: [],
                 waits: [],
+                furitenWaits: [],
                 han: 0,
                 points: 0,
                 yaku: [],
@@ -474,10 +480,15 @@ export class BotLogic {
         }
 
         // Rate calculation using pure points + waits bonus
-        const playerMetric = this.scoreCandidateForRate({ waits: playerResult.waits, score: playerResult as any });
-        const aiMetric = this.scoreCandidateForRate({ waits: aiBest.waits, score: aiBest.score });
+        const playerFuritenSet = new Set((playerResult.furitenWaits ?? []).map(tileKey));
+        const aiFuritenSet = new Set((aiBest.furitenWaits ?? []).map(tileKey));
+        const playerEffectiveWaits = playerResult.waits.filter(wait => !playerFuritenSet.has(tileKey(wait)));
+        const aiEffectiveWaits = aiBest.waits.filter(wait => !aiFuritenSet.has(tileKey(wait)));
 
-        const rawRate = aiMetric <= 0 ? 100 : Math.round((playerMetric / aiMetric) * 100);
+        const playerMetric = this.scoreCandidateForRate({ waits: playerEffectiveWaits, score: playerResult as any });
+        const aiMetric = this.scoreCandidateForRate({ waits: aiEffectiveWaits, score: aiBest.score });
+
+        const rawRate = aiMetric <= 0 ? 0 : Math.round((playerMetric / aiMetric) * 100);
         const rate = Math.max(0, Math.min(150, rawRate));
 
         return {
@@ -485,13 +496,17 @@ export class BotLogic {
             ai: {
                 hand: aiBest.hand,
                 waits: aiBest.waits,
+                furitenWaits: aiBest.furitenWaits ?? [],
                 han: aiBest.score.han,
                 points: aiBest.score.points,
                 yaku: aiBest.score.yaku,
                 bestWait: aiBest.score.bestWait
             },
             rate,
-            description: rate >= 100 ? 'AI 수준의 훌륭한 조패입니다!' : `AI 결과 대비 ${100 - rate}% 개선 여지가 있습니다.`
+            gaveUp,
+            description: gaveUp
+                ? '포기했습니다. 다음 국에서 다시 도전해 보세요.'
+                : (rate >= 100 ? 'AI 수준의 훌륭한 조패입니다!' : `AI 결과 대비 ${100 - rate}% 개선 여지가 있습니다.`)
         };
     }
 
