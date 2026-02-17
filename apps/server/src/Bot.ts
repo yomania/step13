@@ -2,7 +2,7 @@ import { AnyActorRef } from 'xstate';
 import { PlayerId, Tile } from '@step13/proto';
 import { calculateScore, calculateShanten, Difficulty } from '@step13/scoring';
 import { createEngineForRuleset, RulesetName } from '@step13/core';
-import { BotLogic, CandidateEvaluation } from '@step13/bot';
+import { BotLogic, BotPersonaProfile, CandidateEvaluation, getBotPersonaProfile } from '@step13/bot';
 
 const SCORE_OPTIONS = {
     requireManganMinimum: true,
@@ -22,21 +22,41 @@ export class Bot {
     private preparingHand: boolean = false;
     private logic: BotLogic;
     private difficulty: Difficulty;
+    private persona: BotPersonaProfile;
 
-    constructor(id: PlayerId, actor: AnyActorRef, ruleset: RulesetName = 'classic', difficulty: Difficulty = 'MEDIUM') {
+    constructor(
+        id: PlayerId,
+        actor: AnyActorRef,
+        ruleset: RulesetName = 'classic',
+        difficulty: Difficulty = 'MEDIUM',
+        personaId?: string
+    ) {
         this.id = id;
         this.actor = actor;
         this.rulesEngine = createEngineForRuleset(ruleset);
-        this.difficulty = difficulty;
-        this.logic = new BotLogic(id, difficulty);
+        this.persona = getBotPersonaProfile(personaId, difficulty);
+        this.difficulty = this.persona.difficulty;
+        this.logic = new BotLogic(id, this.difficulty);
         this.actor.subscribe((snapshot) => {
             this.state = snapshot;
             this.decide();
         });
     }
 
-    public buildBestCandidatesForQuery(dealtTiles: Tile[], doraIndicators: Tile[], difficulty: Difficulty = 'MEDIUM') {
-        return this.logic.buildBestCandidates(dealtTiles, doraIndicators, 8, {}, difficulty);
+    public buildBestCandidatesForQuery(
+        dealtTiles: Tile[],
+        doraIndicators: Tile[],
+        difficulty: Difficulty = 'MEDIUM',
+        personaId?: string
+    ) {
+        const profile = getBotPersonaProfile(personaId, difficulty);
+        return this.logic.buildBestCandidates(
+            dealtTiles,
+            doraIndicators,
+            profile.handBuild.candidateCount,
+            {},
+            profile.difficulty
+        );
     }
 
     public getWinningTilesForQuery(hand: Tile[]) {
@@ -134,8 +154,8 @@ export class Bot {
     private buildHand(tiles: Tile[], doraIndicators: Tile[]) {
         if (!tiles || tiles.length < 13) return;
 
-        // Easy bots occasionally fail to submit in time and fall back to timeout auto-submit.
-        if (this.difficulty === 'EASY' && Math.random() < 0.22) {
+        // Some personas intentionally fail to submit occasionally (training wheels behavior).
+        if (Math.random() < this.persona.handBuild.submitSkipChance) {
             return;
         }
 
@@ -144,18 +164,70 @@ export class Bot {
     }
 
     private buildBestHand(tiles: Tile[], doraIndicators: Tile[]): { hand: Tile[]; pool: Tile[] } {
-        if (this.difficulty === 'HARD') {
-            const hard = this.buildBestHandHard(tiles, doraIndicators);
-            if (hard) return hard;
-        } else if (this.difficulty === 'MEDIUM') {
-            const medium = this.buildBestHandMedium(tiles, doraIndicators);
-            if (medium) return medium;
-        } else {
-            const easy = this.buildBestHandEasy(tiles, doraIndicators);
-            if (easy) return easy;
-        }
+        const byPersona = this.buildBestHandByPersona(tiles, doraIndicators);
+        if (byPersona) return byPersona;
 
         return this.buildBestHandLegacy(tiles, doraIndicators);
+    }
+
+    private buildBestHandByPersona(tiles: Tile[], doraIndicators: Tile[]): { hand: Tile[]; pool: Tile[] } | null {
+        const candidates = this.logic.buildBestCandidates(
+            tiles,
+            doraIndicators,
+            this.persona.handBuild.candidateCount,
+            {},
+            this.persona.difficulty
+        );
+        if (candidates.length === 0) return null;
+
+        const pick = this.pickHandBuildCandidateByStyle(candidates);
+        if (!pick) return null;
+        return { hand: pick.hand, pool: this.buildPoolFromChosenHand(tiles, pick.hand) };
+    }
+
+    private pickHandBuildCandidateByStyle(candidates: CandidateEvaluation[]): CandidateEvaluation | null {
+        const style = this.persona.handBuild.style;
+        if (candidates.length === 0) return null;
+
+        if (style === 'value') {
+            const prioritized = this.pickHardBestCandidate(candidates);
+            return prioritized ?? [...candidates].sort((a, b) => this.compareCandidateStrength(b, a))[0];
+        }
+
+        if (style === 'stability') {
+            return [...candidates].sort((a, b) => {
+                const waitDiff = this.getEffectiveWaitCount(b) - this.getEffectiveWaitCount(a);
+                if (waitDiff !== 0) return waitDiff;
+                return this.compareCandidateStrength(b, a);
+            })[0];
+        }
+
+        if (style === 'flush') {
+            return [...candidates].sort((a, b) => {
+                const suitDiff = this.getPrimarySuitConcentration(b.hand) - this.getPrimarySuitConcentration(a.hand);
+                if (suitDiff !== 0) return suitDiff;
+                return this.compareCandidateStrength(b, a);
+            })[0];
+        }
+
+        if (style === 'pairs') {
+            return [...candidates].sort((a, b) => {
+                const pairDiff = this.countPairs(b.hand) - this.countPairs(a.hand);
+                if (pairDiff !== 0) return pairDiff;
+                return this.compareCandidateStrength(b, a);
+            })[0];
+        }
+
+        if (style === 'chaotic') {
+            const randomIndex = Math.floor(Math.random() * candidates.length);
+            return candidates[randomIndex];
+        }
+
+        const topSlice = Math.max(1, Math.min(this.persona.handBuild.topSlice, candidates.length));
+        const top = [...candidates]
+            .sort((a, b) => this.compareCandidateStrength(b, a))
+            .slice(0, topSlice);
+        return top[Math.floor(Math.random() * top.length)];
     }
 
     private buildBestHandLegacy(tiles: Tile[], doraIndicators: Tile[]): { hand: Tile[]; pool: Tile[] } {
@@ -186,44 +258,6 @@ export class Bot {
         return best;
     }
 
-    private buildBestHandHard(tiles: Tile[], doraIndicators: Tile[]): { hand: Tile[]; pool: Tile[] } | null {
-        const candidates = this.logic.buildBestCandidates(tiles, doraIndicators, 24, {}, 'HARD');
-        if (candidates.length === 0) return null;
-
-        const best = this.pickHardBestCandidate(candidates);
-        if (!best) return null;
-        return { hand: best.hand, pool: this.buildPoolFromChosenHand(tiles, best.hand) };
-    }
-
-    private buildBestHandMedium(tiles: Tile[], doraIndicators: Tile[]): { hand: Tile[]; pool: Tile[] } | null {
-        const candidates = this.logic.buildBestCandidates(tiles, doraIndicators, 12, {}, 'MEDIUM');
-        if (candidates.length === 0) return null;
-
-        const mostlySingleWait = candidates.filter((candidate) => this.getEffectiveWaitCount(candidate) <= 1);
-        if (mostlySingleWait.length > 0 && Math.random() < 0.25) {
-            const pick = mostlySingleWait[Math.floor(Math.random() * mostlySingleWait.length)];
-            return { hand: pick.hand, pool: this.buildPoolFromChosenHand(tiles, pick.hand) };
-        }
-
-        const top = [...candidates]
-            .sort((a, b) => this.compareCandidateStrength(b, a))
-            .slice(0, Math.min(3, candidates.length));
-        const pick = top[Math.floor(Math.random() * top.length)];
-        return { hand: pick.hand, pool: this.buildPoolFromChosenHand(tiles, pick.hand) };
-    }
-
-    private buildBestHandEasy(tiles: Tile[], doraIndicators: Tile[]): { hand: Tile[]; pool: Tile[] } | null {
-        const candidates = this.logic.buildBestCandidates(tiles, doraIndicators, 10, {}, 'EASY');
-        if (candidates.length === 0) return null;
-
-        const weakestFirst = [...candidates].sort((a, b) => this.compareCandidateStrength(a, b));
-        const lowerHalfStart = Math.floor(weakestFirst.length / 2);
-        const lowerHalf = weakestFirst.slice(lowerHalfStart);
-        const pickFrom = lowerHalf.length > 0 ? lowerHalf : weakestFirst;
-        const pick = pickFrom[Math.floor(Math.random() * pickFrom.length)];
-        return { hand: pick.hand, pool: this.buildPoolFromChosenHand(tiles, pick.hand) };
-    }
-
     private pickHardBestCandidate(candidates: CandidateEvaluation[]): CandidateEvaluation | null {
         const multiWaitCandidates = candidates.filter((candidate) => this.getEffectiveWaitCount(candidate) >= 2);
         const target = multiWaitCandidates.length > 0 ? multiWaitCandidates : candidates;
@@ -244,6 +278,27 @@ export class Bot {
     private getEffectiveWaitCount(candidate: CandidateEvaluation): number {
         const furitenSet = new Set((candidate.furitenWaits ?? []).map((tile) => `${tile.suit}-${tile.rank}`));
         return candidate.waits.filter((tile) => !furitenSet.has(`${tile.suit}-${tile.rank}`)).length;
+    }
+
+    private getPrimarySuitConcentration(hand: Tile[]): number {
+        const counts = { man: 0, pin: 0, sou: 0, z: 0 };
+        hand.forEach((tile) => {
+            counts[tile.suit] += 1;
+        });
+        return Math.max(counts.man, counts.pin, counts.sou) + counts.z;
+    }
+
+    private countPairs(hand: Tile[]): number {
+        const map = new Map<string, number>();
+        for (const tile of hand) {
+            const key = `${tile.suit}-${tile.rank}`;
+            map.set(key, (map.get(key) ?? 0) + 1);
+        }
+        let pairs = 0;
+        map.forEach((count) => {
+            if (count >= 2) pairs += 1;
+        });
+        return pairs;
     }
 
     private buildPoolFromChosenHand(tiles: Tile[], hand: Tile[]): Tile[] {
@@ -321,23 +376,27 @@ export class Bot {
         const pool = this.state.context.pools[this.id];
         if (!pool || pool.length === 0) return;
 
+        const preference = this.persona.discard;
         let tile: Tile | null = null;
-        if (this.difficulty === 'HARD') {
-            tile = this.pickHardDiscard(pool);
-        } else if (this.difficulty === 'MEDIUM') {
-            tile = Math.random() < 0.22 ? this.pickMostDangerousTile(pool) : this.pickSafestTile(pool);
+
+        if (preference.style === 'defensive') {
+            tile = this.pickBetaoriTile(pool);
+        } else if (preference.style === 'aggressive') {
+            tile = Math.random() < preference.pushDangerousChance ? this.pickMostDangerousTile(pool) : this.pickSafestTile(pool);
+        } else if (preference.style === 'chaotic') {
+            if (Math.random() < preference.randomDiscardChance) {
+                tile = pool[Math.floor(Math.random() * pool.length)];
+            } else {
+                tile = Math.random() < preference.pushDangerousChance ? this.pickMostDangerousTile(pool) : this.pickSafestTile(pool);
+            }
         } else {
-            tile = Math.random() < 0.6 ? this.pickMostDangerousTile(pool) : pool[Math.floor(Math.random() * pool.length)];
+            tile = Math.random() < preference.pushDangerousChance ? this.pickMostDangerousTile(pool) : this.pickSafestTile(pool);
         }
 
         if (!tile) return;
         if (tile?.id) {
             this.actor.send({ type: 'DISCARD', playerId: this.id, tileId: tile.id });
         }
-    }
-
-    private pickHardDiscard(pool: Tile[]): Tile | null {
-        return this.pickBetaoriTile(pool);
     }
 
     private pickBetaoriTile(pool: Tile[]): Tile | null {

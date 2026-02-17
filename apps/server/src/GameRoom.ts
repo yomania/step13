@@ -5,6 +5,7 @@ import { PlayerId, Tile } from '@step13/proto';
 import { WebSocket } from 'ws';
 import { Bot } from './Bot';
 import { calculateScore, calculateShanten, Difficulty } from '@step13/scoring';
+import { getBotPersonaProfile, isBotPersonaProfileId } from '@step13/bot';
 
 const HIDDEN_TILE: Tile = { suit: 'z', rank: 1, isRed: false, id: 'HIDDEN' };
 
@@ -44,19 +45,21 @@ export class GameRoom {
         });
     }
 
-    public addBot(difficulty: Difficulty = 'MEDIUM') {
+    public addBot(difficulty: Difficulty = 'MEDIUM', personaId?: string) {
         // Generate a bot ID
         const botId = `bot-${Date.now()}`;
-        const bot = new Bot(botId, this.machine, this.ruleset, difficulty);
+        const normalizedPersonaId = this.normalizePersonaId(personaId);
+        const bot = new Bot(botId, this.machine, this.ruleset, difficulty, normalizedPersonaId);
         this.bots.push(bot);
 
-        console.log(`Adding Bot: ${botId} (${difficulty})`);
+        const resolved = getBotPersonaProfile(normalizedPersonaId, difficulty);
+        console.log(`Adding Bot: ${botId} (${resolved.difficulty}, persona=${resolved.id})`);
         this.machine.send({ type: 'JOIN', playerId: botId });
     }
 
     public handleMessage(playerId: PlayerId, event: any) {
         if (event.type === 'ADD_BOT') {
-            this.addBot(this.normalizeDifficulty(event?.difficulty));
+            this.addBot(this.normalizeDifficulty(event?.difficulty), this.normalizePersonaId(event?.personaId));
             return;
         }
 
@@ -107,7 +110,12 @@ export class GameRoom {
             } else if (event.queryType === 'AI_HINT') {
                 // Use bot's evaluation logic for hints
                 const tempBot = new Bot('temp', this.machine as any, this.ruleset);
-                const candidates = await tempBot.buildBestCandidatesForQuery(hand, doraIndicators || [], event.difficulty || 'MEDIUM');
+                const candidates = await tempBot.buildBestCandidatesForQuery(
+                    hand,
+                    doraIndicators || [],
+                    event.difficulty || 'MEDIUM',
+                    this.normalizePersonaId(event?.personaId)
+                );
                 result.candidates = candidates;
             } else if (event.queryType === 'MINI_GAME_EVAL') {
                 const tempBot = new Bot('temp', this.machine as any, this.ruleset);
@@ -146,6 +154,13 @@ export class GameRoom {
             return raw;
         }
         return 'MEDIUM';
+    }
+
+    private normalizePersonaId(raw: unknown): string | undefined {
+        if (isBotPersonaProfileId(raw)) {
+            return raw;
+        }
+        return undefined;
     }
 
     private sanitizeState(snapshot: SnapshotFrom<MachineLogic>, playerId: PlayerId) {

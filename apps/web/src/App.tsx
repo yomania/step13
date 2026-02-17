@@ -14,6 +14,29 @@ import { preloadRealTileAssets } from './lib/tileAssets';
 import { AnimatePresence, motion } from 'framer-motion';
 
 type BotDifficulty = 'EASY' | 'MEDIUM' | 'HARD';
+type BotPersonaId = 'easy_relaxed' | 'medium_balanced' | 'medium_flush' | 'hard_defensive' | 'hard_value';
+
+const BOT_PERSONA_OPTIONS: Array<{ id: BotPersonaId; label: string; difficulty: BotDifficulty }> = [
+    { id: 'easy_relaxed', label: '느긋한 입문자', difficulty: 'EASY' },
+    { id: 'medium_balanced', label: '균형형 실전파', difficulty: 'MEDIUM' },
+    { id: 'medium_flush', label: '염색 선호가', difficulty: 'MEDIUM' },
+    { id: 'hard_defensive', label: '철벽 수비가', difficulty: 'HARD' },
+    { id: 'hard_value', label: '고타점 헌터', difficulty: 'HARD' }
+];
+
+const BOT_PERSONA_TO_DIFFICULTY: Record<BotPersonaId, BotDifficulty> = {
+    easy_relaxed: 'EASY',
+    medium_balanced: 'MEDIUM',
+    medium_flush: 'MEDIUM',
+    hard_defensive: 'HARD',
+    hard_value: 'HARD'
+};
+
+const DEFAULT_PERSONA_BY_DIFFICULTY: Record<BotDifficulty, BotPersonaId> = {
+    EASY: 'easy_relaxed',
+    MEDIUM: 'medium_balanced',
+    HARD: 'hard_defensive'
+};
 
 
 
@@ -50,6 +73,7 @@ export default function App() {
     const [showOptions, setShowOptions] = useState(false);
     const [mainMode, setMainMode] = useState<'match' | 'mini'>('match');
     const [botDifficulty, setBotDifficulty] = useState<BotDifficulty>('MEDIUM');
+    const [botPersonaId, setBotPersonaId] = useState<BotPersonaId>('medium_balanced');
 
     // Initial connection check effect (mock)
     useEffect(() => {
@@ -207,7 +231,12 @@ export default function App() {
     };
 
     const handleAddBot = () => {
-        sendEvent({ type: 'ADD_BOT', difficulty: botDifficulty });
+        sendEvent({ type: 'ADD_BOT', difficulty: botDifficulty, personaId: botPersonaId });
+    };
+
+    const handleBotDifficultyChange = (nextDifficulty: BotDifficulty) => {
+        setBotDifficulty(nextDifficulty);
+        setBotPersonaId(DEFAULT_PERSONA_BY_DIFFICULTY[nextDifficulty]);
     };
 
     const onSubmitHand = (hand: Tile[], pool: Tile[]) => {
@@ -318,7 +347,7 @@ export default function App() {
 
         if (aiRematchStep === 'addBot') {
             if (!hasBot) {
-                sendEvent({ type: 'ADD_BOT', difficulty: botDifficulty });
+                sendEvent({ type: 'ADD_BOT', difficulty: botDifficulty, personaId: botPersonaId });
                 setAiRematchStep('waitBot');
                 return;
             }
@@ -337,7 +366,11 @@ export default function App() {
             sendEvent({ type: 'START_MATCH' });
             setAiRematchStep('none');
         }
-    }, [aiRematchStep, botDifficulty, isIdle, context.players, playerId, sendEvent]);
+    }, [aiRematchStep, botDifficulty, botPersonaId, isIdle, context.players, playerId, sendEvent]);
+
+    useEffect(() => {
+        setBotDifficulty(BOT_PERSONA_TO_DIFFICULTY[botPersonaId]);
+    }, [botPersonaId]);
 
     const onAiExitToLobby = () => {
         setShowAiExitMenu(false);
@@ -572,12 +605,24 @@ export default function App() {
                                                 <label className="text-sm font-bold text-slate-300 block mb-2">AI 난이도</label>
                                                 <select
                                                     value={botDifficulty}
-                                                    onChange={(event) => setBotDifficulty(event.target.value as BotDifficulty)}
+                                                    onChange={(event) => handleBotDifficultyChange(event.target.value as BotDifficulty)}
                                                     className="w-full rounded-xl bg-slate-900/90 border border-slate-600 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-amber-400"
                                                 >
                                                     <option value="EASY">쉬움</option>
                                                     <option value="MEDIUM">보통</option>
                                                     <option value="HARD">어려움</option>
+                                                </select>
+                                                <label className="text-sm font-bold text-slate-300 block mt-3 mb-2">AI 페르소나</label>
+                                                <select
+                                                    value={botPersonaId}
+                                                    onChange={(event) => setBotPersonaId(event.target.value as BotPersonaId)}
+                                                    className="w-full rounded-xl bg-slate-900/90 border border-slate-600 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-cyan-400"
+                                                >
+                                                    {BOT_PERSONA_OPTIONS.map((persona) => (
+                                                        <option key={persona.id} value={persona.id}>
+                                                            {persona.label} ({persona.difficulty})
+                                                        </option>
+                                                    ))}
                                                 </select>
                                             </div>
                                             <button onClick={handleAddBot} className="w-full py-3 bg-amber-600 hover:bg-amber-500 rounded-2xl font-bold shadow-lg">

@@ -182,7 +182,8 @@ export function calculateScore(
     }
 
     const han = yakuHan + doraCount;
-    const fu = isChiitoi ? 25 : 30;
+    // 론 전용 게임: 치또이 25부, 그 외 40부 (칸짱/변짱/단기 대기 + 암각 등 부수 가산 간이 반영)
+    const fu = isChiitoi ? 25 : 40;
 
     const fullScore = calculatePointByHanFu(han, fu, resolved.kiriageMangan);
 

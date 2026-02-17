@@ -46,4 +46,4 @@ export type GameEvents =
     | { type: 'GUIDE_VIEW'; playerId: PlayerId; step: string }
     | { type: 'CONFIRM_ROUND_END'; playerId: PlayerId }
     | { type: 'RESTART' }
-    | { type: 'ADD_BOT'; difficulty?: Difficulty };
+    | { type: 'ADD_BOT'; difficulty?: Difficulty; personaId?: string };

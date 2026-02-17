@@ -71,7 +71,7 @@ async function runSingleMatch(seed: number, botADifficulty: Difficulty, botBDiff
         actor.send({ type: 'START_MATCH', seed });
 
         const maxVirtualMs = 4_000_000;
-        const tickStepMs = 250;
+        const tickStepMs = 5_000;
         let elapsed = 0;
 
         while (actor.getSnapshot().value !== 'matchEnd' && elapsed < maxVirtualMs) {
@@ -102,6 +102,9 @@ async function runSimulation(options: SimulationOptions) {
         const seed = options.startSeed + i;
         const result = await runSingleMatch(seed, options.botA, options.botB);
         results.push(result);
+        console.log(
+            `[match ${i + 1}/${options.matches}] seed=${seed} winner=${result.winner ?? 'draw'} score=${result.scores['bot-a'] ?? 0}:${result.scores['bot-b'] ?? 0}`
+        );
     }
 
     const winsA = results.filter((r) => r.winner === 'bot-a').length;

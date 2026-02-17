@@ -124,7 +124,8 @@ function calculateScore(hand, winTile, isTsumo, doraIndicators = [], options = {
         yakuHan += 1;
     }
     const han = yakuHan + doraCount;
-    const fu = isChiitoi ? 25 : 30;
+    // 론 전용 게임: 치또이 25부, 그 외 40부
+    const fu = isChiitoi ? 25 : 40;
     const fullScore = calculatePointByHanFu(han, fu, resolved.kiriageMangan);
     const hanForMinimum = resolved.includeOmoteDoraInMinimum
         ? han
@@ -377,8 +378,8 @@ function dedupeDecompositions(decomps) {
     for (const decomp of decomps) {
         const meldKey = decomp.melds
             .map((meld) => (meld.type === 'sequence'
-            ? `S-${meld.suit}-${meld.start}`
-            : `T-${meld.suit}-${meld.rank}`))
+                ? `S-${meld.suit}-${meld.start}`
+                : `T-${meld.suit}-${meld.rank}`))
             .sort()
             .join('|');
         const key = `${decomp.pairKey}#${meldKey}`;

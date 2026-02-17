@@ -381,4 +381,58 @@ describe('calculateScore', () => {
         expect(result.yaku).toContain('Pinfu');
         expect(result.yaku).not.toContain('Tanyao');
     });
+    it('scores 4han 40fu as mangan (tanyao + sanshoku + riichi, kanchan wait)', () => {
+        // 손패: 2m 2m 2m 4m 2p 3p 4p 5p 6p 7p 2s 3s 4s → 3m 칸짱 대기
+        // 분해: 2m2m(머리) + 234m(순자) + 234p + 567p + 234s
+        // 역: 탕야오(1) + 삼색동순(2) + 리치(1) = 4판, 40부 → 만관
+        const hand: Tile[] = [
+            t('man', 2), t('man', 2), t('man', 2), t('man', 4),
+            t('pin', 2), t('pin', 3), t('pin', 4),
+            t('pin', 5), t('pin', 6), t('pin', 7),
+            t('sou', 2), t('sou', 3), t('sou', 4)
+        ];
+
+        const result = calculateScore(hand, t('man', 3), false, [], {
+            requireManganMinimum: true,
+            includeOmoteDoraInMinimum: true,
+            kiriageMangan: true,
+            autoRiichiFallback: true
+        });
+
+        expect(result.yaku).toContain('Tanyao');
+        expect(result.yaku).toContain('SanshokuDoujun');
+        expect(result.yaku).toContain('Riichi (Auto)');
+        expect(result.han).toBe(4);
+        expect(result.fu).toBe(40);
+        expect(result.points).toBe(8000);
+        expect(result.limitCategory).toBe('Mangan');
+    });
+
+    it('fu is 40 for standard hand and 25 for chiitoitsu', () => {
+        // 일반 핸드: 40부 (z1 z1 머리 + 123m + 123p + 123s + 789m)
+        const standardHand: Tile[] = [
+            t('man', 1), t('man', 2), t('man', 3),
+            t('pin', 1), t('pin', 2), t('pin', 3),
+            t('sou', 1), t('sou', 2), t('sou', 3),
+            t('man', 7), t('man', 8), t('man', 9),
+            t('z', 1)
+        ];
+        const stdResult = calculateScore(standardHand, t('z', 1), false, []);
+        // 화료 성립 확인 후 부수 검증
+        expect(stdResult.han).toBeGreaterThan(0);
+        expect(stdResult.fu).toBe(40);
+
+        // 치또이쯔: 25부
+        const chiitoiHand: Tile[] = [
+            t('man', 1), t('man', 1),
+            t('man', 2), t('man', 2),
+            t('man', 3), t('man', 3),
+            t('pin', 4), t('pin', 4),
+            t('pin', 5), t('pin', 5),
+            t('sou', 6), t('sou', 6),
+            t('z', 7)
+        ];
+        const chiiResult = calculateScore(chiitoiHand, t('z', 7), false, []);
+        expect(chiiResult.fu).toBe(25);
+    });
 });
