@@ -13,6 +13,8 @@ import { PlayerId, Tile } from '@step13/proto';
 import { preloadRealTileAssets } from './lib/tileAssets';
 import { AnimatePresence, motion } from 'framer-motion';
 
+type BotDifficulty = 'EASY' | 'MEDIUM' | 'HARD';
+
 
 
 export default function App() {
@@ -47,6 +49,7 @@ export default function App() {
     });
     const [showOptions, setShowOptions] = useState(false);
     const [mainMode, setMainMode] = useState<'match' | 'mini'>('match');
+    const [botDifficulty, setBotDifficulty] = useState<BotDifficulty>('MEDIUM');
 
     // Initial connection check effect (mock)
     useEffect(() => {
@@ -203,6 +206,10 @@ export default function App() {
         sendEvent({ type: 'START_MATCH' });
     };
 
+    const handleAddBot = () => {
+        sendEvent({ type: 'ADD_BOT', difficulty: botDifficulty });
+    };
+
     const onSubmitHand = (hand: Tile[], pool: Tile[]) => {
         if (myHandSubmitted) return;
         sendEvent({ type: 'SUBMIT_HAND', playerId, hand, pool });
@@ -311,7 +318,7 @@ export default function App() {
 
         if (aiRematchStep === 'addBot') {
             if (!hasBot) {
-                sendEvent({ type: 'ADD_BOT' });
+                sendEvent({ type: 'ADD_BOT', difficulty: botDifficulty });
                 setAiRematchStep('waitBot');
                 return;
             }
@@ -330,7 +337,7 @@ export default function App() {
             sendEvent({ type: 'START_MATCH' });
             setAiRematchStep('none');
         }
-    }, [aiRematchStep, isIdle, context.players, playerId, sendEvent]);
+    }, [aiRematchStep, botDifficulty, isIdle, context.players, playerId, sendEvent]);
 
     const onAiExitToLobby = () => {
         setShowAiExitMenu(false);
@@ -560,9 +567,23 @@ export default function App() {
                                         </div>
                                     )}
                                     {context.players.includes(playerId) && context.players.length === 1 && (
-                                        <button onClick={() => sendEvent({ type: 'ADD_BOT' })} className="w-full py-3 bg-amber-600 hover:bg-amber-500 rounded-2xl font-bold shadow-lg">
-                                            AI 추가 (Add Bot)
-                                        </button>
+                                        <>
+                                            <div className="surface-panel p-4 rounded-2xl">
+                                                <label className="text-sm font-bold text-slate-300 block mb-2">AI 난이도</label>
+                                                <select
+                                                    value={botDifficulty}
+                                                    onChange={(event) => setBotDifficulty(event.target.value as BotDifficulty)}
+                                                    className="w-full rounded-xl bg-slate-900/90 border border-slate-600 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                                >
+                                                    <option value="EASY">쉬움</option>
+                                                    <option value="MEDIUM">보통</option>
+                                                    <option value="HARD">어려움</option>
+                                                </select>
+                                            </div>
+                                            <button onClick={handleAddBot} className="w-full py-3 bg-amber-600 hover:bg-amber-500 rounded-2xl font-bold shadow-lg">
+                                                AI 추가 (Add Bot)
+                                            </button>
+                                        </>
                                     )}
                                     {context.players.length === 2 && (
                                         <button onClick={handleStartMatch} className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 rounded-2xl font-bold text-xl shadow-xl animate-pulse">

@@ -4,7 +4,7 @@ import { createGameMachine, RulesetName } from '@step13/core';
 import { PlayerId, Tile } from '@step13/proto';
 import { WebSocket } from 'ws';
 import { Bot } from './Bot';
-import { calculateScore, calculateShanten } from '@step13/scoring';
+import { calculateScore, calculateShanten, Difficulty } from '@step13/scoring';
 
 const HIDDEN_TILE: Tile = { suit: 'z', rank: 1, isRed: false, id: 'HIDDEN' };
 
@@ -44,19 +44,19 @@ export class GameRoom {
         });
     }
 
-    public addBot() {
+    public addBot(difficulty: Difficulty = 'MEDIUM') {
         // Generate a bot ID
         const botId = `bot-${Date.now()}`;
-        const bot = new Bot(botId, this.machine, this.ruleset);
+        const bot = new Bot(botId, this.machine, this.ruleset, difficulty);
         this.bots.push(bot);
 
-        console.log(`Adding Bot: ${botId}`);
+        console.log(`Adding Bot: ${botId} (${difficulty})`);
         this.machine.send({ type: 'JOIN', playerId: botId });
     }
 
     public handleMessage(playerId: PlayerId, event: any) {
         if (event.type === 'ADD_BOT') {
-            this.addBot();
+            this.addBot(this.normalizeDifficulty(event?.difficulty));
             return;
         }
 
@@ -139,6 +139,13 @@ export class GameRoom {
         ]);
         if (!allowed.has(eventType)) return;
         console.log('[telemetry]', JSON.stringify({ eventType, playerId, at: Date.now(), roomId: this.roomId }));
+    }
+
+    private normalizeDifficulty(raw: unknown): Difficulty {
+        if (raw === 'EASY' || raw === 'MEDIUM' || raw === 'HARD') {
+            return raw;
+        }
+        return 'MEDIUM';
     }
 
     private sanitizeState(snapshot: SnapshotFrom<MachineLogic>, playerId: PlayerId) {

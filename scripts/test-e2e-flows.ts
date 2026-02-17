@@ -8,6 +8,8 @@ import {
 } from '@step13/core';
 import { calculateScore } from '@step13/scoring';
 import { GameRoom } from '../apps/server/src/GameRoom';
+import { BotLogic, CandidateEvaluation } from '@step13/bot';
+import type { Difficulty } from '@step13/scoring';
 
 // 공통 점수 옵션(실서비스 기본 옵션)
 const SCORE_OPTIONS = {
@@ -70,6 +72,55 @@ class MockSocket {
 
 function roomSnapshot(room: GameRoom) {
     return (room as any).machine.getSnapshot();
+}
+
+function withSeededRandom<T>(seed: number, fn: () => T): T {
+    const originalRandom = Math.random;
+    let state = seed >>> 0;
+    Math.random = () => {
+        state = (1664525 * state + 1013904223) >>> 0;
+        return state / 0x100000000;
+    };
+    try {
+        return fn();
+    } finally {
+        Math.random = originalRandom;
+    }
+}
+
+function getEffectiveWaitCount(candidate: CandidateEvaluation): number {
+    const furitenSet = new Set((candidate.furitenWaits ?? []).map((tile) => `${tile.suit}-${tile.rank}`));
+    return candidate.waits.filter((tile) => !furitenSet.has(`${tile.suit}-${tile.rank}`)).length;
+}
+
+function getCandidateStrength(candidate: CandidateEvaluation): number {
+    const effectiveWaitCount = getEffectiveWaitCount(candidate);
+    const yakuCount = candidate.score.yaku?.length ?? 0;
+    return (
+        candidate.score.points * 1_000_000 +
+        candidate.score.han * 10_000 +
+        effectiveWaitCount * 100 +
+        candidate.waits.length * 10 +
+        yakuCount
+    );
+}
+
+function pickBestCandidate(candidates: CandidateEvaluation[]): CandidateEvaluation | null {
+    if (candidates.length === 0) return null;
+    const ranked = [...candidates].sort((a, b) => getCandidateStrength(b) - getCandidateStrength(a));
+    return ranked[0];
+}
+
+function candidateFingerprint(candidate: CandidateEvaluation): string {
+    const hand = candidate.hand
+        .map((tile) => `${tile.suit}${tile.rank}`)
+        .sort()
+        .join(',');
+    const waits = candidate.waits
+        .map((tile) => `${tile.suit}${tile.rank}`)
+        .sort()
+        .join(',');
+    return `${hand}|${waits}|${candidate.score.points}|${candidate.score.han}`;
 }
 
 // 딜러가 사람/봇으로 결정되는 시드를 찾는다.
@@ -624,6 +675,63 @@ async function testRoundEndAutoConfirmBot() {
     await waitUntil('matchStart after human confirm', () => actor.getSnapshot().value === 'matchStart', 3000);
 }
 
+// [시나리오 11] 같은 시드 기준 난이도 비교(동일 입력 재현성 + HARD가 EASY보다 약하지 않음)
+async function testSameSeedDifficultyComparison() {
+    const engine = createEngineForRuleset('classic');
+    const playerIds = ['bot-a', 'bot-b'];
+    const logic = new BotLogic('bot-a', 'HARD');
+    const diffs: Difficulty[] = ['EASY', 'MEDIUM', 'HARD'];
+
+    const evaluate = (seed: number, difficulty: Difficulty) => {
+        const dealt = engine.buildDealResult(playerIds, seed + 1).dealt['bot-a'];
+        return withSeededRandom(seed * 1000 + difficulty.charCodeAt(0), () => {
+            const candidates = logic.buildBestCandidates(dealt, [], 12, {}, difficulty);
+            return pickBestCandidate(candidates);
+        });
+    };
+
+    let chosenSeed: number | null = null;
+    let easyBest: CandidateEvaluation | null = null;
+    let mediumBest: CandidateEvaluation | null = null;
+    let hardBest: CandidateEvaluation | null = null;
+
+    for (let seed = 1; seed <= 300; seed++) {
+        const byDiff = diffs.map((difficulty) => evaluate(seed, difficulty));
+        if (byDiff.some((candidate) => !candidate)) continue;
+
+        const easy = byDiff[0]!;
+        const medium = byDiff[1]!;
+        const hard = byDiff[2]!;
+        const hardStrength = getCandidateStrength(hard);
+        const easyStrength = getCandidateStrength(easy);
+
+        if (hardStrength >= easyStrength) {
+            chosenSeed = seed;
+            easyBest = easy;
+            mediumBest = medium;
+            hardBest = hard;
+            break;
+        }
+    }
+
+    assert.ok(chosenSeed !== null, 'at least one comparable seed should exist');
+    assert.ok(easyBest && mediumBest && hardBest, 'all difficulties should produce candidates');
+
+    // 같은 시드 + 같은 난이도는 같은 결과를 내야 함(고정 RNG)
+    const easyAgain = evaluate(chosenSeed!, 'EASY');
+    const hardAgain = evaluate(chosenSeed!, 'HARD');
+    assert.ok(easyAgain && hardAgain, 're-evaluation should produce candidates');
+    assert.equal(candidateFingerprint(easyBest!), candidateFingerprint(easyAgain!));
+    assert.equal(candidateFingerprint(hardBest!), candidateFingerprint(hardAgain!));
+
+    const hardStrength = getCandidateStrength(hardBest!);
+    const easyStrength = getCandidateStrength(easyBest!);
+    assert.ok(
+        hardStrength >= easyStrength,
+        `expected HARD >= EASY on seed=${chosenSeed} (hard=${hardStrength}, easy=${easyStrength})`
+    );
+}
+
 async function run() {
     // 사용자 요청 순서에 맞춘 체크리스트
     const tests: Array<[string, () => Promise<void>]> = [
@@ -636,7 +744,8 @@ async function run() {
         ['Auto Ron (자동 론) 동작', testAutoRonFlow],
         ['Turn Timeout & Force Discard (강제 타패)', testTurnTimeoutAndForceDiscard],
         ['ROUND_END 확인 게이트(양측 확인)', testRoundEndConfirmGate],
-        ['ROUND_END AI 자동 확인', testRoundEndAutoConfirmBot]
+        ['ROUND_END AI 자동 확인', testRoundEndAutoConfirmBot],
+        ['같은 시드 난이도 비교 (EASY/MEDIUM/HARD)', testSameSeedDifficultyComparison]
     ];
 
     for (const [name, test] of tests) {

@@ -1,5 +1,6 @@
 import { GamePhase, PlayerId, Tile } from '@step13/proto';
 import { ScoreResult } from '@step13/scoring';
+import type { Difficulty } from '@step13/scoring';
 import { WindSeat } from './rules';
 
 export type GameContext = {
@@ -45,4 +46,4 @@ export type GameEvents =
     | { type: 'GUIDE_VIEW'; playerId: PlayerId; step: string }
     | { type: 'CONFIRM_ROUND_END'; playerId: PlayerId }
     | { type: 'RESTART' }
-    | { type: 'ADD_BOT' };
+    | { type: 'ADD_BOT'; difficulty?: Difficulty };
