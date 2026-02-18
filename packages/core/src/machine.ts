@@ -191,7 +191,10 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                 context.players.forEach((playerId) => {
                     if (!nextHands[playerId]) {
                         const dealt = context.dealtTiles[playerId] ?? [];
-                        const { hand, pool } = engine.findTenpaiHand(dealt);
+                        const { hand, pool } = engine.findTenpaiHand(dealt, {
+                            doraIndicators: context.doraIndicators,
+                            requireMangan: true
+                        });
                         nextHands[playerId] = hand;
                         nextPools[playerId] = pool;
                         extraEvents.push({ type: 'TIMEOUT', playerId, phase: 'HAND_BUILD' });

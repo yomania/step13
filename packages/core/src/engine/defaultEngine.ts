@@ -7,24 +7,51 @@ import { DealResult, DealerSelection, GameEngine, RoundResult } from './types';
 
 type EngineConfig = {
     scoreOptions: ScoreOptions;
+    dealValidationMaxAttempts?: number;
+    handSearchShuffles?: number;
 };
 
-export function createDefaultEngine({ scoreOptions }: EngineConfig): GameEngine {
+export function createDefaultEngine({
+    scoreOptions,
+    dealValidationMaxAttempts = 20,
+    handSearchShuffles = 40
+}: EngineConfig): GameEngine {
+    let lastFailedPlayers: string[] = [];
+
     return {
         buildDealResult(players: string[], seed: number): DealResult {
-            const shuffled = shuffleWithSeed(generateTiles(), seed);
-            const dealt: Record<string, Tile[]> = {};
-            players.forEach((playerId, index) => {
-                dealt[playerId] = shuffled.slice(
-                    index * RULES.tiles.dealTilesPerPlayer,
-                    (index + 1) * RULES.tiles.dealTilesPerPlayer
-                );
-            });
-            const wallStart = players.length * RULES.tiles.dealTilesPerPlayer;
-            return {
-                dealt,
-                wall: shuffled.slice(wallStart)
-            };
+            for (let attempt = 0; attempt < dealValidationMaxAttempts; attempt++) {
+                const shuffled = shuffleWithSeed(generateTiles(), seed + attempt * 7919);
+                const dealt: Record<string, Tile[]> = {};
+                players.forEach((playerId, index) => {
+                    dealt[playerId] = shuffled.slice(
+                        index * RULES.tiles.dealTilesPerPlayer,
+                        (index + 1) * RULES.tiles.dealTilesPerPlayer
+                    );
+                });
+                const wallStart = players.length * RULES.tiles.dealTilesPerPlayer;
+                const wall = shuffled.slice(wallStart);
+                const doraCandidates = buildAllDoraIndicatorCandidates();
+
+                const failedPlayers = players.filter((playerId) => {
+                    const tiles = dealt[playerId] ?? [];
+                    return !findManganTenpaiCandidate(tiles, doraCandidates, scoreOptions, handSearchShuffles);
+                });
+                lastFailedPlayers = failedPlayers;
+
+                if (failedPlayers.length === 0) {
+                    return { dealt, wall };
+                }
+            }
+
+            const fallbackDeal = buildGuaranteedManganDeal(players, seed);
+            if (fallbackDeal) {
+                return fallbackDeal;
+            }
+
+            throw new Error(
+                `[DealValidation] could not satisfy mangan-tenpai for players=${lastFailedPlayers.join(',')} after ${dealValidationMaxAttempts} attempts (seed=${seed})`
+            );
         },
 
         selectDealer(players: string[], seed: number): DealerSelection {
@@ -45,7 +72,25 @@ export function createDefaultEngine({ scoreOptions }: EngineConfig): GameEngine 
             return hasWinningWaitInternal(hand);
         },
 
-        findTenpaiHand(tiles: Tile[]): { hand: Tile[]; pool: Tile[] } {
+        findTenpaiHand(
+            tiles: Tile[],
+            options?: { doraIndicators?: Tile[]; requireMangan?: boolean }
+        ): { hand: Tile[]; pool: Tile[] } {
+            const requireMangan = Boolean(options?.requireMangan);
+            if (requireMangan) {
+                const doraIndicators = options?.doraIndicators ?? [];
+                if (tiles.length >= RULES.tiles.handSize) {
+                    const directHand = tiles.slice(0, RULES.tiles.handSize);
+                    if (isManganTenpai(directHand, doraIndicators, scoreOptions)) {
+                        return { hand: directHand, pool: tiles.slice(RULES.tiles.handSize) };
+                    }
+                }
+                const mangan = findManganTenpaiCandidate(tiles, doraIndicators, scoreOptions, handSearchShuffles);
+                if (mangan) {
+                    return mangan;
+                }
+            }
+
             // Use the same win-wait predicate as machine guard to avoid mismatch.
             for (let i = 0; i < 5000; i++) {
                 const shuffled = shuffleWithSeed(tiles, i + 1);
@@ -235,20 +280,166 @@ export function createDefaultEngine({ scoreOptions }: EngineConfig): GameEngine 
 }
 
 function hasWinningWaitInternal(hand: Tile[]): boolean {
+    return getWinningWaits(hand).length > 0;
+}
+
+function getWinningWaits(hand: Tile[]): Tile[] {
     if (hand.length !== RULES.tiles.handSize) {
-        return false;
+        return [];
     }
+    const waits: Tile[] = [];
     const suits: Tile['suit'][] = ['man', 'pin', 'sou', 'z'];
     for (const suit of suits) {
         const maxRank = suit === 'z' ? 7 : 9;
         for (let rank = 1; rank <= maxRank; rank++) {
             const winTile: Tile = { suit, rank: rank as any, isRed: false };
             if (calculateShanten([...hand, winTile]) === -1) {
+                waits.push(winTile);
+            }
+        }
+    }
+    return waits;
+}
+
+function findManganTenpaiCandidate(
+    tiles: Tile[],
+    doraIndicators: Tile[],
+    scoreOptions: ScoreOptions,
+    handSearchShuffles: number
+): { hand: Tile[]; pool: Tile[] } | null {
+    for (let i = 0; i < handSearchShuffles; i++) {
+        const shuffled = shuffleWithSeed(tiles, i + 1);
+        const hand = shuffled.slice(0, RULES.tiles.handSize);
+        if (!isManganTenpai(hand, doraIndicators, scoreOptions)) {
+            continue;
+        }
+        return { hand, pool: shuffled.slice(RULES.tiles.handSize) };
+    }
+    return null;
+}
+
+function isManganTenpai(hand: Tile[], doraIndicators: Tile[], scoreOptions: ScoreOptions): boolean {
+    const waits = getWinningWaits(hand);
+    if (waits.length === 0) {
+        return false;
+    }
+    const doraIndicatorSet = new Set(doraIndicators.map((indicator) => `${indicator.suit}-${indicator.rank}`));
+    for (const wait of waits) {
+        const noDoraScore = calculateScore(hand, wait, false, [], scoreOptions);
+        if (noDoraScore.points >= RULES.winConditions.manganMinimumPoints) {
+            return true;
+        }
+        if (doraIndicators.length === 0) {
+            continue;
+        }
+
+        const effectiveIndicators = buildEffectiveIndicatorsForHandWait(hand, wait, doraIndicatorSet);
+        for (const indicator of effectiveIndicators) {
+            const score = calculateScore(hand, wait, false, [indicator], scoreOptions);
+            if (score.points >= RULES.winConditions.manganMinimumPoints) {
                 return true;
             }
         }
     }
     return false;
+}
+
+function buildAllDoraIndicatorCandidates(): Tile[] {
+    const candidates: Tile[] = [];
+    const suits: Tile['suit'][] = ['man', 'pin', 'sou', 'z'];
+    for (const suit of suits) {
+        const maxRank = suit === 'z' ? 7 : 9;
+        for (let rank = 1; rank <= maxRank; rank++) {
+            candidates.push({ suit, rank: rank as Tile['rank'], isRed: false });
+        }
+    }
+    return candidates;
+}
+
+function buildEffectiveIndicatorsForHandWait(hand: Tile[], wait: Tile, doraIndicatorSet: Set<string>): Tile[] {
+    const targets = [...hand, wait];
+    const indicators = new Map<string, Tile>();
+    for (const tile of targets) {
+        const indicator = getIndicatorForDora(tile);
+        const key = `${indicator.suit}-${indicator.rank}`;
+        if (!doraIndicatorSet.has(key) || indicators.has(key)) {
+            continue;
+        }
+        indicators.set(key, indicator);
+    }
+    return [...indicators.values()];
+}
+
+function getIndicatorForDora(tile: Tile): Tile {
+    if (tile.suit === 'z') {
+        if (tile.rank >= 1 && tile.rank <= 4) {
+            const prev = tile.rank === 1 ? 4 : tile.rank - 1;
+            return { suit: 'z', rank: prev as Tile['rank'], isRed: false };
+        }
+        const prev = tile.rank === 5 ? 7 : tile.rank - 1;
+        return { suit: 'z', rank: prev as Tile['rank'], isRed: false };
+    }
+    const prev = tile.rank === 1 ? 9 : tile.rank - 1;
+    return { suit: tile.suit, rank: prev as Tile['rank'], isRed: false };
+}
+
+function buildGuaranteedManganDeal(players: string[], seed: number): DealResult | null {
+    if (players.length !== 2) {
+        return null;
+    }
+
+    const templateByPlayer: Record<string, Array<{ suit: Tile['suit']; rank: number }>> = {
+        [players[0]]: [
+            { suit: 'man', rank: 1 }, { suit: 'man', rank: 1 }, { suit: 'man', rank: 1 },
+            { suit: 'man', rank: 2 }, { suit: 'man', rank: 2 }, { suit: 'man', rank: 2 },
+            { suit: 'man', rank: 3 }, { suit: 'man', rank: 3 }, { suit: 'man', rank: 3 },
+            { suit: 'man', rank: 4 }, { suit: 'man', rank: 4 }, { suit: 'man', rank: 4 },
+            { suit: 'man', rank: 5 }
+        ],
+        [players[1]]: [
+            { suit: 'pin', rank: 1 }, { suit: 'pin', rank: 1 }, { suit: 'pin', rank: 1 },
+            { suit: 'pin', rank: 2 }, { suit: 'pin', rank: 2 }, { suit: 'pin', rank: 2 },
+            { suit: 'pin', rank: 3 }, { suit: 'pin', rank: 3 }, { suit: 'pin', rank: 3 },
+            { suit: 'pin', rank: 4 }, { suit: 'pin', rank: 4 }, { suit: 'pin', rank: 4 },
+            { suit: 'pin', rank: 5 }
+        ]
+    };
+
+    const deck = generateTiles();
+    const dealt: Record<string, Tile[]> = {};
+
+    for (const playerId of players) {
+        const template = templateByPlayer[playerId];
+        const mandatory = takeTiles(deck, template);
+        if (!mandatory) {
+            return null;
+        }
+        dealt[playerId] = mandatory;
+    }
+
+    const shuffledRest = shuffleWithSeed(deck, seed + 104729);
+    for (const playerId of players) {
+        const needed = RULES.tiles.dealTilesPerPlayer - dealt[playerId].length;
+        dealt[playerId] = [...dealt[playerId], ...shuffledRest.splice(0, needed)];
+    }
+
+    return {
+        dealt,
+        wall: shuffledRest
+    };
+}
+
+function takeTiles(deck: Tile[], specs: Array<{ suit: Tile['suit']; rank: number }>): Tile[] | null {
+    const picked: Tile[] = [];
+    for (const spec of specs) {
+        const index = deck.findIndex((tile) => tile.suit === spec.suit && tile.rank === spec.rank);
+        if (index < 0) {
+            return null;
+        }
+        const [tile] = deck.splice(index, 1);
+        picked.push(tile);
+    }
+    return picked;
 }
 
 function rollDealerDice(players: string[], seed: number): Record<string, number> {

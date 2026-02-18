@@ -25,7 +25,10 @@ export interface GameEngine {
     selectDealer(players: string[], seed: number): DealerSelection;
     getEastPlayer(seatMap: Record<string, WindSeat>): string;
     hasWinningWait(hand: Tile[]): boolean;
-    findTenpaiHand(tiles: Tile[]): { hand: Tile[]; pool: Tile[] };
+    findTenpaiHand(
+        tiles: Tile[],
+        options?: { doraIndicators?: Tile[]; requireMangan?: boolean }
+    ): { hand: Tile[]; pool: Tile[] };
     canSelectDora(context: GameContext, playerId: string, tileId: string): boolean;
     selectDora(context: GameContext, event: Extract<GameEvents, { type: 'SELECT_DORA' }>): Partial<GameContext>;
     autoSelectDora(context: GameContext): Partial<GameContext>;

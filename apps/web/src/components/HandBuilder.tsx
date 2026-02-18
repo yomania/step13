@@ -180,6 +180,8 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
             if (isDebugQueryMatch || canUseAsDebugFallback) {
                 setDebugCandidates((analysisResult.candidates || []).slice(0, 5));
                 setIsDebugAnalyzing(false);
+                // 디버그 쿼리 결과는 사용자가 직접 선택한 패의 예상 점수를 덮어쓰지 않음
+                return;
             }
             if (!analysisResult.scoreResult) {
                 setServerPotentialScore(analysisResult.candidates[0]?.score ?? null);

@@ -30,7 +30,7 @@ afterEach(() => {
 });
 
 describe('gameMachine full cycle and edge cases', () => {
-    it('falls back to first wall tile when dealer sends an invalid dora tile id', async () => {
+    it('falls back to first wall tile when dealer sends an invalid dora tile id', { timeout: 20000 }, async () => {
         vi.useFakeTimers();
 
         const actor = createActor(gameMachine);
@@ -55,7 +55,7 @@ describe('gameMachine full cycle and edge cases', () => {
         expect(actor.getSnapshot().value).toBe('handBuild');
     });
 
-    it('waits dora reveal time before entering handBuild after selecting dora', async () => {
+    it('waits dora reveal time before entering handBuild after selecting dora', { timeout: 20000 }, async () => {
         vi.useFakeTimers();
 
         const actor = createActor(gameMachine);
