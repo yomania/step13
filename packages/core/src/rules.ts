@@ -9,8 +9,8 @@ export const RULES = {
         doraSelectTimeMs: 15000,
         doraRevealTimeMs: 3000,
         buildTimeMs: 120000,
-        turnTimeMs: 5000,
-        timeBankMs: 10000
+        turnTimeMs: 10000,
+        timeBankMs: 3000
     },
     actions: {
         allowTsumo: false,

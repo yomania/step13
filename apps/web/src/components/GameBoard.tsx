@@ -1,6 +1,6 @@
-import { ReactNode } from 'react';
+import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { PlayerId } from '@step13/proto';
-import { GameContext } from '@step13/core';
+import { GameContext, RULES } from '@step13/core';
 import { DiscardPile } from './DiscardPile';
 
 interface GameBoardProps {
@@ -14,8 +14,59 @@ export function GameBoard({ context, myPlayerId, children }: GameBoardProps) {
     const otherPlayerId = players.find((p: PlayerId) => p !== myPlayerId);
     const myTimeBankMs = context.timeBankRemainingMs?.[myPlayerId] ?? 0;
     const otherTimeBankMs = otherPlayerId ? (context.timeBankRemainingMs?.[otherPlayerId] ?? 0) : 0;
+    const currentTurn = context.currentTurn;
+    const currentTurnBankMs = currentTurn ? (context.timeBankRemainingMs?.[currentTurn] ?? 0) : 0;
+    const previousTurnRef = useRef<PlayerId | null>(null);
+    const previousTurnBankRef = useRef<number>(0);
+    const [clockStartMs, setClockStartMs] = useState<number | null>(null);
+    const [clockDurationMs, setClockDurationMs] = useState<number>(RULES.timers.turnTimeMs);
+    const [isBonusClock, setIsBonusClock] = useState(false);
+    const [nowMs, setNowMs] = useState(() => Date.now());
 
     const formatBank = (ms: number) => `${Math.max(0, Math.ceil(ms / 1000))}s`;
+
+    useEffect(() => {
+        if (!currentTurn) {
+            previousTurnRef.current = null;
+            previousTurnBankRef.current = 0;
+            setClockStartMs(null);
+            setClockDurationMs(RULES.timers.turnTimeMs);
+            setIsBonusClock(false);
+            return;
+        }
+
+        const previousTurn = previousTurnRef.current;
+        const previousBank = previousTurnBankRef.current;
+
+        if (previousTurn !== currentTurn) {
+            setClockStartMs(Date.now());
+            setClockDurationMs(RULES.timers.turnTimeMs);
+            setIsBonusClock(false);
+        } else if (previousBank > currentTurnBankMs) {
+            const consumedBankMs = previousBank - currentTurnBankMs;
+            setClockStartMs(Date.now());
+            setClockDurationMs(consumedBankMs);
+            setIsBonusClock(true);
+        }
+
+        previousTurnRef.current = currentTurn;
+        previousTurnBankRef.current = currentTurnBankMs;
+    }, [currentTurn, currentTurnBankMs, context.eventLog.length]);
+
+    useEffect(() => {
+        if (!clockStartMs) return;
+        const timer = setInterval(() => setNowMs(Date.now()), 100);
+        return () => clearInterval(timer);
+    }, [clockStartMs]);
+
+    const turnTimeRemainingMs = useMemo(() => {
+        if (!clockStartMs) {
+            return RULES.timers.turnTimeMs;
+        }
+        return Math.max(0, clockDurationMs - (nowMs - clockStartMs));
+    }, [clockStartMs, clockDurationMs, nowMs]);
+
+    const turnTimeRemainingSec = Math.max(0, Math.ceil(turnTimeRemainingMs / 1000));
 
     return (
         <div className="relative flex flex-col min-h-screen text-white px-3 py-4 sm:px-5 overflow-x-hidden">
@@ -28,7 +79,10 @@ export function GameBoard({ context, myPlayerId, children }: GameBoardProps) {
                         Round: <span className="text-yellow-400">{context.round}</span>
                     </div>
                     <div className="surface-panel px-3 py-1 rounded-lg">
-                        Turn: <span className="text-cyan-300">5s</span>
+                        Turn:
+                        <span className={`${isBonusClock ? 'text-yellow-300' : 'text-cyan-300'} ml-1 font-mono`}>
+                            {isBonusClock ? `+${turnTimeRemainingSec}s` : `${turnTimeRemainingSec}s`}
+                        </span>
                     </div>
                     <div className="surface-panel px-3 py-1 rounded-lg">
                         My Bank: <span className="text-green-300 font-mono">{formatBank(myTimeBankMs)}</span>

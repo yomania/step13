@@ -202,6 +202,9 @@ export function createDefaultEngine({
             if (!hand) {
                 return null;
             }
+            if (isPlayerFuriten(context, opponentId, hand)) {
+                return null;
+            }
 
             const score = calculateScore(hand, tile, false, context.doraIndicators, {
                 ...scoreOptions,
@@ -223,6 +226,9 @@ export function createDefaultEngine({
             }
             const hand = context.hands[playerId];
             if (!hand) {
+                return false;
+            }
+            if (isPlayerFuriten(context, playerId, hand)) {
                 return false;
             }
             const score = calculateScore(hand, context.lastDiscard.tile, false, context.doraIndicators, {
@@ -281,6 +287,15 @@ export function createDefaultEngine({
 
 function hasWinningWaitInternal(hand: Tile[]): boolean {
     return getWinningWaits(hand).length > 0;
+}
+
+function isPlayerFuriten(context: GameContext, playerId: string, hand: Tile[]): boolean {
+    const myDiscards = context.discards[playerId] ?? [];
+    if (myDiscards.length === 0) {
+        return false;
+    }
+    const myDiscardKeys = new Set(myDiscards.map((tile) => `${tile.suit}-${tile.rank}`));
+    return getWinningWaits(hand).some((wait) => myDiscardKeys.has(`${wait.suit}-${wait.rank}`));
 }
 
 function getWinningWaits(hand: Tile[]): Tile[] {

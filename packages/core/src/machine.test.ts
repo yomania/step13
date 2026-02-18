@@ -36,6 +36,29 @@ function makeTiles(count: number, prefix: string): Tile[] {
     }));
 }
 
+function makeTenpaiHandForFiveMan(prefix: string): Tile[] {
+    return [
+        { suit: 'man', rank: 1, isRed: false, id: `${prefix}-m1a` },
+        { suit: 'man', rank: 1, isRed: false, id: `${prefix}-m1b` },
+        { suit: 'man', rank: 1, isRed: false, id: `${prefix}-m1c` },
+        { suit: 'man', rank: 2, isRed: false, id: `${prefix}-m2a` },
+        { suit: 'man', rank: 2, isRed: false, id: `${prefix}-m2b` },
+        { suit: 'man', rank: 2, isRed: false, id: `${prefix}-m2c` },
+        { suit: 'man', rank: 3, isRed: false, id: `${prefix}-m3a` },
+        { suit: 'man', rank: 3, isRed: false, id: `${prefix}-m3b` },
+        { suit: 'man', rank: 3, isRed: false, id: `${prefix}-m3c` },
+        { suit: 'man', rank: 4, isRed: false, id: `${prefix}-m4a` },
+        { suit: 'man', rank: 4, isRed: false, id: `${prefix}-m4b` },
+        { suit: 'man', rank: 4, isRed: false, id: `${prefix}-m4c` },
+        { suit: 'man', rank: 5, isRed: false, id: `${prefix}-m5w` }
+    ];
+}
+
+function makePoolWithLeadingTiles(prefix: string, lead: Tile[]): Tile[] {
+    const rest = makeTiles(21 - lead.length, `${prefix}-rest`);
+    return [...lead, ...rest];
+}
+
 afterEach(() => {
     vi.useRealTimers();
 });
@@ -201,9 +224,10 @@ describe('gameMachine full cycle and edge cases', () => {
         const beforeEventLogLen = actor.getSnapshot().context.eventLog.length;
 
         await advance(RULES.timers.turnTimeMs);
-        expect(actor.getSnapshot().context.timeBankRemainingMs[firstTurn]).toBe(5000);
+        expect(actor.getSnapshot().context.timeBankRemainingMs[firstTurn]).toBe(0);
         expect(actor.getSnapshot().context.currentTurn).toBe(firstTurn);
         const snapshot = actor.getSnapshot();
+        expect(snapshot.value).toEqual({ gameLoop: 'turnOvertime' });
         expect((snapshot.context.discards[firstTurn] ?? []).length).toBe(beforeDiscardCount);
         expect(snapshot.context.eventLog.length).toBeGreaterThan(beforeEventLogLen);
         expect(snapshot.context.eventLog[snapshot.context.eventLog.length - 1]).toEqual({
@@ -419,5 +443,55 @@ describe('gameMachine full cycle and edge cases', () => {
         expect(snapshot.value).toBe('matchEnd');
         expect(snapshot.context.phase).toBe('MATCH_END');
         expect(snapshot.context.winner).toBe('p2');
+    });
+
+    it('blocks manual and auto ron when winner is furiten by prior self-discard', { timeout: 20000 }, async () => {
+        vi.useFakeTimers();
+
+        const actor = createActor(gameMachine);
+        actor.start();
+
+        actor.send({ type: 'JOIN', playerId: 'p1' });
+        actor.send({ type: 'JOIN', playerId: 'p2' });
+        actor.send({ type: 'START_MATCH', seed: 31 });
+
+        await advance(1000);
+        expect(actor.getSnapshot().value).toBe('doraSelect');
+        const doraSnap = actor.getSnapshot();
+        actor.send({ type: 'SELECT_DORA', playerId: doraSnap.context.dealer, tileId: doraSnap.context.wall[0]?.id ?? 'fallback-dora' });
+        await advance(RULES.timers.doraRevealTimeMs);
+        expect(actor.getSnapshot().value).toBe('handBuild');
+
+        const p1Hand = makeTenpaiHandForFiveMan('p1');
+        const p2Hand = makeTenpaiHandForFiveMan('p2');
+        const p1Pool = makePoolWithLeadingTiles('p1-pool', [{ suit: 'man', rank: 5, isRed: false, id: 'p1-discard-5m' }]);
+        const p2Pool = makePoolWithLeadingTiles('p2-pool', [
+            { suit: 'pin', rank: 1, isRed: false, id: 'p2-first-discard' },
+            { suit: 'man', rank: 5, isRed: false, id: 'p2-discard-5m' }
+        ]);
+
+        actor.send({ type: 'SUBMIT_HAND', playerId: 'p1', hand: p1Hand, pool: p1Pool });
+        actor.send({ type: 'SUBMIT_HAND', playerId: 'p2', hand: p2Hand, pool: p2Pool });
+        expect(actor.getSnapshot().value).toEqual({ gameLoop: 'turn' });
+
+        const firstTurn = actor.getSnapshot().context.currentTurn;
+        if (firstTurn === 'p1') {
+            actor.send({ type: 'DISCARD', playerId: 'p1', tileId: 'p1-discard-5m' });
+            actor.send({ type: 'DISCARD', playerId: 'p2', tileId: 'p2-discard-5m' });
+        } else {
+            actor.send({ type: 'DISCARD', playerId: 'p2', tileId: 'p2-first-discard' });
+            actor.send({ type: 'DISCARD', playerId: 'p1', tileId: 'p1-discard-5m' });
+            actor.send({ type: 'DISCARD', playerId: 'p2', tileId: 'p2-discard-5m' });
+        }
+
+        const afterDangerDiscard = actor.getSnapshot();
+        expect(afterDangerDiscard.value).toEqual({ gameLoop: 'turn' });
+        expect(afterDangerDiscard.context.lastDiscard?.playerId).toBe('p2');
+        expect(afterDangerDiscard.context.lastDiscard?.tile.id).toBe('p2-discard-5m');
+
+        actor.send({ type: 'DECLARE_WIN', playerId: 'p1' });
+        const afterDeclare = actor.getSnapshot();
+        expect(afterDeclare.value).toEqual({ gameLoop: 'turn' });
+        expect(afterDeclare.context.winner).toBeNull();
     });
 });

@@ -217,7 +217,7 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                 }
                 const playerId = context.currentTurn;
                 const current = context.timeBankRemainingMs[playerId] ?? RULES.timers.timeBankMs;
-                const consumed = Math.min(current, RULES.timers.turnTimeMs);
+                const consumed = Math.min(current, RULES.timers.timeBankMs);
                 const timeoutEvent: GameEvents = { type: 'TIMEOUT', playerId, phase: 'TURN' };
                 return {
                     timeBankRemainingMs: {
@@ -253,6 +253,17 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                     eventLog: [...context.eventLog, timeoutEvent]
                 };
                 return engine.applyDiscard(timedOutContext, playerId, tile.id);
+            }),
+            refreshTurnTimeBankForCurrent: assign(({ context }) => {
+                if (!context.currentTurn) {
+                    return {};
+                }
+                return {
+                    timeBankRemainingMs: {
+                        ...context.timeBankRemainingMs,
+                        [context.currentTurn]: RULES.timers.timeBankMs
+                    }
+                };
             }),
             applyAutoRon: assign(({ context }) => {
                 const winnerId = engine.autoRonWinner(context);
@@ -434,13 +445,33 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                                 {
                                     guard: 'hasTurnTimeBank',
                                     actions: 'consumeTurnTimeBank',
-                                    target: 'turn'
+                                    target: 'turnOvertime'
                                 },
                                 {
                                     actions: 'forceDiscardOnTimeout',
                                     target: 'checkRon'
                                 }
                             ]
+                        },
+                        on: {
+                            DISCARD: {
+                                guard: 'canApplyDiscard',
+                                actions: 'applyDiscard',
+                                target: 'checkRon'
+                            },
+                            AUTO_DISCARD: {
+                                guard: 'canApplyDiscard',
+                                actions: 'applyDiscard',
+                                target: 'checkRon'
+                            }
+                        }
+                    },
+                    turnOvertime: {
+                        after: {
+                            [RULES.timers.timeBankMs]: {
+                                actions: 'forceDiscardOnTimeout',
+                                target: 'checkRon'
+                            }
                         },
                         on: {
                             DISCARD: {
@@ -468,6 +499,7 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                                 actions: 'applyAutoRon'
                             },
                             {
+                                actions: 'refreshTurnTimeBankForCurrent',
                                 target: 'turn'
                             }
                         ]

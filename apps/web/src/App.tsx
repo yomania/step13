@@ -205,6 +205,7 @@ export default function App() {
     const isHandBuild = matches('handBuild');
     const isDoraSelect = matches('doraSelect');
     const isGameLoop = matches('gameLoop');
+    const isRoundEnd = matches('roundEnd');
 
     const scoreDiff = useMemo(() => {
         const opponentId = context.players.find((p: PlayerId) => p !== playerId);
@@ -360,6 +361,7 @@ export default function App() {
     const [showYakuInfo, setShowYakuInfo] = useState(false);
     const [showAiExitMenu, setShowAiExitMenu] = useState(false);
     const [aiRematchStep, setAiRematchStep] = useState<'none' | 'join' | 'waitSelf' | 'addBot' | 'waitBot' | 'start'>('none');
+    const [showRoundEndOverlay, setShowRoundEndOverlay] = useState(true);
 
     useEffect(() => {
         if (showReplay) {
@@ -372,6 +374,12 @@ export default function App() {
             setShowAiExitMenu(false);
         }
     }, [isAiMatch]);
+
+    useEffect(() => {
+        if (isRoundEnd) {
+            setShowRoundEndOverlay(true);
+        }
+    }, [isRoundEnd]);
 
     useEffect(() => {
         if (aiRematchStep === 'none' || !isIdle) return;
@@ -848,10 +856,33 @@ export default function App() {
                             </div>
                         )}
 
-                        {matches('roundEnd') && (() => {
+                        {isRoundEnd && !showRoundEndOverlay && (
+                            <>
+                                <button
+                                    onClick={() => setShowRoundEndOverlay(true)}
+                                    className="absolute inset-0 z-40 cursor-pointer"
+                                    aria-label="결과 레이어 다시 보기"
+                                />
+                                <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40">
+                                    <div className="px-4 py-2 rounded-xl bg-slate-900/85 border border-cyan-400/50 text-cyan-200 text-sm font-semibold shadow-lg">
+                                        게임판 클릭 시 결과 화면이 다시 열립니다.
+                                    </div>
+                                </div>
+                            </>
+                        )}
+
+                        {isRoundEnd && showRoundEndOverlay && (() => {
                             // 론패 정보: 론으로 끝난 경우 lastDiscard에 버린 패 정보가 있음
                             const ronTile = context.winner && context.lastDiscard ? context.lastDiscard.tile : null;
                             const ronLoserId = context.winner && context.lastDiscard ? context.lastDiscard.playerId : null;
+                            // 점수 변동 계산
+                            const winResult = context.winResult as { han: number; fu: number; points: number; yaku: string[]; limit?: string } | null;
+                            const getScoreDelta = (pid: string): number => {
+                                if (!winResult) return 0;
+                                if (context.winner === pid) return winResult.points;
+                                if (context.winner && context.winner !== pid) return -winResult.points;
+                                return 0;
+                            };
 
                             return (
                                 <div className="absolute inset-0 z-50 bg-slate-900/95 flex flex-col items-center justify-center p-6 backdrop-blur-sm">
@@ -859,9 +890,30 @@ export default function App() {
                                         <h2 className="text-3xl font-black text-white text-center mb-1">
                                             {context.winner ? (context.winner === playerId ? '라운드 승리' : '라운드 패배') : '유국 (DRAW)'}
                                         </h2>
-                                        <p className="text-center text-slate-300 mb-4">
+                                        <p className="text-center text-slate-300 mb-2">
                                             다음 라운드로 진행하려면 양쪽 확인이 필요합니다.
                                         </p>
+
+                                        {/* 화료 점수 요약 배너 */}
+                                        {winResult && context.winner && (
+                                            <div className="mb-4 rounded-xl border border-yellow-500/50 bg-yellow-900/20 px-4 py-3 text-center">
+                                                <div className="text-xs text-yellow-400 mb-1 font-semibold tracking-wide">화료 점수</div>
+                                                <div className="flex items-center justify-center gap-3 flex-wrap">
+                                                    <span className="text-2xl font-black text-yellow-300">{winResult.points.toLocaleString()}점</span>
+                                                    <span className="text-sm text-slate-300">{winResult.han}판 {winResult.fu}부</span>
+                                                    {winResult.limit && (
+                                                        <span className="px-2 py-0.5 rounded bg-red-600 text-white text-xs font-bold">{winResult.limit}</span>
+                                                    )}
+                                                </div>
+                                                {winResult.yaku.length > 0 && (
+                                                    <div className="mt-1 flex flex-wrap gap-1 justify-center">
+                                                        {winResult.yaku.map((y: string) => (
+                                                            <span key={y} className="px-2 py-0.5 rounded-full bg-slate-700 text-slate-200 text-[11px] border border-slate-600">{y}</span>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
 
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                             {roundEndSummaries.map((summary) => {
@@ -874,10 +926,10 @@ export default function App() {
                                                     <div
                                                         key={summary.playerId}
                                                         className={`rounded-lg border p-3 ${isRonWinner
-                                                                ? 'border-yellow-400/70 bg-yellow-900/20'
-                                                                : isRonLoser
-                                                                    ? 'border-rose-500/60 bg-rose-900/15'
-                                                                    : 'border-slate-600 bg-slate-900/60'
+                                                            ? 'border-yellow-400/70 bg-yellow-900/20'
+                                                            : isRonLoser
+                                                                ? 'border-rose-500/60 bg-rose-900/15'
+                                                                : 'border-slate-600 bg-slate-900/60'
                                                             }`}
                                                     >
                                                         <div className="flex items-center justify-between">
@@ -886,8 +938,25 @@ export default function App() {
                                                                 {summary.confirmed ? '확인 완료' : summary.isBot ? '자동 확인 대기' : '확인 대기'}
                                                             </div>
                                                         </div>
-                                                        <div className="mt-2 text-sm text-slate-300">
-                                                            예상 역수: <span className="text-yellow-300 font-bold">{summary.best.han}판</span>
+                                                        {/* 점수 표시 영역 */}
+                                                        <div className="mt-2 flex items-center justify-between">
+                                                            <div className="text-sm text-slate-300">
+                                                                예상 역수: <span className="text-yellow-300 font-bold">{summary.best.han}판</span>
+                                                            </div>
+                                                            {(() => {
+                                                                const currentScore = (context.scores as Record<string, number>)[summary.playerId] ?? 0;
+                                                                const delta = getScoreDelta(summary.playerId);
+                                                                return (
+                                                                    <div className="text-right">
+                                                                        <div className="text-base font-black text-white">{currentScore.toLocaleString()}점</div>
+                                                                        {delta !== 0 && (
+                                                                            <div className={`text-xs font-bold ${delta > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                                                                {delta > 0 ? `+${delta.toLocaleString()}` : delta.toLocaleString()}
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })()}
                                                         </div>
                                                         <div className="mt-1 text-xs text-slate-400">
                                                             대기패 {summary.waits.length}개
@@ -902,8 +971,8 @@ export default function App() {
                                                                     <div
                                                                         key={`${summary.playerId}-${tile.suit}-${tile.rank}-${idx}`}
                                                                         className={`relative ${isRonWaitTile
-                                                                                ? 'ring-2 ring-yellow-400 ring-offset-1 ring-offset-slate-900 rounded'
-                                                                                : ''
+                                                                            ? 'ring-2 ring-yellow-400 ring-offset-1 ring-offset-slate-900 rounded'
+                                                                            : ''
                                                                             }`}
                                                                     >
                                                                         <TileView tile={tile} size="sm" disabled={true} />
@@ -956,6 +1025,13 @@ export default function App() {
                                         </div>
 
                                         <div className="mt-5 flex justify-center gap-3">
+                                            <button
+                                                onClick={() => setShowRoundEndOverlay(false)}
+                                                disabled={myRoundEndConfirmed}
+                                                className={`px-6 py-2 rounded font-bold ${myRoundEndConfirmed ? 'bg-slate-600 text-slate-300 cursor-not-allowed' : 'bg-slate-700 hover:bg-slate-600 text-white'}`}
+                                            >
+                                                게임판 보기
+                                            </button>
                                             <button
                                                 onClick={onConfirmRoundEnd}
                                                 disabled={myRoundEndConfirmed}

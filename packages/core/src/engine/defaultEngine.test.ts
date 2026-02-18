@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Tile } from '@step13/proto';
 import { calculateScore, calculateShanten } from '@step13/scoring';
 import { createDefaultEngine } from './defaultEngine';
+import { GameContext } from '../messages';
 
 const SCORE_OPTIONS = {
     requireManganMinimum: true,
@@ -38,6 +39,43 @@ function isManganTenpai(hand: Tile[], doraIndicators: Tile[]): boolean {
         }
     }
     return false;
+}
+
+function buildRonContext(overrides?: Partial<GameContext>): GameContext {
+    const p1Hand: Tile[] = [
+        t('man', 1, 'm1a'), t('man', 1, 'm1b'), t('man', 1, 'm1c'),
+        t('man', 2, 'm2a'), t('man', 2, 'm2b'), t('man', 2, 'm2c'),
+        t('man', 3, 'm3a'), t('man', 3, 'm3b'), t('man', 3, 'm3c'),
+        t('man', 4, 'm4a'), t('man', 4, 'm4b'), t('man', 4, 'm4c'),
+        t('man', 5, 'm5a')
+    ];
+    const p2Pool = [t('man', 5, 'discard-5m')];
+
+    return {
+        players: ['p1', 'p2'],
+        scores: { p1: 25000, p2: 25000 },
+        currentTurn: 'p1',
+        round: 1,
+        dealtTiles: { p1: [], p2: [] },
+        hands: { p1: p1Hand, p2: [] },
+        pools: { p1: [], p2: p2Pool },
+        wall: [],
+        doraIndicators: [],
+        dealerDice: { p1: 6, p2: 3 },
+        discards: { p1: [], p2: [] },
+        phase: 'TURN',
+        winner: null,
+        dealer: 'p1',
+        winResult: null,
+        lastDiscard: { playerId: 'p2', tile: p2Pool[0] },
+        eventLog: [],
+        matchHandIndex: 0,
+        seatMap: { p1: 'EAST', p2: 'WEST' },
+        deterministicSeed: 1,
+        timeBankRemainingMs: { p1: 15000, p2: 15000 },
+        roundEndConfirmedBy: {},
+        ...overrides
+    };
 }
 
 describe('defaultEngine mangan deal constraints', () => {
@@ -113,5 +151,38 @@ describe('defaultEngine mangan deal constraints', () => {
         const p2Hand = deal.dealt['p2'].slice(0, 13);
         expect(isManganTenpai(p1Hand, [])).toBe(true);
         expect(isManganTenpai(p2Hand, [])).toBe(true);
+    });
+});
+
+describe('defaultEngine ron and furiten rules', () => {
+    it('allows ron when hand is valid and not furiten', () => {
+        const engine = createDefaultEngine({ scoreOptions: SCORE_OPTIONS });
+        const context = buildRonContext();
+
+        expect(engine.canDeclareRon(context, 'p1')).toBe(true);
+    });
+
+    it('blocks ron when player is furiten from own discard', () => {
+        const engine = createDefaultEngine({ scoreOptions: SCORE_OPTIONS });
+        const context = buildRonContext({
+            discards: {
+                p1: [t('man', 5, 'p1-discarded-5m')],
+                p2: []
+            }
+        });
+
+        expect(engine.canDeclareRon(context, 'p1')).toBe(false);
+    });
+
+    it('auto ron does not trigger for furiten player', () => {
+        const engine = createDefaultEngine({ scoreOptions: SCORE_OPTIONS });
+        const context = buildRonContext({
+            discards: {
+                p1: [t('man', 5, 'p1-discarded-5m')],
+                p2: []
+            }
+        });
+
+        expect(engine.autoRonWinner(context)).toBeNull();
     });
 });
