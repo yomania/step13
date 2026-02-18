@@ -92,6 +92,29 @@ describe('calculateScore', () => {
         expect(result.yaku).toContain('Riichi (Auto)');
     });
 
+    it('scores user repro hand as honitsu + ittsuu path instead of chiitoitsu', () => {
+        const hand: Tile[] = [
+            t('man', 1), t('man', 1),
+            t('man', 2), t('man', 2),
+            t('man', 3), t('man', 3),
+            t('man', 4), t('man', 5),
+            t('man', 7), t('man', 8), t('man', 9),
+            t('z', 6), t('z', 6)
+        ];
+
+        const result = calculateScore(hand, t('man', 6), false, [t('z', 1)], {
+            requireManganMinimum: true,
+            includeOmoteDoraInMinimum: true,
+            kiriageMangan: true,
+            autoRiichiFallback: true
+        });
+
+        expect(result.points).toBe(12000);
+        expect(result.yaku).toContain('Honitsu');
+        expect(result.yaku).toContain('Ittsuu');
+        expect(result.yaku).not.toContain('Chiitoitsu');
+    });
+
     it('includes tanyao when hand has only 2-8 number tiles', () => {
         const hand: Tile[] = [
             t('man', 2), t('man', 3), t('man', 4),

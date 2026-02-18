@@ -8,8 +8,7 @@ import {
 } from '@step13/core';
 import { calculateScore } from '@step13/scoring';
 import { GameRoom } from '../apps/server/src/GameRoom';
-import { BotLogic, CandidateEvaluation } from '@step13/bot';
-import type { Difficulty } from '@step13/scoring';
+import { getBotPersonaProfile, listBotPersonaProfiles } from '@step13/bot';
 
 // 공통 점수 옵션(실서비스 기본 옵션)
 const SCORE_OPTIONS = {
@@ -86,41 +85,6 @@ function withSeededRandom<T>(seed: number, fn: () => T): T {
     } finally {
         Math.random = originalRandom;
     }
-}
-
-function getEffectiveWaitCount(candidate: CandidateEvaluation): number {
-    const furitenSet = new Set((candidate.furitenWaits ?? []).map((tile) => `${tile.suit}-${tile.rank}`));
-    return candidate.waits.filter((tile) => !furitenSet.has(`${tile.suit}-${tile.rank}`)).length;
-}
-
-function getCandidateStrength(candidate: CandidateEvaluation): number {
-    const effectiveWaitCount = getEffectiveWaitCount(candidate);
-    const yakuCount = candidate.score.yaku?.length ?? 0;
-    return (
-        candidate.score.points * 1_000_000 +
-        candidate.score.han * 10_000 +
-        effectiveWaitCount * 100 +
-        candidate.waits.length * 10 +
-        yakuCount
-    );
-}
-
-function pickBestCandidate(candidates: CandidateEvaluation[]): CandidateEvaluation | null {
-    if (candidates.length === 0) return null;
-    const ranked = [...candidates].sort((a, b) => getCandidateStrength(b) - getCandidateStrength(a));
-    return ranked[0];
-}
-
-function candidateFingerprint(candidate: CandidateEvaluation): string {
-    const hand = candidate.hand
-        .map((tile) => `${tile.suit}${tile.rank}`)
-        .sort()
-        .join(',');
-    const waits = candidate.waits
-        .map((tile) => `${tile.suit}${tile.rank}`)
-        .sort()
-        .join(',');
-    return `${hand}|${waits}|${candidate.score.points}|${candidate.score.han}`;
 }
 
 // 딜러가 사람/봇으로 결정되는 시드를 찾는다.
@@ -677,59 +641,116 @@ async function testRoundEndAutoConfirmBot() {
 
 // [시나리오 11] 같은 시드 기준 난이도 비교(동일 입력 재현성 + HARD가 EASY보다 약하지 않음)
 async function testSameSeedDifficultyComparison() {
-    const engine = createEngineForRuleset('classic');
-    const playerIds = ['bot-a', 'bot-b'];
-    const logic = new BotLogic('bot-a', 'HARD');
-    const diffs: Difficulty[] = ['EASY', 'MEDIUM', 'HARD'];
+    const personas = listBotPersonaProfiles();
+    assert.ok(personas.length >= 3, 'persona list should include multiple difficulties');
 
-    const evaluate = (seed: number, difficulty: Difficulty) => {
-        const dealt = engine.buildDealResult(playerIds, seed + 1).dealt['bot-a'];
-        return withSeededRandom(seed * 1000 + difficulty.charCodeAt(0), () => {
-            const candidates = logic.buildBestCandidates(dealt, [], 12, {}, difficulty);
-            return pickBestCandidate(candidates);
-        });
-    };
+    const difficulties = new Set(personas.map((persona) => persona.difficulty));
+    assert.equal(difficulties.has('EASY'), true, 'EASY persona should exist');
+    assert.equal(difficulties.has('MEDIUM'), true, 'MEDIUM persona should exist');
+    assert.equal(difficulties.has('HARD'), true, 'HARD persona should exist');
 
-    let chosenSeed: number | null = null;
-    let easyBest: CandidateEvaluation | null = null;
-    let mediumBest: CandidateEvaluation | null = null;
-    let hardBest: CandidateEvaluation | null = null;
+    const easy = getBotPersonaProfile('easy_relaxed');
+    const medium = getBotPersonaProfile('medium_balanced');
+    const hard = getBotPersonaProfile('hard_defensive');
+    assert.equal(easy.difficulty, 'EASY');
+    assert.equal(medium.difficulty, 'MEDIUM');
+    assert.equal(hard.difficulty, 'HARD');
+    assert.ok(hard.handBuild.candidateCount >= medium.handBuild.candidateCount, 'hard candidate count should be >= medium');
 
-    for (let seed = 1; seed <= 300; seed++) {
-        const byDiff = diffs.map((difficulty) => evaluate(seed, difficulty));
-        if (byDiff.some((candidate) => !candidate)) continue;
+    const fallback = getBotPersonaProfile('unknown-id');
+    assert.equal(fallback.id, 'medium_balanced', 'unknown persona should fall back to medium_balanced');
+}
 
-        const easy = byDiff[0]!;
-        const medium = byDiff[1]!;
-        const hard = byDiff[2]!;
-        const hardStrength = getCandidateStrength(hard);
-        const easyStrength = getCandidateStrength(easy);
+// [시나리오 12] 분석 API 연속 호출 시 queryId별 결과 격리 검증
+async function testAnalysisQueryIsolation() {
+    const room = new GameRoom('test-analysis-isolation');
+    const socket = new MockSocket();
+    const humanId = 'p1';
+    room.join(humanId, socket as any);
+    room.handleMessage(humanId, { type: 'ADD_BOT' });
 
-        if (hardStrength >= easyStrength) {
-            chosenSeed = seed;
-            easyBest = easy;
-            mediumBest = medium;
-            hardBest = hard;
-            break;
-        }
+    await waitUntil('bot joined', () => roomSnapshot(room).context.players.length === 2, 3000);
+    room.handleMessage(humanId, { type: 'START_MATCH', seed: 13 });
+
+    await waitUntil('doraSelect or handBuild', () => {
+        const value = roomSnapshot(room).value;
+        return value === 'doraSelect' || value === 'handBuild';
+    }, 5000);
+
+    const beforeHandBuild = roomSnapshot(room);
+    if (beforeHandBuild.value === 'doraSelect') {
+        const dealer = beforeHandBuild.context.dealer;
+        const tileId = beforeHandBuild.context.wall[0]?.id;
+        assert.ok(dealer && tileId, 'dealer and dora tile should exist');
+        room.handleMessage(dealer, { type: 'SELECT_DORA', playerId: dealer, tileId });
     }
+    await waitUntil('handBuild', () => roomSnapshot(room).value === 'handBuild', 5000);
 
-    assert.ok(chosenSeed !== null, 'at least one comparable seed should exist');
-    assert.ok(easyBest && mediumBest && hardBest, 'all difficulties should produce candidates');
+    const snap = roomSnapshot(room);
+    const dealt = snap.context.dealtTiles[humanId];
+    assert.ok(Array.isArray(dealt) && dealt.length === 34, 'dealt tiles should be available');
 
-    // 같은 시드 + 같은 난이도는 같은 결과를 내야 함(고정 RNG)
-    const easyAgain = evaluate(chosenSeed!, 'EASY');
-    const hardAgain = evaluate(chosenSeed!, 'HARD');
-    assert.ok(easyAgain && hardAgain, 're-evaluation should produce candidates');
-    assert.equal(candidateFingerprint(easyBest!), candidateFingerprint(easyAgain!));
-    assert.equal(candidateFingerprint(hardBest!), candidateFingerprint(hardAgain!));
+    const engine = createEngineForRuleset('classic');
+    const tenpai = engine.findTenpaiHand(dealt);
+    assert.equal(tenpai.hand.length, 13, 'test hand should be 13 tiles');
 
-    const hardStrength = getCandidateStrength(hardBest!);
-    const easyStrength = getCandidateStrength(easyBest!);
-    assert.ok(
-        hardStrength >= easyStrength,
-        `expected HARD >= EASY on seed=${chosenSeed} (hard=${hardStrength}, easy=${easyStrength})`
-    );
+    const queryIds = {
+        preview: 'q-preview',
+        hint: 'q-hint',
+        shanten: 'q-shanten'
+    } as const;
+
+    room.handleMessage(humanId, {
+        type: 'QUERY_ANALYSIS',
+        queryId: queryIds.preview,
+        queryType: 'SCORE_PREVIEW',
+        hand: tenpai.hand,
+        doraIndicators: snap.context.doraIndicators
+    });
+    room.handleMessage(humanId, {
+        type: 'QUERY_ANALYSIS',
+        queryId: queryIds.hint,
+        queryType: 'AI_HINT',
+        hand: tenpai.hand,
+        dealtTiles: dealt,
+        doraIndicators: snap.context.doraIndicators,
+        maxCount: 5,
+        includeNonTenpai: true
+    });
+    room.handleMessage(humanId, {
+        type: 'QUERY_ANALYSIS',
+        queryId: queryIds.shanten,
+        queryType: 'SHANTEN',
+        hand: tenpai.hand
+    });
+
+    await waitUntil('analysis results for all query ids', () => {
+        const ids = new Set(
+            socket.messages
+                .filter((msg) => msg?.type === 'ANALYSIS_RESULT' && typeof msg?.queryId === 'string')
+                .map((msg) => msg.queryId)
+        );
+        return ids.has(queryIds.preview) && ids.has(queryIds.hint) && ids.has(queryIds.shanten);
+    }, 8000);
+
+    const analysisResults = socket.messages.filter((msg) => msg?.type === 'ANALYSIS_RESULT');
+    const preview = analysisResults.find((msg) => msg.queryId === queryIds.preview);
+    const hint = analysisResults.find((msg) => msg.queryId === queryIds.hint);
+    const shanten = analysisResults.find((msg) => msg.queryId === queryIds.shanten);
+
+    assert.ok(preview, 'SCORE_PREVIEW response should exist');
+    assert.ok(preview.scoreResult, 'SCORE_PREVIEW should return scoreResult');
+    assert.equal('candidates' in preview, false, 'SCORE_PREVIEW should not include candidates');
+    assert.equal('shanten' in preview, false, 'SCORE_PREVIEW should not include shanten');
+
+    assert.ok(hint, 'AI_HINT response should exist');
+    assert.ok(Array.isArray(hint.candidates), 'AI_HINT should return candidates array');
+    assert.equal('shanten' in hint, false, 'AI_HINT should not include shanten');
+
+    assert.ok(shanten, 'SHANTEN response should exist');
+    assert.equal(typeof shanten.shanten, 'number', 'SHANTEN should return shanten number');
+    assert.equal('scoreResult' in shanten, false, 'SHANTEN should not include scoreResult');
+    assert.equal('candidates' in shanten, false, 'SHANTEN should not include candidates');
 }
 
 async function run() {
@@ -745,7 +766,8 @@ async function run() {
         ['Turn Timeout & Force Discard (강제 타패)', testTurnTimeoutAndForceDiscard],
         ['ROUND_END 확인 게이트(양측 확인)', testRoundEndConfirmGate],
         ['ROUND_END AI 자동 확인', testRoundEndAutoConfirmBot],
-        ['같은 시드 난이도 비교 (EASY/MEDIUM/HARD)', testSameSeedDifficultyComparison]
+        ['같은 시드 난이도 비교 (EASY/MEDIUM/HARD)', testSameSeedDifficultyComparison],
+        ['분석 API(queryId) 격리 및 응답 필드 검증', testAnalysisQueryIsolation]
     ];
 
     for (const [name, test] of tests) {

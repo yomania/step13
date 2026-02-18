@@ -152,6 +152,8 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
     const [isDebugAnalyzing, setIsDebugAnalyzing] = useState(false);
     const [debugQueryId, setDebugQueryId] = useState<string | null>(null);
     const debugQueryIdRef = useRef<string | null>(null);
+    const scorePreviewQueryIdRef = useRef<string | null>(null);
+    const autoHintQueryIdRef = useRef<string | null>(null);
 
     useEffect(() => {
         setSelectedIndices([]);
@@ -161,6 +163,8 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
         setIsDebugAnalyzing(false);
         setDebugQueryId(null);
         debugQueryIdRef.current = null;
+        scorePreviewQueryIdRef.current = null;
+        autoHintQueryIdRef.current = null;
     }, [dealtTiles]);
 
     const selectedTiles = useMemo(() => selectedIndices.map((index) => dealtTiles[index]), [selectedIndices, dealtTiles]);
@@ -169,21 +173,45 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
     useEffect(() => {
         if (!analysisResult) return;
 
-        if (analysisResult.scoreResult) {
-            setServerPotentialScore(analysisResult.scoreResult);
+        const incomingQueryId = typeof analysisResult.queryId === 'string' ? analysisResult.queryId : null;
+        const currentDebugQueryId = debugQueryIdRef.current;
+        const currentScorePreviewQueryId = scorePreviewQueryIdRef.current;
+        const currentAutoHintQueryId = autoHintQueryIdRef.current;
+
+        const isDebugQueryMatch = Boolean(currentDebugQueryId && incomingQueryId === currentDebugQueryId);
+        const canUseAsDebugFallback = Boolean(
+            analysisResult.candidates &&
+            isDebugAnalyzing &&
+            showDebugLayer &&
+            debugCandidates.length === 0
+        );
+
+        if (isDebugQueryMatch || canUseAsDebugFallback) {
+            setDebugCandidates((analysisResult.candidates || []).slice(0, 5));
+            setIsDebugAnalyzing(false);
+            return;
         }
-        if (analysisResult.candidates) {
-            const currentDebugQueryId = debugQueryIdRef.current;
-            const incomingQueryId = typeof analysisResult.queryId === 'string' ? analysisResult.queryId : null;
-            const isDebugQueryMatch = Boolean(currentDebugQueryId && incomingQueryId === currentDebugQueryId);
-            const canUseAsDebugFallback = isDebugAnalyzing && showDebugLayer && debugCandidates.length === 0;
-            if (isDebugQueryMatch || canUseAsDebugFallback) {
-                setDebugCandidates((analysisResult.candidates || []).slice(0, 5));
-                setIsDebugAnalyzing(false);
-                // 디버그 쿼리 결과는 사용자가 직접 선택한 패의 예상 점수를 덮어쓰지 않음
-                return;
+
+        const isScorePreviewQueryMatch = Boolean(
+            currentScorePreviewQueryId &&
+            incomingQueryId === currentScorePreviewQueryId
+        );
+        if (isScorePreviewQueryMatch) {
+            if (analysisResult.scoreResult) {
+                setServerPotentialScore(analysisResult.scoreResult);
             }
-            if (!analysisResult.scoreResult) {
+            setIsAnalyzing(false);
+            return;
+        }
+
+        const isAutoHintQueryMatch = Boolean(
+            currentAutoHintQueryId &&
+            incomingQueryId === currentAutoHintQueryId
+        );
+        if (isAutoHintQueryMatch) {
+            if (analysisResult.scoreResult) {
+                setServerPotentialScore(analysisResult.scoreResult);
+            } else if (analysisResult.candidates) {
                 setServerPotentialScore(analysisResult.candidates[0]?.score ?? null);
             }
             setIsAnalyzing(false);
@@ -211,7 +239,29 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
         return () => clearTimeout(timer);
     }, [isAnalyzing]);
 
+    // Always request score preview once 13 tiles are selected.
+    useEffect(() => {
+        if (!onQueryAnalysis || submitted) return;
+        if (selectedTiles.length !== 13) return;
+
+        const timer = setTimeout(() => {
+            const queryId = `score-preview-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+            scorePreviewQueryIdRef.current = queryId;
+            onQueryAnalysis({
+                queryId,
+                queryType: 'SCORE_PREVIEW',
+                hand: selectedTiles,
+                doraIndicators,
+                scoreDiff
+            });
+            setIsAnalyzing(true);
+        }, 250);
+
+        return () => clearTimeout(timer);
+    }, [selectedTiles, onQueryAnalysis, submitted, doraIndicators, scoreDiff]);
+
     // Request analysis when selection changes (Debounced)
+    // In debug mode, recommendation queries are user-driven via "디버그 추천 보기".
     useEffect(() => {
         if (!onQueryAnalysis || submitted) return;
         if (selectedTiles.length !== 13) {
@@ -219,11 +269,18 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
             setServerPotentialScore(null);
             return;
         }
+        if (debugMode) {
+            setIsAnalyzing(false);
+            return;
+        }
 
         const timer = setTimeout(() => {
+            const queryId = `auto-hint-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+            autoHintQueryIdRef.current = queryId;
             // In 17-step, we always want to know if it's Tenpai (shanten -1) and what's the best score
             // We'll bundle these into a single custom server query or multiple
             onQueryAnalysis({
+                queryId,
                 queryType: 'AI_HINT', // Heavy lifting
                 hand: selectedTiles,
                 dealtTiles: dealtTiles, // Pass full pool for substitution analysis
@@ -235,7 +292,7 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
         }, 500);
 
         return () => clearTimeout(timer);
-    }, [selectedTiles, onQueryAnalysis, submitted, doraIndicators, scoreDiff]);
+    }, [selectedTiles, onQueryAnalysis, submitted, doraIndicators, scoreDiff, debugMode]);
 
     const sortedTilesWithIndices = useMemo(() => {
         return dealtTiles
@@ -319,8 +376,7 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
             difficulty: 'HARD',
             scoreDiff,
             maxCount: 5,
-            includeNonTenpai: true,
-            multiDifficulty: true
+            includeNonTenpai: true
         });
     };
 

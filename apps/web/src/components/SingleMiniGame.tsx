@@ -524,17 +524,6 @@ export function SingleMiniGame({ onExit, queryAnalysis, analysisResult, debugMod
                 </div>
             </header>
 
-            <div className="mb-4 rounded-2xl surface-panel p-3">
-                <div className="text-sm text-slate-300 mb-2">도라 표시패</div>
-                <div className="flex gap-2">
-                    {visibleRound.doraIndicators.map((tile, idx) => (
-                        <div key={`${tile.id ?? `${tile.suit}-${tile.rank}`}-${idx}`} className="transform scale-95 origin-left-top">
-                            <TileView tile={tile} disabled={true} />
-                        </div>
-                    ))}
-                </div>
-            </div>
-
             <HandBuilder
                 dealtTiles={currentRound.dealtTiles}
                 onSubmit={(hand, _pool) => handleSubmit(hand)}

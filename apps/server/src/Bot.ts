@@ -97,6 +97,28 @@ export class Bot {
         return this.logic.getWinningTiles(hand);
     }
 
+    public evaluateHandScoreForQuery(hand: Tile[], doraIndicators: Tile[]) {
+        const waits = this.logic.getWinningTiles(hand);
+        if (waits.length === 0) return null;
+
+        let best: ReturnType<typeof calculateScore> | null = null;
+        let bestWait: Tile | null = null;
+
+        for (const wait of waits) {
+            const score = calculateScore(hand, wait, false, doraIndicators, SCORE_OPTIONS);
+            if (!best || score.points > best.points || (score.points === best.points && score.han > best.han)) {
+                best = score;
+                bestWait = wait;
+            }
+        }
+
+        if (!best) return null;
+        return {
+            ...best,
+            bestWait
+        };
+    }
+
     public evaluateMiniGameForQuery(playerHand: Tile[], dealtTiles: Tile[], doraIndicators: Tile[]) {
         return this.logic.evaluateMiniGame(playerHand, dealtTiles, doraIndicators);
     }

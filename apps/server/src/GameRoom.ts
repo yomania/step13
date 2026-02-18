@@ -111,9 +111,19 @@ export class GameRoom {
             } else if (event.queryType === 'SCORE') {
                 const wait = event.wait;
                 result.scoreResult = calculateScore(hand, wait, false, doraIndicators || [], options || {});
+            } else if (event.queryType === 'SCORE_PREVIEW') {
+                const tempBot = new Bot('temp', this.machine as any, this.ruleset);
+                if (Array.isArray(hand) && hand.length === 13) {
+                    result.scoreResult = tempBot.evaluateHandScoreForQuery(hand, doraIndicators || []);
+                } else {
+                    result.scoreResult = null;
+                }
             } else if (event.queryType === 'AI_HINT') {
                 // Use bot's evaluation logic for hints
                 const tempBot = new Bot('temp', this.machine as any, this.ruleset);
+                if (Array.isArray(hand) && hand.length === 13) {
+                    result.scoreResult = tempBot.evaluateHandScoreForQuery(hand, doraIndicators || []);
+                }
                 const candidates = await tempBot.buildBestCandidatesForQuery(
                     event.dealtTiles || hand, // Use full pool if available (for mini-game/debug), otherwise just hand
                     doraIndicators || [],
