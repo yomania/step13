@@ -54,6 +54,24 @@ function makeTenpaiHandForFiveMan(prefix: string): Tile[] {
     ];
 }
 
+function makeTenpaiHandForFivePin(prefix: string): Tile[] {
+    return [
+        { suit: 'pin', rank: 1, isRed: false, id: `${prefix}-p1a` },
+        { suit: 'pin', rank: 1, isRed: false, id: `${prefix}-p1b` },
+        { suit: 'pin', rank: 1, isRed: false, id: `${prefix}-p1c` },
+        { suit: 'pin', rank: 2, isRed: false, id: `${prefix}-p2a` },
+        { suit: 'pin', rank: 2, isRed: false, id: `${prefix}-p2b` },
+        { suit: 'pin', rank: 2, isRed: false, id: `${prefix}-p2c` },
+        { suit: 'pin', rank: 3, isRed: false, id: `${prefix}-p3a` },
+        { suit: 'pin', rank: 3, isRed: false, id: `${prefix}-p3b` },
+        { suit: 'pin', rank: 3, isRed: false, id: `${prefix}-p3c` },
+        { suit: 'pin', rank: 4, isRed: false, id: `${prefix}-p4a` },
+        { suit: 'pin', rank: 4, isRed: false, id: `${prefix}-p4b` },
+        { suit: 'pin', rank: 4, isRed: false, id: `${prefix}-p4c` },
+        { suit: 'pin', rank: 5, isRed: false, id: `${prefix}-p5w` }
+    ];
+}
+
 function makePoolWithLeadingTiles(prefix: string, lead: Tile[]): Tile[] {
     const rest = makeTiles(21 - lead.length, `${prefix}-rest`);
     return [...lead, ...rest];
@@ -463,7 +481,7 @@ describe('gameMachine full cycle and edge cases', () => {
         expect(actor.getSnapshot().value).toBe('handBuild');
 
         const p1Hand = makeTenpaiHandForFiveMan('p1');
-        const p2Hand = makeTenpaiHandForFiveMan('p2');
+        const p2Hand = makeTenpaiHandForFivePin('p2');
         const p1Pool = makePoolWithLeadingTiles('p1-pool', [{ suit: 'man', rank: 5, isRed: false, id: 'p1-discard-5m' }]);
         const p2Pool = makePoolWithLeadingTiles('p2-pool', [
             { suit: 'pin', rank: 1, isRed: false, id: 'p2-first-discard' },

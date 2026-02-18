@@ -68,6 +68,63 @@ function pickBestWaitScore(hand: Tile[], waits: Tile[], doraIndicators: Tile[], 
     }, empty);
 }
 
+function toKoreanLimit(limit: string): string {
+    const map: Record<string, string> = {
+        Mangan: '만관',
+        Haneman: '하네만',
+        Baiman: '배만',
+        Sanbaiman: '삼배만',
+        Yakuman: '역만'
+    };
+    return map[limit] ?? limit;
+}
+
+function toKoreanYaku(yaku: string): string {
+    if (yaku.startsWith('Dora ')) {
+        const count = yaku.replace('Dora ', '');
+        return `도라 ${count}`;
+    }
+    if (yaku.startsWith('Yakuhai')) {
+        const honor = yaku.split(': ')[1] ?? '';
+        const honorMap: Record<string, string> = {
+            z1: '동',
+            z2: '남',
+            z3: '서',
+            z4: '북',
+            z5: '백',
+            z6: '발',
+            z7: '중'
+        };
+        if (yaku.startsWith('Yakuhai(Seat):')) {
+            return `자풍패(${honorMap[honor] ?? honor})`;
+        }
+        if (yaku.startsWith('Yakuhai(Round):')) {
+            return `장풍패(${honorMap[honor] ?? honor})`;
+        }
+        return `역패(${honorMap[honor] ?? honor})`;
+    }
+
+    const map: Record<string, string> = {
+        Chiitoitsu: '치또이츠',
+        Pinfu: '핑후',
+        SanshokuDoukou: '삼색동각',
+        SanshokuDoujun: '삼색동순',
+        Toitoi: '또이또이',
+        Sanankou: '삼암각',
+        Chanta: '찬타',
+        Junchan: '준찬',
+        Honroutou: '혼노두',
+        Shousangen: '소삼원',
+        Tanyao: '탕야오',
+        Chinitsu: '청일색',
+        Honitsu: '혼일색',
+        Ittsuu: '일기통관',
+        Iipeikou: '이페코',
+        'Riichi (Auto)': '리치(자동)'
+    };
+    return map[yaku] ?? yaku;
+}
+
 
 
 export default function App() {
@@ -902,13 +959,13 @@ export default function App() {
                                                     <span className="text-2xl font-black text-yellow-300">{winResult.points.toLocaleString()}점</span>
                                                     <span className="text-sm text-slate-300">{winResult.han}판 {winResult.fu}부</span>
                                                     {winResult.limit && (
-                                                        <span className="px-2 py-0.5 rounded bg-red-600 text-white text-xs font-bold">{winResult.limit}</span>
+                                                        <span className="px-2 py-0.5 rounded bg-red-600 text-white text-xs font-bold">{toKoreanLimit(winResult.limit)}</span>
                                                     )}
                                                 </div>
                                                 {winResult.yaku.length > 0 && (
                                                     <div className="mt-1 flex flex-wrap gap-1 justify-center">
                                                         {winResult.yaku.map((y: string) => (
-                                                            <span key={y} className="px-2 py-0.5 rounded-full bg-slate-700 text-slate-200 text-[11px] border border-slate-600">{y}</span>
+                                                            <span key={y} className="px-2 py-0.5 rounded-full bg-slate-700 text-slate-200 text-[11px] border border-slate-600">{toKoreanYaku(y)}</span>
                                                         ))}
                                                     </div>
                                                 )}
@@ -1064,14 +1121,14 @@ export default function App() {
                                             <div className="flex gap-4 text-lg">
                                                 <span className="font-bold text-white">{context.winResult.han}판</span>
                                                 <span className="font-bold text-white">{context.winResult.fu}부</span>
-                                                {context.winResult.limit && <span className="bg-red-600 px-2 rounded text-xs leading-6 h-6">{String(context.winResult.limit)}</span>}
+                                                {context.winResult.limit && <span className="bg-red-600 px-2 rounded text-xs leading-6 h-6">{toKoreanLimit(String(context.winResult.limit))}</span>}
                                             </div>
                                             <div className="pt-2">
                                                 <h4 className="text-sm text-gray-500 mb-1">Yaku (역)</h4>
                                                 <div className="flex flex-wrap gap-2">
                                                     {context.winResult.yaku.length > 0 ? context.winResult.yaku.map((y: string) => (
                                                         <span key={y} className="px-3 py-1 bg-blue-900/50 text-blue-200 rounded-full text-sm border border-blue-800">
-                                                            {y}
+                                                            {toKoreanYaku(y)}
                                                         </span>
                                                     )) : <span className="text-gray-600">No Yaku?</span>}
                                                 </div>
