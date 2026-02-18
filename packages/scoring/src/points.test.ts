@@ -64,6 +64,7 @@ describe('calculateScore', () => {
         });
 
         expect(result.han).toBe(5);
+        expect(result.fu).toBe(0);
         expect(result.points).toBe(8000);
         expect(result.yaku).toContain('Chiitoitsu');
         expect(result.yaku).toContain('Honitsu');
@@ -408,8 +409,8 @@ describe('calculateScore', () => {
         expect(result.limitCategory).toBe('Mangan');
     });
 
-    it('fu is 40 for standard hand and 25 for chiitoitsu', () => {
-        // 일반 핸드: 40부 (z1 z1 머리 + 123m + 123p + 123s + 789m)
+    it('fu adds wait-based fu on top of base 30, and chiitoitsu keeps minimum 30', () => {
+        // 일반 핸드: z1 단기대기로 +2부가 붙어 40부(올림) 기대
         const standardHand: Tile[] = [
             t('man', 1), t('man', 2), t('man', 3),
             t('pin', 1), t('pin', 2), t('pin', 3),
@@ -422,7 +423,7 @@ describe('calculateScore', () => {
         expect(stdResult.han).toBeGreaterThan(0);
         expect(stdResult.fu).toBe(40);
 
-        // 치또이쯔: 25부
+        // 치또이쯔도 론 최소 30부 적용
         const chiitoiHand: Tile[] = [
             t('man', 1), t('man', 1),
             t('man', 2), t('man', 2),
@@ -433,6 +434,6 @@ describe('calculateScore', () => {
             t('z', 7)
         ];
         const chiiResult = calculateScore(chiitoiHand, t('z', 7), false, []);
-        expect(chiiResult.fu).toBe(25);
+        expect(chiiResult.fu).toBe(30);
     });
 });

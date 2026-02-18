@@ -182,15 +182,23 @@ export function calculateScore(
     }
 
     const han = yakuHan + doraCount;
-    // 론 전용 게임: 치또이 25부, 그 외 40부 (칸짱/변짱/단기 대기 + 암각 등 부수 가산 간이 반영)
-    const fu = isChiitoi ? 25 : 40;
+    const calculatedFu = calculateRonFu(
+        fullHand,
+        winTile,
+        isChiitoi,
+        decompositions,
+        resolved.seatWind,
+        resolved.roundWind
+    );
+    // 5판 이상은 부수 계산 구간이 아니므로 노출용 부수는 0으로 둔다.
+    const fu = han >= 5 ? 0 : calculatedFu;
 
-    const fullScore = calculatePointByHanFu(han, fu, resolved.kiriageMangan);
+    const fullScore = calculatePointByHanFu(han, calculatedFu, resolved.kiriageMangan);
 
     const hanForMinimum = resolved.includeOmoteDoraInMinimum
         ? han
         : yakuHan;
-    const minimumEval = calculatePointByHanFu(hanForMinimum, fu, resolved.kiriageMangan);
+    const minimumEval = calculatePointByHanFu(hanForMinimum, calculatedFu, resolved.kiriageMangan);
 
     if (resolved.requireManganMinimum && minimumEval.points < 8000) {
         return {
@@ -512,6 +520,92 @@ function hasRyanmenWin(sequences: SequenceMeld[], winTile: Tile): boolean {
     }
 
     return false;
+}
+
+function calculateRonFu(
+    fullHand: Tile[],
+    winTile: Tile | null,
+    isChiitoi: boolean,
+    decompositions: HandDecomposition[],
+    seatWind?: Wind,
+    roundWind?: Wind
+): number {
+    if (isChiitoi) {
+        return 30;
+    }
+
+    if (decompositions.length === 0) {
+        return 30;
+    }
+
+    const seatWindTile = seatWind ? windToHonorTileKey(seatWind) : null;
+    const roundWindTile = roundWind ? windToHonorTileKey(roundWind) : null;
+    const winKey = winTile ? tileKey(winTile) : null;
+    let maxFu = 30;
+
+    for (const decomp of decompositions) {
+        let fu = 30;
+
+        const pairTile = parseTileKey(decomp.pairKey);
+        if (pairTile.suit === 'z' && pairTile.rank >= 5 && pairTile.rank <= 7) {
+            fu += 2;
+        }
+        if (seatWindTile && decomp.pairKey === seatWindTile) {
+            fu += 2;
+        }
+        if (roundWindTile && decomp.pairKey === roundWindTile) {
+            fu += 2;
+        }
+
+        for (const meld of decomp.melds) {
+            if (meld.type !== 'triplet') continue;
+            const isYaotyu = meld.suit === 'z' || meld.rank === 1 || meld.rank === 9;
+            fu += isYaotyu ? 8 : 4;
+        }
+
+        if (winTile && winKey) {
+            const waitFu = calculateWaitFuForDecomposition(decomp, winTile, winKey);
+            fu += waitFu;
+        }
+
+        const roundedFu = Math.ceil(fu / 10) * 10;
+        maxFu = Math.max(maxFu, roundedFu);
+    }
+
+    // Keep deterministic behavior in case future rules add special handling.
+    if (fullHand.length !== 14) {
+        return 30;
+    }
+    return Math.max(30, maxFu);
+}
+
+function calculateWaitFuForDecomposition(decomp: HandDecomposition, winTile: Tile, winKey: string): number {
+    if (decomp.pairKey === winKey) {
+        return 2;
+    }
+
+    if (winTile.suit === 'z') {
+        return 0;
+    }
+
+    for (const meld of decomp.melds) {
+        if (meld.type !== 'sequence' || meld.suit !== winTile.suit) continue;
+        const start = meld.start;
+        const middle = start + 1;
+        const end = start + 2;
+
+        if (winTile.rank === middle) {
+            return 2;
+        }
+        if (start === 1 && winTile.rank === end) {
+            return 2;
+        }
+        if (start === 7 && winTile.rank === start) {
+            return 2;
+        }
+    }
+
+    return 0;
 }
 
 function parseTileKey(key: string): Tile {
