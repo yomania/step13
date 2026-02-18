@@ -1,7 +1,9 @@
 import { createActor } from 'xstate';
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { gameMachine } from './machine';
+import { Tile } from '@step13/proto';
+import { gameMachine, createGameMachine } from './machine';
 import { RULES } from './rules';
+import { GameEngine } from './engine/types';
 
 async function advance(ms: number): Promise<void> {
     await vi.advanceTimersByTimeAsync(ms);
@@ -23,6 +25,15 @@ async function reachTurnWithAutoSubmit(actor: ReturnType<typeof createActor<type
     await advance(RULES.timers.buildTimeMs);
     expect(actor.getSnapshot().value).toEqual({ gameLoop: 'turn' });
     expect(actor.getSnapshot().context.phase).toBe('TURN');
+}
+
+function makeTiles(count: number, prefix: string): Tile[] {
+    return Array.from({ length: count }, (_, idx) => ({
+        suit: 'man',
+        rank: ((idx % 9) + 1) as Tile['rank'],
+        isRed: false,
+        id: `${prefix}-${idx + 1}`
+    }));
 }
 
 afterEach(() => {
@@ -71,6 +82,32 @@ describe('gameMachine full cycle and edge cases', () => {
         actor.send({ type: 'SELECT_DORA', playerId: snap.context.dealer, tileId: snap.context.wall[0].id! });
 
         expect(actor.getSnapshot().value).toBe('doraSelect');
+        await advance(RULES.timers.doraRevealTimeMs - 1);
+        expect(actor.getSnapshot().value).toBe('doraSelect');
+        await advance(1);
+        expect(actor.getSnapshot().value).toBe('handBuild');
+    });
+
+    it('still enters handBuild when dora is selected after initial reveal timer passed', { timeout: 20000 }, async () => {
+        vi.useFakeTimers();
+
+        const actor = createActor(gameMachine);
+        actor.start();
+
+        actor.send({ type: 'JOIN', playerId: 'p1' });
+        actor.send({ type: 'JOIN', playerId: 'p2' });
+        actor.send({ type: 'START_MATCH', seed: 19 });
+
+        await advance(1000);
+        expect(actor.getSnapshot().value).toBe('doraSelect');
+
+        await advance(RULES.timers.doraRevealTimeMs + 1000);
+        expect(actor.getSnapshot().value).toBe('doraSelect');
+
+        const snap = actor.getSnapshot();
+        actor.send({ type: 'SELECT_DORA', playerId: snap.context.dealer, tileId: snap.context.wall[0].id! });
+        expect(actor.getSnapshot().value).toBe('doraSelect');
+
         await advance(RULES.timers.doraRevealTimeMs - 1);
         expect(actor.getSnapshot().value).toBe('doraSelect');
         await advance(1);
@@ -274,5 +311,113 @@ describe('gameMachine full cycle and edge cases', () => {
 
         actor.send({ type: 'CONFIRM_ROUND_END', playerId: 'p1' });
         expect(actor.getSnapshot().value).toBe('matchStart');
+    });
+
+    it('ends match early when a player score drops to 0 or below', { timeout: 20000 }, async () => {
+        vi.useFakeTimers();
+
+        const dealtP1 = makeTiles(34, 'p1-dealt');
+        const dealtP2 = makeTiles(34, 'p2-dealt');
+        const wall = makeTiles(20, 'wall');
+        const p1Pool = makeTiles(21, 'p1-pool');
+        const p2Pool = makeTiles(21, 'p2-pool');
+
+        const mockEngine: GameEngine = {
+            buildDealResult: () => ({ dealt: { p1: dealtP1, p2: dealtP2 }, wall }),
+            selectDealer: () => ({
+                dealer: 'p1',
+                dealerDice: { p1: 6, p2: 1 },
+                seatMap: { p1: 'EAST', p2: 'WEST' }
+            }),
+            getEastPlayer: () => 'p1',
+            hasWinningWait: () => true,
+            findTenpaiHand: () => ({ hand: makeTiles(13, 'auto-hand'), pool: makeTiles(21, 'auto-pool') }),
+            canSelectDora: () => true,
+            selectDora: (context, event) => ({
+                wall: context.wall,
+                doraIndicators: [context.wall.find((tile) => tile.id === event.tileId) ?? context.wall[0]],
+                eventLog: [...context.eventLog, event]
+            }),
+            autoSelectDora: (context) => ({
+                wall: context.wall,
+                doraIndicators: [context.wall[0]],
+                eventLog: [...context.eventLog, { type: 'TIMEOUT', playerId: 'p1', phase: 'DORA_SELECT' }, { type: 'SELECT_DORA', playerId: 'p1', tileId: context.wall[0]?.id ?? '' }]
+            }),
+            canDiscard: (context, playerId, tileId) => Boolean((context.pools[playerId] ?? []).find((tile) => tile.id === tileId)),
+            applyDiscard: (context, playerId, tileId) => {
+                const pool = context.pools[playerId] ?? [];
+                const tile = pool.find((entry) => entry.id === tileId);
+                if (!tile) return context;
+                const nextPlayer = context.players.find((id) => id !== playerId) ?? null;
+                return {
+                    ...context,
+                    pools: {
+                        ...context.pools,
+                        [playerId]: pool.filter((entry) => entry.id !== tileId)
+                    },
+                    discards: {
+                        ...context.discards,
+                        [playerId]: [...(context.discards[playerId] ?? []), tile]
+                    },
+                    currentTurn: nextPlayer,
+                    lastDiscard: { playerId, tile },
+                    eventLog: [...context.eventLog, { type: 'DISCARD', playerId, tileId }]
+                };
+            },
+            isDrawReached: () => false,
+            autoRonWinner: () => null,
+            canDeclareRon: () => true,
+            resolveRon: (context, winnerId) => {
+                const loserId = context.players.find((id) => id !== winnerId);
+                if (!loserId) return null;
+                return {
+                    winner: winnerId,
+                    winResult: {
+                        han: 13,
+                        fu: 0,
+                        points: 70000,
+                        yaku: ['Yakuman'],
+                        doraCount: 0,
+                        isMangan: true,
+                        pointsDelta: 70000,
+                        limit: 'Yakuman',
+                        limitCategory: 'Yakuman'
+                    },
+                    scores: {
+                        ...context.scores,
+                        [winnerId]: (context.scores[winnerId] ?? 0) + 70000,
+                        [loserId]: (context.scores[loserId] ?? 0) - 70000
+                    }
+                };
+            },
+            resolveDraw: (context) => ({ winner: null, winResult: null, scores: context.scores })
+        };
+
+        const actor = createActor(createGameMachine({ engine: mockEngine }));
+        actor.start();
+        actor.send({ type: 'JOIN', playerId: 'p1' });
+        actor.send({ type: 'JOIN', playerId: 'p2' });
+        actor.send({ type: 'START_MATCH', seed: 101 });
+
+        await advance(1000);
+        actor.send({ type: 'SELECT_DORA', playerId: 'p1', tileId: wall[0].id! });
+        await advance(RULES.timers.doraRevealTimeMs);
+
+        actor.send({ type: 'SUBMIT_HAND', playerId: 'p1', hand: makeTiles(13, 'p1-hand'), pool: p1Pool });
+        actor.send({ type: 'SUBMIT_HAND', playerId: 'p2', hand: makeTiles(13, 'p2-hand'), pool: p2Pool });
+        expect(actor.getSnapshot().value).toEqual({ gameLoop: 'turn' });
+
+        actor.send({ type: 'DISCARD', playerId: 'p1', tileId: p1Pool[0].id! });
+        actor.send({ type: 'DECLARE_WIN', playerId: 'p2' });
+        expect(actor.getSnapshot().value).toBe('roundEnd');
+        expect(actor.getSnapshot().context.scores['p1']).toBeLessThanOrEqual(0);
+
+        actor.send({ type: 'CONFIRM_ROUND_END', playerId: 'p1' });
+        actor.send({ type: 'CONFIRM_ROUND_END', playerId: 'p2' });
+
+        const snapshot = actor.getSnapshot();
+        expect(snapshot.value).toBe('matchEnd');
+        expect(snapshot.context.phase).toBe('MATCH_END');
+        expect(snapshot.context.winner).toBe('p2');
     });
 });

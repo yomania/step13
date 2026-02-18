@@ -848,53 +848,126 @@ export default function App() {
                             </div>
                         )}
 
-                        {matches('roundEnd') && (
-                            <div className="absolute inset-0 z-50 bg-slate-900/95 flex flex-col items-center justify-center p-6 backdrop-blur-sm">
-                                <div className="glass-panel p-6 rounded-3xl shadow-2xl max-w-3xl w-full">
-                                    <h2 className="text-3xl font-black text-white text-center mb-1">
-                                        {context.winner ? (context.winner === playerId ? '라운드 승리' : '라운드 패배') : '유국 (DRAW)'}
-                                    </h2>
-                                    <p className="text-center text-slate-300 mb-4">
-                                        다음 라운드로 진행하려면 양쪽 확인이 필요합니다.
-                                    </p>
+                        {matches('roundEnd') && (() => {
+                            // 론패 정보: 론으로 끝난 경우 lastDiscard에 버린 패 정보가 있음
+                            const ronTile = context.winner && context.lastDiscard ? context.lastDiscard.tile : null;
+                            const ronLoserId = context.winner && context.lastDiscard ? context.lastDiscard.playerId : null;
 
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                        {roundEndSummaries.map((summary) => (
-                                            <div key={summary.playerId} className="rounded-lg border border-slate-600 bg-slate-900/60 p-3">
-                                                <div className="flex items-center justify-between">
-                                                    <div className="font-bold text-slate-100">{summary.playerId}{summary.playerId === playerId ? ' (YOU)' : ''}</div>
-                                                    <div className={`text-xs font-bold ${summary.confirmed ? 'text-emerald-300' : 'text-amber-300'}`}>
-                                                        {summary.confirmed ? '확인 완료' : summary.isBot ? '자동 확인 대기' : '확인 대기'}
+                            return (
+                                <div className="absolute inset-0 z-50 bg-slate-900/95 flex flex-col items-center justify-center p-6 backdrop-blur-sm">
+                                    <div className="glass-panel p-6 rounded-3xl shadow-2xl max-w-3xl w-full">
+                                        <h2 className="text-3xl font-black text-white text-center mb-1">
+                                            {context.winner ? (context.winner === playerId ? '라운드 승리' : '라운드 패배') : '유국 (DRAW)'}
+                                        </h2>
+                                        <p className="text-center text-slate-300 mb-4">
+                                            다음 라운드로 진행하려면 양쪽 확인이 필요합니다.
+                                        </p>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                            {roundEndSummaries.map((summary) => {
+                                                // 이 플레이어가 론 승자인지 여부
+                                                const isRonWinner = context.winner === summary.playerId && ronTile !== null;
+                                                // 이 플레이어가 론패를 버린 패자인지 여부
+                                                const isRonLoser = ronLoserId === summary.playerId && ronTile !== null;
+
+                                                return (
+                                                    <div
+                                                        key={summary.playerId}
+                                                        className={`rounded-lg border p-3 ${isRonWinner
+                                                                ? 'border-yellow-400/70 bg-yellow-900/20'
+                                                                : isRonLoser
+                                                                    ? 'border-rose-500/60 bg-rose-900/15'
+                                                                    : 'border-slate-600 bg-slate-900/60'
+                                                            }`}
+                                                    >
+                                                        <div className="flex items-center justify-between">
+                                                            <div className="font-bold text-slate-100">{summary.playerId}{summary.playerId === playerId ? ' (YOU)' : ''}</div>
+                                                            <div className={`text-xs font-bold ${summary.confirmed ? 'text-emerald-300' : 'text-amber-300'}`}>
+                                                                {summary.confirmed ? '확인 완료' : summary.isBot ? '자동 확인 대기' : '확인 대기'}
+                                                            </div>
+                                                        </div>
+                                                        <div className="mt-2 text-sm text-slate-300">
+                                                            예상 역수: <span className="text-yellow-300 font-bold">{summary.best.han}판</span>
+                                                        </div>
+                                                        <div className="mt-1 text-xs text-slate-400">
+                                                            대기패 {summary.waits.length}개
+                                                        </div>
+                                                        <div className="mt-2 flex flex-wrap gap-1">
+                                                            {summary.waits.length === 0 && <span className="text-xs text-slate-500">대기패 없음</span>}
+                                                            {summary.waits.map((tile, idx) => {
+                                                                // 론패와 일치하는 대기패 하이라이트
+                                                                const isRonWaitTile = isRonWinner && ronTile &&
+                                                                    tile.suit === ronTile.suit && tile.rank === ronTile.rank;
+                                                                return (
+                                                                    <div
+                                                                        key={`${summary.playerId}-${tile.suit}-${tile.rank}-${idx}`}
+                                                                        className={`relative ${isRonWaitTile
+                                                                                ? 'ring-2 ring-yellow-400 ring-offset-1 ring-offset-slate-900 rounded'
+                                                                                : ''
+                                                                            }`}
+                                                                    >
+                                                                        <TileView tile={tile} size="sm" disabled={true} />
+                                                                        {isRonWaitTile && (
+                                                                            <span className="absolute -top-1.5 -right-1.5 px-1 py-[1px] rounded bg-yellow-500 text-black text-[8px] font-black leading-none shadow">
+                                                                                론
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+
+                                                        {/* 론패 표시: 승자에게는 론패, 패자에게는 버린 패 */}
+                                                        {isRonWinner && ronTile && (
+                                                            <div className="mt-3 pt-2 border-t border-yellow-500/30">
+                                                                <div className="text-xs text-yellow-300 mb-1 font-semibold">론패 (화료패)</div>
+                                                                <div className="flex items-center gap-2">
+                                                                    <div className="relative">
+                                                                        <TileView tile={ronTile} size="sm" disabled={true} />
+                                                                        <span className="absolute -top-1.5 -right-1.5 px-1 py-[1px] rounded bg-yellow-500 text-black text-[8px] font-black leading-none shadow">
+                                                                            론
+                                                                        </span>
+                                                                    </div>
+                                                                    <span className="text-xs text-yellow-200">
+                                                                        상대가 버린 패로 화료!
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                        {isRonLoser && ronTile && (
+                                                            <div className="mt-3 pt-2 border-t border-rose-500/30">
+                                                                <div className="text-xs text-rose-300 mb-1 font-semibold">버린 패 (론당함)</div>
+                                                                <div className="flex items-center gap-2">
+                                                                    <div className="relative">
+                                                                        <TileView tile={ronTile} size="sm" disabled={true} />
+                                                                        <span className="absolute -top-1.5 -right-1.5 px-1 py-[1px] rounded bg-rose-600 text-white text-[8px] font-black leading-none shadow">
+                                                                            방총
+                                                                        </span>
+                                                                    </div>
+                                                                    <span className="text-xs text-rose-200">
+                                                                        이 패로 론당했습니다.
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        )}
                                                     </div>
-                                                </div>
-                                                <div className="mt-2 text-sm text-slate-300">
-                                                    예상 역수: <span className="text-yellow-300 font-bold">{summary.best.han}판</span>
-                                                </div>
-                                                <div className="mt-1 text-xs text-slate-400">
-                                                    대기패 {summary.waits.length}개
-                                                </div>
-                                                <div className="mt-2 flex flex-wrap gap-1">
-                                                    {summary.waits.length === 0 && <span className="text-xs text-slate-500">대기패 없음</span>}
-                                                    {summary.waits.map((tile, idx) => (
-                                                        <TileView key={`${summary.playerId}-${tile.suit}-${tile.rank}-${idx}`} tile={tile} size="sm" disabled={true} />
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
+                                                );
+                                            })}
+                                        </div>
 
-                                    <div className="mt-5 flex justify-center gap-3">
-                                        <button
-                                            onClick={onConfirmRoundEnd}
-                                            disabled={myRoundEndConfirmed}
-                                            className={`px-6 py-2 rounded font-bold ${myRoundEndConfirmed ? 'bg-slate-600 text-slate-300 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-500 text-white'}`}
-                                        >
-                                            {myRoundEndConfirmed ? '확인 완료' : '결과 확인'}
-                                        </button>
+                                        <div className="mt-5 flex justify-center gap-3">
+                                            <button
+                                                onClick={onConfirmRoundEnd}
+                                                disabled={myRoundEndConfirmed}
+                                                className={`px-6 py-2 rounded font-bold ${myRoundEndConfirmed ? 'bg-slate-600 text-slate-300 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-500 text-white'}`}
+                                            >
+                                                {myRoundEndConfirmed ? '확인 완료' : '결과 확인'}
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        )}
+                            );
+                        })()}
 
                         {matches('matchEnd') && (
                             <div className="absolute inset-0 z-50 bg-slate-900/95 flex flex-col items-center justify-center p-8 backdrop-blur-sm">

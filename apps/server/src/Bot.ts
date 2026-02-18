@@ -19,7 +19,6 @@ export class Bot {
     private rulesEngine;
     private preparedHand: Tile[] | null = null;
     private preparedPool: Tile[] | null = null;
-    private preparingHand: boolean = false;
     private logic: BotLogic;
     private difficulty: Difficulty;
     private persona: BotPersonaProfile;
@@ -172,22 +171,6 @@ export class Bot {
                     }
                     this.processing = false;
                 }, 500 + Math.random() * 700);
-            }
-
-            if (
-                alreadySelected &&
-                !context.hands[this.id] &&
-                !this.preparingHand &&
-                !this.preparedHand &&
-                Array.isArray(context.dealtTiles?.[this.id])
-            ) {
-                this.preparingHand = true;
-                setTimeout(() => {
-                    const prepared = this.buildBestHand(context.dealtTiles[this.id], context.doraIndicators ?? []);
-                    this.preparedHand = prepared.hand;
-                    this.preparedPool = prepared.pool;
-                    this.preparingHand = false;
-                }, 80 + Math.random() * 120);
             }
         }
 

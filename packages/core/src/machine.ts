@@ -398,7 +398,9 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                 on: {
                     SELECT_DORA: {
                         guard: 'canSelectDoraIndicator',
-                        actions: 'selectDoraIndicator'
+                        actions: 'selectDoraIndicator',
+                        target: 'doraSelect',
+                        reenter: true
                     }
                 }
             },
@@ -487,6 +489,13 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                     'autoConfirmBotsInRoundEnd'
                 ],
                 always: [
+                    {
+                        guard: ({ context }) =>
+                            context.players.every((playerId) => Boolean(context.roundEndConfirmedBy[playerId])) &&
+                            context.players.some((playerId) => (context.scores[playerId] ?? 0) <= RULES.winConditions.bankruptAtOrBelow),
+                        target: 'matchEnd',
+                        actions: 'finalizeMatch'
+                    },
                     {
                         guard: ({ context }) =>
                             context.players.every((playerId) => Boolean(context.roundEndConfirmedBy[playerId])) &&

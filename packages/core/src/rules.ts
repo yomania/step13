@@ -1,7 +1,7 @@
 export const RULES = {
     match: {
         handsPerMatch: 4,
-        startingPoints: 50000,
+        startingPoints: 60000,
         renchan: false,
         roundWind: 'EAST_FIXED'
     },
@@ -29,7 +29,8 @@ export const RULES = {
     winConditions: {
         ronOnly: true,
         manganMinimumPoints: 8000,
-        kiriageMangan: true
+        kiriageMangan: true,
+        bankruptAtOrBelow: 0
     },
     draw: {
         afterDiscardsEach: 17,
