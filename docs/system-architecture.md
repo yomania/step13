@@ -1,104 +1,120 @@
 # Step13 시스템 아키텍처 (System Architecture)
 
-## 1. 개요 (Overview)
+기준일: `2026-02-18`
 
-이 프로젝트는 세 가지 런타임 레이어를 가진 Turborepo 모노레포입니다:
+## 1. 모노레포 구성
 
-- `apps/web`: React 클라이언트 (UI, 로컬 상호작용, 웹소켓 전송)
-- `apps/server`: Fastify + WebSocket 게이트웨이 (방/세션 오케스트레이션, 봇 호스팅)
-- `packages/core`: 결정론적 게임 엔진 상태 머신 (권위 있는 규칙 전이)
+| 경로 | 책임 | 상태 |
+|---|---|---|
+| `apps/web` | React UI, WebSocket 클라이언트, 조패/리플레이/미니게임 화면 | 운영 중 |
+| `apps/server` | Fastify + WS 게이트웨이, 룸 오케스트레이션, 봇 연결 | 운영 중 |
+| `packages/core` | XState 게임 상태머신 + 규칙 엔진 인터페이스 | 운영 중 |
+| `packages/proto` | 공유 타입(`Tile`, `GamePhase`, `PlayerId` 등) | 운영 중 |
+| `packages/scoring` | 샹텐/우케이레/점수 계산 | 운영 중 |
+| `packages/bot` | 봇 조패/버림패 로직 + 페르소나 프로필 | 운영 중 |
+| `packages/assets` | 에셋 패키지 자리(placeholder) | 초기 |
 
-지원 패키지:
-
-- `packages/proto`: 공유 런타임 타입/계약(contracts)
-- `packages/scoring`: 샹텐/점수 계산
-- `packages/bot` (Future): AI 봇 로직 및 전략 (현재 초기 단계)
-- `packages/assets` (Future): 게임 에셋 관리 (현재 초기 단계)
-
-## 2. 런타임 토폴로지 (Runtime Topology)
+## 2. 런타임 토폴로지
 
 ```mermaid
 flowchart LR
-    UI[apps/web\nReact UI] -- JSON Events --> WS[apps/server\nWebSocket Room]
-    WS -- Actor Events --> CORE[packages/core\nXState Game Machine]
-    CORE -- Snapshot UPDATE --> WS
-    WS -- UPDATE/SYNC --> UI
-    WS --- BOT[Server Bot Actor]
+    UI[apps/web\nReact/Vite] -->|JOIN, START_MATCH, QUERY_*| WS[apps/server\nGameRoom]
+    WS -->|GameEvents| CORE[packages/core\ncreateGameMachine]
+    CORE -->|snapshot| WS
+    WS -->|UPDATE/ANALYSIS_RESULT| UI
+    WS --- BOT[Server Bot Actor\napps/server/src/Bot.ts]
+    BOT --> CORE
 ```
 
-## 3. 코어 엔진 설계 (리팩토링됨)
+핵심 원칙:
 
-`packages/core`는 이제 **상태 오케스트레이션**과 **규칙 실행**을 분리합니다:
+- 서버 권위(Server Authoritative): 상태 전이는 `packages/core` 머신이 결정
+- 클라이언트는 서버 스냅샷(`UPDATE`)을 렌더링
+- `QUERY_ANALYSIS`는 룸에서 처리 후 `ANALYSIS_RESULT` 단방향 응답
+
+## 3. Core 레이어
+
+### 3.1 상태 오케스트레이션 vs 규칙 실행 분리
 
 - 오케스트레이션: `packages/core/src/machine.ts`
-  - 상태 그래프, 페이즈 전이, 타이머, 이벤트 라우팅 소유
-- 규칙 실행 정책: `packages/core/src/engine/defaultEngine.ts`
-  - 딜러 선정 (주사위 + 동점자 처리)
-  - 배패/벽 생성
-  - 도라 선택/자동 선택
-  - 패 검증 및 텐파이 자동 완성 폴백
-  - 타패 적용
-  - 유국/론 해결
-  - 룰셋 팩토리 `packages/core/src/engine/rulesets.ts`를 통해 선택 가능
+  - 상태 전이, 타이머, 가드, 라운드 확정 게이트
+- 규칙 실행: `packages/core/src/engine/defaultEngine.ts`
+  - 딜/선결정, 도라 선택, 조패 검증, 타패 적용, 론/유국 판정
+- 룰셋 팩토리: `packages/core/src/engine/rulesets.ts`
+  - 현재 `classic` 1종
 
-이는 취약한 머신 내 분기를 줄이고 머신 그래프를 재작성하지 않고도 규칙 동작을 교체할 수 있게 합니다.
+### 3.2 권위 상태(`GameContext`) 소유권
 
-`createGameMachine({ ruleset })`이 노출되어 각 런타임이 머신 소스를 변경하지 않고 룰셋을 선택할 수 있습니다.
+정식 상태 소스: `packages/core/src/messages.ts`
 
-## 4. 페이즈 파이프라인 (Phase Pipeline)
+주요 필드:
 
-라운드 레벨 파이프라인은 명시적입니다:
+- 참여자/좌석: `players`, `dealer`, `seatMap`, `dealerDice`
+- 라운드 리소스: `dealtTiles`, `wall`, `doraIndicators`
+- 진행 상태: `hands`, `pools`, `discards`, `currentTurn`, `lastDiscard`
+- 결과/점수: `winner`, `winResult`, `scores`
+- 운영 메타: `eventLog`, `deterministicSeed`, `timeBankRemainingMs`, `roundEndConfirmedBy`
 
-1. `matchStart`
-2. `doraSelect`
-3. `handBuild`
-4. `gameLoop.turn/checkRon`
-5. `roundEnd`
-6. (`matchStart` 다음 핸드) 또는 `matchEnd`
+## 4. Server 레이어
 
-페이즈별 머신 책임:
+중심 파일: `apps/server/src/GameRoom.ts`
 
-- 페이즈 진입/이탈 타이밍
-- 전이 가드(guard)
-- 엔진 정책으로의 이벤트 디스패치
+책임:
 
-페이즈별 엔진 책임:
+- 소켓 바인딩 플레이어 검증(`JOIN` 선행, playerId 고정)
+- 이벤트 전달 전 최소 검증(타인 playerId 위조 차단)
+- `QUERY_ANALYSIS`, `QUERY_PERSONAS` 처리
+- 봇 생명주기(`ADD_BOT`) 및 페르소나 정규화
+- 상태 브로드캐스트 시 포그오브워 마스킹 적용
 
-- 페이즈별 연산 및 컨텍스트 패치 생성
+마스킹 정책(클라이언트별 sanitize):
 
-## 5. 상태 소유권 (State Ownership)
+- `wall`: 공개 도라만 노출, 나머지는 `wall-{idx}`
+- 상대 `hands`/`pools`: `ROUND_END` 전까지 숨김
+- 상대 `dealtTiles`: 항상 숨김
+- `eventLog.START_MATCH.seed`, `context.deterministicSeed`: 숨김
 
-권위 있는 상태 필드는 `GameContext` (`packages/core/src/messages.ts`)에 있습니다:
+## 5. Web 레이어
 
-- 플레이어/세션: `players`, `dealer`, `dealerDice`, `seatMap`
-- 라운드 설정: `dealtTiles`, `wall`, `doraIndicators`
-- 플레이 진행: `hands`, `pools`, `discards`, `lastDiscard`, `currentTurn`
-- 결과: `winner`, `winResult`, `scores`
-- 관측성: `eventLog`
+중심 파일: `apps/web/src/App.tsx`, `apps/web/src/hooks/useGameSocket.ts`
 
-## 6. 이벤트 모델 (Event Model)
+역할:
 
-입력 이벤트는 명령어 형태입니다 (`JOIN`, `START_MATCH`, `SELECT_DORA`, `SUBMIT_HAND`, `DISCARD`, `DECLARE_WIN`, `RESTART`).
+- 메인 모드: 매치 모드 / 싱글 미니게임 모드
+- `useGameSocket`에서 reconnect 시 `JOIN` 재바인딩 + pending 이벤트 재전송
+- 분석 응답은 `queryId` 상관관계로 소비(오래된 응답 무시)
+- 라운드 종료는 `CONFIRM_ROUND_END`를 사용자 확인 액션으로 전송
+- 리플레이는 `context.eventLog`를 `replayMachine`으로 재생
 
-출력 효과(effects)는 컨텍스트 업데이트 + 로그 이벤트를 통해 표현됩니다 (`TIMEOUT`, `ROUND_END`, `MATCH_END`, `AUTO_RON`).
+## 6. 분석 질의 경로
 
-리플레이 시스템 (`replayMachine`)은 결정론적 재생을 위해 `eventLog`를 스냅샷으로 리플레이합니다.
+- 요청: Web -> `QUERY_ANALYSIS`
+- 처리: `GameRoom.handleAnalysisQuery`
+- 계산: `@step13/scoring` 직접 계산 + 임시 Bot 로직 호출
+- 응답: `ANALYSIS_RESULT { queryId, ... }`
 
-## 7. 리셋/복구 동작 (Reset/Recovery Behavior)
+`queryId`는 반드시 클라이언트에서 발급/매칭해야 하며, UI는 요청-응답 1:1로 소비한다.
 
-`RESTART`는 머신에서 전역적으로 처리되며 어떤 페이즈에서든 `idle`로 리셋됩니다.
+## 7. 테스트 아키텍처
 
-서버 웹소켓 바인딩은 리셋 후 동일한 `playerId`에 대해 동일한 소켓에서 재-`JOIN`을 허용하여 로비 상태가 고착되는 것을 방지합니다.
+- 단위 테스트
+  - `packages/core/src/*.test.ts`
+  - `packages/scoring/src/points.test.ts`
+  - `packages/bot/src/*.test.ts`
+- 통합/시나리오
+  - `scripts/test-e2e-flows.ts` (`pnpm test:e2e`)
+- 시뮬레이션
+  - `scripts/simulate-ai-vs-ai.ts` (`pnpm sim:ai`)
 
-## 8. 확장성 전략 (Extensibility Strategy)
+## 8. 아키텍처 변경 시 필수 문서
 
-미래의 변형을 위해, 새로운 동작은 먼저 엔진 정책 내부에 유지하십시오:
+아래 코드 영역 변경 시 최소 동기화 문서:
 
-- 대체 딜러 정책
-- 대체 도라/오프닝 정책
-- 대체 타임아웃 정책
-- 대체 승리 임계값/점수 정책
-
-페이즈 구조 자체가 변경될 때만 머신 전이를 수정하십시오.
-
-현재 서버 런타임 연결: `apps/server/src/index.ts`는 `RULESET` 환경 변수를 읽고 해당 룰셋으로 `GameRoom`을 초기화합니다.
+- `packages/core/src/machine.ts`, `packages/core/src/rules.ts`
+  - `docs/prd.yaml`, `docs/system-flow.md`
+- `apps/server/src/GameRoom.ts`
+  - `docs/system-architecture.md`, `docs/system-flow.md`
+- `apps/web/src/hooks/useGameSocket.ts`, `apps/web/src/components/*`
+  - `docs/system-flow.md`
+- 전체 작업 방식
+  - `docs/ai-doc-first-workflow.md`

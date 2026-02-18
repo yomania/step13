@@ -1,129 +1,155 @@
+meta:
+  version: "2026-02-18-sync"
+  last_synced: "2026-02-18"
+  source_of_truth:
+    rules: "packages/core/src/rules.ts"
+    machine: "packages/core/src/machine.ts"
+    scoring: "packages/scoring/src/points.ts"
+    room: "apps/server/src/GameRoom.ts"
+
 product:
-  name: "17보 웹게임"
-  genre: "2인 리치 마작 변형 (2-player riichi mahjong variant)"
+  name: "17보 마작"
+  genre: "2인 리치 마작 변형"
+  runtime:
+    transport: "WebSocket"
+    server_authoritative: true
+    default_room_id: "lobby"
   modes:
-    - solo_ai
-    - pvp_2p
-  must_have:
-    - solo_ai
-    - pvp_2p
-    - replay_with_guide
-    - realistic_tile_design
-    - auto_round_and_scoring_guidance
+    - id: "match_pvp"
+      status: "implemented"
+    - id: "match_vs_ai"
+      status: "implemented"
+    - id: "single_hand_build_mini_game"
+      status: "implemented"
+    - id: "replay_viewer"
+      status: "implemented"
 
 ruleset:
-  base: "RiichiCity_Duel_17Steps"
+  active_ruleset: "classic"
   match:
+    players_per_room: 2
     hands_per_match: 4
-    starting_points: 50000
+    starting_points: 60000
     renchan: false
     round_wind: "EAST_FIXED"
-    seat_assignment: "RANDOM_AT_MATCH_START" # 매치 내에서 동/서 고정
-  timers:
-    build_time_sec: 120
-    turn_time_sec: 5
-    time_bank_sec: 10
-  actions:
-    allow_tsumo: false
-    allow_calls: false # chi/pon/kan (치/펑/캉 불가)
-    auto_ron: true
-    riichi:
-      first_turn_required: true
-      double_riichi: false
-      stick_deposit: false
-      noten_riichi_allowed: true
+    bankrupt_end_threshold: 0
+  timers_ms:
+    match_start_delay: 1000
+    dora_select_timeout: 15000
+    dora_reveal_delay_after_selected: 3000
+    hand_build_timeout: 120000
+    turn_timeout: 10000
+    turn_overtime_time_bank: 3000
   tiles:
-    deal:
-      tiles_per_player: 34
-      choose_for_hand: 13
-      discard_pool: 21
-      discards_per_player: 17
+    dealt_per_player: 34
+    hand_size: 13
+    pool_size: 21
+    discards_per_player: 17
     dora:
       enabled: true
       count: 1
       red_dora: false
       kan_dora: false
-  win_conditions:
-    ron_only: true
-    mangan_minimum: true
-    include_omote_dora_in_minimum: true
-    kiriage_mangan: true
-    local_yaku:
-      enabled: true
-      set: "riichi_city"
+  actions:
+    allow_tsumo: false
+    allow_calls: false
+    allow_ron: true
+    auto_ron: true
+    auto_discard_on_timeout: true
+  scoring:
+    type: "riichi_han_fu"
+    options:
+      require_mangan_minimum: true
+      include_omote_dora_in_minimum: true
+      kiriage_mangan: true
+      auto_riichi_fallback: true
+    mangan_minimum_points: 8000
   draw:
-    condition: "AFTER_17_DISCARDS_EACH"
+    condition: "after_17_discards_each"
     noten_bappu:
       enabled: true
-      amount: 3000 # 설정 가능 (configurable)
-  bans:
-    nagashi_mangan: false
-    abortive_draw: false
-    renhou: false
+      amount: 3000
+      applied_when: "only_one_tenpai_player"
 
-scoring_engine:
-  type: "riichi_han_fu"
-  output:
-    - yaku_list
-    - han_total
-    - fu_total
-    - dora_count
-    - limit_category # mangan/haneman/... (만관/하네만/...)
-    - points_delta
-  guidance:
-    during_build:
-      show_waits: true
-      show_best_score_per_wait: true
-      show_mangan_minimum_ok: true
-    during_play_optional:
-      warn_self_furiten: true
-      warn_instant_deal_in: true
+state_machine:
+  phases:
+    - "idle"
+    - "matchStart"
+    - "doraSelect"
+    - "handBuild"
+    - "gameLoop.turn"
+    - "gameLoop.turnOvertime"
+    - "gameLoop.checkRon"
+    - "roundEnd"
+    - "matchEnd"
+  round_end_gate:
+    requires_all_players_confirm: true
+    confirm_event: "CONFIRM_ROUND_END"
+    bot_auto_confirm: true
+
+api_contract:
+  client_to_server:
+    - "JOIN"
+    - "START_MATCH"
+    - "ADD_BOT"
+    - "SELECT_DORA"
+    - "SUBMIT_HAND"
+    - "DISCARD"
+    - "DECLARE_WIN"
+    - "CONFIRM_ROUND_END"
+    - "RESTART"
+    - "GUIDE_VIEW"
+    - "QUERY_ANALYSIS"
+    - "QUERY_PERSONAS"
+  server_to_client:
+    - "UPDATE"
+    - "ANALYSIS_RESULT"
+    - "PERSONA_LIST_RESULT"
+    - "REJECTED_EVENT"
+  analysis_query_types:
+    - "SHANTEN"
+    - "SCORE"
+    - "SCORE_PREVIEW"
+    - "AI_HINT"
+    - "MINI_GAME_EVAL"
+  correlation_rule:
+    query_id_required: true
+    stale_response_should_be_ignored_by_client: true
+
+security_visibility:
+  fog_of_war:
+    wall:
+      policy: "selected dora only visible, others masked as wall-{index}"
+    opponent_hand_and_pool:
+      policy: "masked before ROUND_END"
+    opponent_dealt_tiles:
+      policy: "always masked"
+  sensitive_metadata:
+    deterministic_seed:
+      policy: "masked in client snapshot"
+    event_log_start_match_seed:
+      policy: "masked in sanitized eventLog"
 
 replay:
   enabled: true
-  storage:
-    event_log: true
-    deterministic_seed: true
+  source: "context.eventLog"
+  deterministic_rebuild: true
   guide:
-    per_turn:
-      show_immediate_loss_tiles: true
-      suggest_alternatives_top_n: 3
-    tag_blunders: true
-
-architecture:
-  server_authoritative: true
-  realtime: "websocket"
-  client:
-    ui:
-      build_screen: true
-      play_screen: true
-      results_screen: true
-      replay_screen: true
-    assets:
-      tile_style: "realistic_riichi_tiles_original_art"
+    immediate_loss_tiles: true
+    alternatives_top_n: 3
+    blunder_tagging: true
 
 ai:
-  difficulties:
-    - easy
-    - normal
-    - hard
-  behavior:
-    build_phase:
-      objective:
-        - maximize_mangan_tenpai_probability
-        - maximize_wait_count
-        - minimize_self_furiten_risk
-    play_phase:
-      objective:
-        - minimize_instant_loss_risk
-        - maximize_opponent_deal_in_probability_estimate
+  bot_package: "@step13/bot"
+  personas_source: "packages/bot/src/personas.ts"
+  persona_ids:
+    - "easy_relaxed"
+    - "medium_balanced"
+    - "medium_flush"
+    - "hard_defensive"
+    - "hard_value"
 
-telemetry:
-  events:
-    - match_start
-    - hand_lock
-    - discard
-    - auto_ron
-    - draw
-    - replay_open
-    - guide_step_view
+non_goals_current:
+  - "tsumo win flow"
+  - "chi/pon/kan call flow"
+  - "multi-room persistence"

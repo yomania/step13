@@ -1,37 +1,46 @@
-# 코드 및 문서 분석 리포트 (Code vs Docs Gap Analysis)
+# 코드-문서 동기화 리포트 (Code vs Docs Gap Analysis)
 
-## 1. 개요 (Overview)
-본 리포트는 현재 `docs/system-architecture.md` 문서와 실제 프로젝트 코드베이스 간의 차이점을 분석하여 정리한 것입니다.
+분석일: `2026-02-18`
+분석 범위: `apps/*`, `packages/*`, `docs/*`
 
-## 2. 분석 대상 (Scope)
-- **문서**: `docs/system-architecture.md`
-- **코드베이스**: `apps/`, `packages/` 디렉토리 전체 구조 및 주요 설정 파일 (`package.json`, `tsconfig.json` 등)
+## 1. 이번 동기화에서 정리한 불일치
 
-## 3. 주요 발견 사항 (Key Findings)
+기존 문서 대비 실제 코드 기준으로 다음 항목을 수정했습니다.
 
-### 3.1. 패키지 구조 (Package Structure)
-- **문서 내용**:
-  - `apps/web`, `apps/server`
-  - `packages/core`, `packages/proto`, `packages/scoring`
-- **실제 코드**:
-  - 위 5개 패키지 외에 **`packages/bot`** 및 **`packages/assets`** 디렉토리가 존재함.
-  - 현재 이 두 패키지는 초기화 상태(placeholder)로 보이며, `package.json`에 빌드 스크립트가 구현되어 있지 않음 (`echo 'No build step...'`).
+- 룰 수치 불일치
+  - 시작 점수: `50000 -> 60000`
+  - 턴 타이머: `5s -> 10s`
+  - 타임뱅크: `10s -> 3s`
+  - 도라 공개 지연(`3000ms`) 및 `matchStart` 지연(`1000ms`) 반영
+- 패키지 상태 불일치
+  - `@step13/bot`은 future가 아니라 실사용/테스트 대상임을 반영
+- 라운드 종료 흐름 누락
+  - `CONFIRM_ROUND_END` 전원 확인 게이트, 봇 자동확인 반영
+- 분석 질의 계약 누락
+  - `QUERY_ANALYSIS`/`ANALYSIS_RESULT`의 `queryId` 상관관계 규칙 반영
+- 서버 마스킹 정책 누락
+  - wall/hands/pools/dealtTiles/eventLog seed 마스킹 반영
 
-### 3.2. 코어 패키지 의존성 (Core Dependencies)
-- **문서 내용**: `packages/core`가 XState 게임 머신을 포함한다고 명시.
-- **실제 코드**:
-  - `packages/core/package.json`에서 `xstate` (^5.0.0) 의존성을 확인.
-  - `@step13/proto`, `@step13/scoring`에 대한 워크스페이스 의존성(`workspace:*`) 확인됨.
+## 2. 현재 잔여 갭
 
-### 3.3. 서버 설정 (Server Configuration)
-- **문서 내용**: `apps/server/src/index.ts`가 `RULESET` 환경 변수를 사용한다고 명시.
-- **실제 코드**:
-  - `apps/server/src/index.ts` 파일 내 `process.env.RULESET ?? 'classic'` 구문 확인됨. 문서 내용과 일치함.
+중대 불일치 없음.
 
-## 4. 권장 수정 사항 (Recommendations)
-1. **문서 업데이트**:
-   - `packages/bot` 및 `packages/assets`에 대한 언급을 추가하여 전체 프로젝트 구조를 정확히 반영. (비록 현재는 초기 상태라 할지라도 존재 여부는 명시하는 것이 좋음, 혹은 향후 계획으로 언급)
-   - `packages/scoring`과 `packages/proto`의 역할 재확인 및 명시 (현재 문서는 정확함).
+주의 사항(의도된 상태):
 
-## 5. 결론 (Conclusion)
-전반적으로 `docs/system-architecture.md`는 현재 시스템의 핵심 아키텍처를 매우 정확하게 반영하고 있습니다. 다만, 프로젝트 구조상 존재하는 일부 추가 패키지(`bot`, `assets`)에 대한 정보가 누락되어 있어 이를 보완할 필요가 있습니다.
+- `packages/assets`는 placeholder 패키지이며 런타임 로직 없음
+- `RULESET`은 현재 `classic`만 지원
+
+## 3. 재발 방지 규칙
+
+- 아키텍처/룰/계약 변경 시 코드 변경 전 `docs/*` 선행 갱신
+- PR 제출 전 `docs/README.md`의 문서 맵 기준으로 영향 문서 재검토
+- 작업 절차는 `docs/ai-doc-first-workflow.md`를 기준으로 수행
+
+## 4. 다음 점검 시 확인 파일
+
+- `packages/core/src/rules.ts`
+- `packages/core/src/machine.ts`
+- `apps/server/src/GameRoom.ts`
+- `apps/web/src/hooks/useGameSocket.ts`
+- `apps/web/src/components/HandBuilder.tsx`
+- `apps/web/src/components/SingleMiniGame.tsx`

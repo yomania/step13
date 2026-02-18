@@ -1,88 +1,145 @@
 # Step13 시스템 흐름 (System Flow)
 
-## 1. 세션 흐름 (Session Flow)
+기준일: `2026-02-18`
+
+## 1. 매치 수명주기
+
+```mermaid
+stateDiagram-v2
+    [*] --> idle
+    idle --> matchStart: START_MATCH (players=2)
+    matchStart --> doraSelect: 1000ms
+    doraSelect --> handBuild: dora selected + 3000ms reveal
+    doraSelect --> doraSelect: 15000ms timeout -> auto select
+    handBuild --> gameLoop: all SUBMIT_HAND
+    handBuild --> gameLoop: 120000ms timeout -> auto submit
+    gameLoop --> roundEnd: RON or DRAW
+    roundEnd --> matchStart: all CONFIRM_ROUND_END and hands remain
+    roundEnd --> matchEnd: all CONFIRM_ROUND_END and no next hand / bankrupt
+    matchEnd --> [*]
+```
+
+## 2. 상세 이벤트 시퀀스
 
 ```mermaid
 sequenceDiagram
-    participant C as 클라이언트 (web)
-    participant S as 서버 (ws room)
-    participant M as 코어 머신
+    participant C as Client
+    participant S as GameRoom
+    participant M as core machine
 
-    C->>S: JOIN (입장)
-    S->>M: JOIN
-    C->>S: START_MATCH (매치 시작)
+    C->>S: JOIN
+    C->>S: START_MATCH
     S->>M: START_MATCH
-    M-->>S: UPDATE(matchStart)
-    M-->>S: UPDATE(doraSelect)
+    M-->>S: UPDATE(matchStart -> doraSelect)
 
-    alt 딜러 플레이어
-        C->>S: SELECT_DORA (도라 선택)
+    alt dealer selects dora
+        C->>S: SELECT_DORA
         S->>M: SELECT_DORA
-    else 타임아웃
-        M->>M: autoSelectDoraIndicator (도라 자동 선택)
+    else timeout
+        M->>M: autoSelectDora
     end
 
     M-->>S: UPDATE(handBuild)
 
-    par 각 플레이어
-        C->>S: SUBMIT_HAND (패 제출)
+    par each player submit
+        C->>S: SUBMIT_HAND
         S->>M: SUBMIT_HAND
-    and 타임아웃 폴백
-        M->>M: autoSubmitMissingHands (자동 패 제출)
+    and timeout fallback
+        M->>M: autoSubmitMissingHands
     end
 
     M-->>S: UPDATE(gameLoop)
 
-    loop 턴 (turn)
-        C->>S: DISCARD (타패)
+    loop turn
+        C->>S: DISCARD
         S->>M: DISCARD
-        M->>M: checkRon/draw (론/유국 체크)
+        M->>M: checkRon / draw / next turn
     end
 
-    M-->>S: UPDATE(roundEnd/matchEnd)
+    M-->>S: UPDATE(roundEnd)
+    C->>S: CONFIRM_ROUND_END
+    S->>M: CONFIRM_ROUND_END
 ```
 
-## 2. AI 매치 종료 흐름 (AI Match Exit Flow)
+## 3. 타이머 도메인 (실제 코드 값)
 
-```mermaid
-flowchart TD
-    A[AI 매치 진행 중] --> B[유저가 AI 매치 종료 클릭]
-    B --> C{목적지}
-    C -->|로비| D[RESTART 전송]
-    C -->|패 만들기부터 재시작| E[RESTART 전송]
-    E --> F[자동 JOIN]
-    F --> G[자동 ADD_BOT]
-    G --> H[자동 START_MATCH]
-```
+- `matchStart -> doraSelect`: `1000ms`
+- `doraSelectTimeMs`: `15000ms`
+- `doraRevealTimeMs`: `3000ms`
+- `buildTimeMs`: `120000ms`
+- `turnTimeMs`: `10000ms`
+- `timeBankMs`: `3000ms`
 
-## 3. 패 만들기 점수 미리보기 흐름 (Hand Build Scoring Preview Flow)
+턴 타임아웃 규칙:
 
-1. 클라이언트가 13장의 패를 선택합니다.
-2. 샹텐(shanten) 계산을 통해 대기패(waits)를 계산합니다 (`-1`은 완성 형태).
-3. 각 대기패는 `calculateScore(hand, waitTile, ..., doraIndicators, options)`를 통해 점수가 계산됩니다.
-4. 미리보기는 다음 기준으로 최적의 결과를 선택합니다:
-   - 최대 `points` (점수)
-   - 동점 시: 최대 `han` (판수)
-5. UI 렌더링:
-   - `(현재 판수 / 최소 요구 판수)`
-   - 점수 미리보기
-   - 대기패 목록
+1. `turnTimeMs` 만료
+2. 현재 턴 플레이어 타임뱅크가 남아 있으면 `turnOvertime` 진입
+3. `timeBankMs` 만료 시 강제 `DISCARD`
 
-## 4. 타이머 도메인 (Timer Domains)
+## 4. 라운드 종료 게이트
 
-- `doraSelectTimeMs`: 딜러 도라 선택 타임아웃
-- `buildTimeMs`: 패 만들기 타임아웃
-- `turnTimeMs`: 턴당 카운트다운
-- `timeBankMs`: 플레이어당 턴 예비 시간 (타임 뱅크)
+라운드는 즉시 다음 핸드로 넘어가지 않으며, `roundEndConfirmedBy`가 모든 플레이어에 대해 `true`가 되어야 전이한다.
 
-타이머는 머신 내에서 페이즈(phase) 범위로 동작합니다. 페이즈 진입/이탈 시 타이머 동작이 다시 바인딩됩니다.
+- 사람 플레이어: `CONFIRM_ROUND_END` 필요
+- 봇 플레이어: `roundEnd` 진입 시 자동 확인
 
-## 5. 관측성 (Observability)
+전이 조건:
 
-주요 추적 소스:
+- 전원 확인 + 파산(`<= 0`) 발생 -> `matchEnd`
+- 전원 확인 + 핸드 남음 -> `matchStart`
+- 전원 확인 + 핸드 없음 -> `matchEnd`
 
-- 코어 스냅샷의 `context.eventLog`
-- 서버 콘솔 텔레메트리 (`START_MATCH`, `SUBMIT_HAND`, `DISCARD`, `AUTO_RON`, `ROUND_END`, `GUIDE_VIEW`)
-- 웹 콘솔의 웹소켓 UPDATE 페이로드
+## 5. 분석 질의(Query) 흐름
 
-디버깅을 위해 `replayMachine`을 통해 `eventLog`를 리플레이하여 재현할 수 있습니다.
+### 5.1 일반 분석
+
+1. 웹이 `QUERY_ANALYSIS` 전송 (`queryId` 포함)
+2. 서버가 질의 타입별 계산
+3. 서버가 `ANALYSIS_RESULT` 응답 (`queryId` 그대로)
+4. 웹은 현재 대기 중인 `queryId`와 일치할 때만 반영
+
+주요 질의 타입:
+
+- `SHANTEN`
+- `SCORE`
+- `SCORE_PREVIEW`
+- `AI_HINT`
+- `MINI_GAME_EVAL`
+
+### 5.2 상관관계 키 규칙
+
+- 요청마다 새 `queryId` 생성
+- UI 상태는 `queryId` 매칭으로만 갱신
+- 매칭 실패 응답은 반드시 무시
+
+관련 코드:
+
+- `apps/web/src/components/HandBuilder.tsx`
+- `apps/web/src/components/SingleMiniGame.tsx`
+- `apps/web/src/App.tsx`
+- `apps/server/src/GameRoom.ts`
+
+## 6. AI 대전 종료/재시작 흐름
+
+`App.tsx`에서 AI 대전 중 종료 메뉴 제공:
+
+- 로비로 이동: `RESTART` 전송 후 idle
+- 조패부터 재시작: `RESTART` 후 자동 시퀀스
+  - `JOIN` -> `ADD_BOT` -> `START_MATCH`
+
+## 7. 리플레이 흐름
+
+- 데이터 소스: `context.eventLog`
+- 재생기: `packages/core/src/replayMachine.ts`
+- 지연 전이(`after`)도 재생 시계로 선반영하여 상태를 재구성
+
+웹 리플레이 화면:
+
+- `apps/web/src/components/ReplayViewer.tsx`
+- 현재 스냅샷 기준 위험패/대안 패를 계산해 가이드 오버레이 제공
+
+## 8. 운영 리스크 체크포인트
+
+- 비동기 질의 응답은 `queryId`로 반드시 상관관계 매칭
+- `dealtTiles`/라운드 변경 시 UI 상태 초기화는 실제 데이터 시그니처 변화로만 수행
+- 소켓/타이머 구독은 effect cleanup 보장
