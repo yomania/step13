@@ -406,10 +406,8 @@ export default function App() {
         setSingleMode('ai');
         setShowAiExitMenu(false);
         queryPersonas({ playerId });
-        if (!isIdle || context.players.length > 0) {
-            sendEvent({ type: 'RESTART' });
-        }
-        setAiRematchStep('join');
+        sendEvent({ type: 'RESTART' });
+        setAiRematchStep('none');
     };
 
     const handleExitSingleAiSetup = () => {
@@ -1334,6 +1332,18 @@ export default function App() {
                                     )}
 
                                     <div className="flex gap-4 justify-center">
+                                        {isSingleAiMode && isAiMatch && (
+                                            <button
+                                                onClick={onAiExitToHandBuild}
+                                                disabled={aiRematchStep !== 'none'}
+                                                className={`px-8 py-3 font-bold rounded-full transition-colors ${aiRematchStep !== 'none'
+                                                    ? 'bg-slate-700 text-slate-300 cursor-not-allowed'
+                                                    : 'bg-amber-600 text-white hover:bg-amber-500'
+                                                    }`}
+                                            >
+                                                AI 대전 다시 시작
+                                            </button>
+                                        )}
                                         <button
                                             onClick={onRestart}
                                             className="px-8 py-3 bg-white text-slate-900 font-bold rounded-full hover:bg-gray-200 transition-colors"
