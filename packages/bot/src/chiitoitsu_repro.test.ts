@@ -1,6 +1,6 @@
 
 import { describe, test, expect } from 'vitest';
-import { BotLogic, CandidateEvaluation } from '../logic';
+import { BotLogic, CandidateEvaluation } from './logic';
 import { Tile } from '@step13/proto';
 
 describe('BotLogic - Chiitoitsu Reproduction', () => {

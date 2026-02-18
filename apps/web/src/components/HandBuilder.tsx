@@ -164,9 +164,24 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
     const debugQueryIdRef = useRef<string | null>(null);
     const scorePreviewQueryIdRef = useRef<string | null>(null);
     const autoHintQueryIdRef = useRef<string | null>(null);
+    const dealtTilesSignatureRef = useRef<string>('');
+
+    const dealtTilesSignature = useMemo(() => {
+        return dealtTiles
+            .map((tile, index) => {
+                const stableId = tile.id ?? `${tile.suit}-${tile.rank}-${tile.isRed ? 'r' : 'n'}`;
+                return `${index}:${stableId}`;
+            })
+            .join('|');
+    }, [dealtTiles]);
 
     useEffect(() => {
-        setSelectedIndices([]);
+        if (dealtTilesSignatureRef.current === dealtTilesSignature) {
+            return;
+        }
+        dealtTilesSignatureRef.current = dealtTilesSignature;
+
+        setSelectedIndices(initialSelectedIndices);
         setShowDebugLayer(false);
         setServerPotentialScore(null);
         setDebugCandidates([]);
@@ -175,7 +190,7 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
         debugQueryIdRef.current = null;
         scorePreviewQueryIdRef.current = null;
         autoHintQueryIdRef.current = null;
-    }, [dealtTiles]);
+    }, [dealtTilesSignature, initialSelectedIndices]);
 
     const selectedTiles = useMemo(() => selectedIndices.map((index) => dealtTiles[index]), [selectedIndices, dealtTiles]);
 
