@@ -383,14 +383,17 @@ export default function App() {
 
     // Ron Opportunity (Query server when lastDiscard changes)
     const [ronOpportunity, setRonOpportunity] = useState<any>(null);
+    const ronQueryIdRef = useRef<string | null>(null);
 
     useEffect(() => {
         if (!isGameLoop) {
+            ronQueryIdRef.current = null;
             setRonOpportunity(null);
             return;
         }
         const { lastDiscard, hands } = context;
         if (!lastDiscard || lastDiscard.playerId === playerId) {
+            ronQueryIdRef.current = null;
             setRonOpportunity(null);
             return;
         }
@@ -398,8 +401,12 @@ export default function App() {
         const myHand = hands[playerId];
         if (!myHand) return;
 
+        const queryId = `ron-${context.round}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        ronQueryIdRef.current = queryId;
+
         // Query server for ron check
         queryAnalysisWithPlayer({
+            queryId,
             queryType: 'SCORE',
             hand: myHand,
             wait: lastDiscard.tile,
@@ -409,12 +416,19 @@ export default function App() {
 
     // Update ronOpportunity when analysisResult comes back for SCORE
     useEffect(() => {
-        if (analysisResult?.type === 'ANALYSIS_RESULT' && analysisResult.scoreResult) {
-            if (analysisResult.scoreResult.points > 0) {
-                setRonOpportunity(analysisResult.scoreResult);
-            } else {
-                setRonOpportunity(null);
-            }
+        if (analysisResult?.type !== 'ANALYSIS_RESULT') return;
+        if (!analysisResult.scoreResult) return;
+
+        const pendingRonQueryId = ronQueryIdRef.current;
+        const incomingQueryId = typeof analysisResult.queryId === 'string' ? analysisResult.queryId : null;
+        if (!pendingRonQueryId || incomingQueryId !== pendingRonQueryId) {
+            return;
+        }
+
+        if (analysisResult.scoreResult.points > 0) {
+            setRonOpportunity(analysisResult.scoreResult);
+        } else {
+            setRonOpportunity(null);
         }
     }, [analysisResult]);
 

@@ -22,12 +22,14 @@ export class Bot {
     private logic: BotLogic;
     private difficulty: Difficulty;
     private persona: BotPersonaProfile;
+    private subscription: { unsubscribe: () => void } | null = null;
 
     constructor(
         id: PlayerId,
         actor: AnyActorRef,
         ruleset: RulesetName = 'classic',
-        personaId?: string
+        personaId?: string,
+        autoSubscribe: boolean = true
     ) {
         this.id = id;
         this.actor = actor;
@@ -35,10 +37,17 @@ export class Bot {
         this.persona = getBotPersonaProfile(personaId);
         this.difficulty = this.persona.difficulty;
         this.logic = new BotLogic(id, this.difficulty);
-        this.actor.subscribe((snapshot) => {
-            this.state = snapshot;
-            this.decide();
-        });
+        if (autoSubscribe) {
+            this.subscription = this.actor.subscribe((snapshot) => {
+                this.state = snapshot;
+                this.decide();
+            });
+        }
+    }
+
+    public dispose() {
+        this.subscription?.unsubscribe();
+        this.subscription = null;
     }
 
     public buildBestCandidatesForQuery(

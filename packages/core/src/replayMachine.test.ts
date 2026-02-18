@@ -2,8 +2,13 @@
 import { createActor } from 'xstate';
 import { replayMachine } from './replayMachine';
 import { gameMachine } from './machine';
-import { GameEvents, GameContext } from './messages';
-import { describe, it, expect } from 'vitest';
+import { GameEvents } from './messages';
+import { RULES } from './rules';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+
+afterEach(() => {
+    vi.useRealTimers();
+});
 
 describe('replayMachine', () => {
     it('should load events and reproduce the final state', async () => {
@@ -94,5 +99,39 @@ describe('replayMachine', () => {
 
         replayActor.send({ type: 'PREV' });
         expect(replayActor.getSnapshot().context.currentIndex).toBe(0);
+    });
+
+    it('replays delayed transitions before applying next logged event', async () => {
+        vi.useFakeTimers();
+
+        const gameActor = createActor(gameMachine);
+        gameActor.start();
+        gameActor.send({ type: 'JOIN', playerId: 'p1' });
+        gameActor.send({ type: 'JOIN', playerId: 'p2' });
+        gameActor.send({ type: 'START_MATCH', seed: 77 });
+
+        await vi.advanceTimersByTimeAsync(1000);
+        const doraSnapshot = gameActor.getSnapshot();
+        expect(doraSnapshot.value).toBe('doraSelect');
+
+        const dealer = doraSnapshot.context.dealer;
+        const doraTileId = doraSnapshot.context.wall[0]?.id;
+        expect(doraTileId).toBeDefined();
+        gameActor.send({ type: 'SELECT_DORA', playerId: dealer, tileId: doraTileId! });
+
+        await vi.advanceTimersByTimeAsync(RULES.timers.doraRevealTimeMs);
+        expect(gameActor.getSnapshot().value).toBe('handBuild');
+
+        const loggedEvents = gameActor.getSnapshot().context.eventLog;
+        gameActor.stop();
+
+        const replayActor = createActor(replayMachine);
+        replayActor.start();
+        replayActor.send({ type: 'LOAD_LOG', events: loggedEvents });
+
+        const replayContext = replayActor.getSnapshot().context;
+        const lastSnapshot = replayContext.snapshots[replayContext.snapshots.length - 1];
+        expect(lastSnapshot.doraIndicators.length).toBe(1);
+        expect(lastSnapshot.phase).toBe('ROUND_START');
     });
 });

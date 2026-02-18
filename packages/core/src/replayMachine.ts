@@ -19,6 +19,55 @@ export type ReplayEvents =
     | { type: 'PAUSE' }
     | { type: 'TICK' };
 
+type ScheduledTask = {
+    id: number;
+    due: number;
+    callback: () => void;
+};
+
+function createReplayClock() {
+    let now = 0;
+    let nextId = 1;
+    const tasks: ScheduledTask[] = [];
+
+    const sortTasks = () => {
+        tasks.sort((a, b) => a.due - b.due || a.id - b.id);
+    };
+
+    return {
+        clock: {
+            setTimeout: (callback: () => void, timeout: number) => {
+                const task: ScheduledTask = {
+                    id: nextId++,
+                    due: now + Math.max(0, timeout),
+                    callback
+                };
+                tasks.push(task);
+                sortTasks();
+                return task.id;
+            },
+            clearTimeout: (id: number) => {
+                const index = tasks.findIndex((task) => task.id === Number(id));
+                if (index >= 0) {
+                    tasks.splice(index, 1);
+                }
+            }
+        },
+        advanceToNextTask: () => {
+            if (tasks.length === 0) {
+                return false;
+            }
+            const next = tasks.shift();
+            if (!next) {
+                return false;
+            }
+            now = next.due;
+            next.callback();
+            return true;
+        }
+    };
+}
+
 export const replayMachine = setup({
     types: {
         context: {} as ReplayContext,
@@ -38,27 +87,30 @@ export const replayMachine = setup({
 
             // Pre-calculate all snapshots
             const snapshots: GameContext[] = [];
-            let events = [] as GameEvents[];
-
-            if (event.type === 'LOAD_LOG') {
-                events = event.events;
-            }
-
-            // We need to use the actual gameMachine to transition
-            // Since gameMachine usage of 'setup' creates a machine logic,
-            // we can use createActor to run it synchronously?
-            // Or use machine.transition() if exposed?
-            // XState v5 'setup' returns a machine via .createMachine().
-            // gameMachine is the machine.
-
-            let actor = createActor(gameMachine);
+            const events = event.events;
+            const replayClock = createReplayClock();
+            const actor = createActor(gameMachine, { clock: replayClock.clock as any });
             actor.start();
 
             // Initial state
             snapshots.push(actor.getSnapshot().context);
 
-            events.forEach(e => {
-                actor.send(e);
+            events.forEach((loggedEvent) => {
+                // Advance delayed transitions until the next logged event becomes sendable.
+                // This keeps replay aligned with timer-based phase changes.
+                let advanceSafety = 0;
+                while (advanceSafety < 1000) {
+                    const snapshot: any = actor.getSnapshot();
+                    if (typeof snapshot.can !== 'function' || snapshot.can(loggedEvent)) {
+                        break;
+                    }
+                    if (!replayClock.advanceToNextTask()) {
+                        break;
+                    }
+                    advanceSafety += 1;
+                }
+
+                actor.send(loggedEvent);
                 snapshots.push(actor.getSnapshot().context);
             });
 

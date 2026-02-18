@@ -49,8 +49,19 @@ export class BotLogic {
     public getBestDiscard(hand: Tile[], context: GameContext): Tile | null {
         if (hand.length === 0) return null;
 
-        let bestTile: Tile | null = null;
-        let bestScore = -Infinity;
+        type DiscardCandidate = {
+            tile: Tile;
+            evalScore: number;
+            shanten: number;
+            ukeireCount: number;
+            isIsolatedHonorSingleton: boolean;
+        };
+        const candidates: DiscardCandidate[] = [];
+        const tileCounts: Record<string, number> = {};
+        for (const tile of hand) {
+            const key = `${tile.suit}${tile.rank}`;
+            tileCounts[key] = (tileCounts[key] ?? 0) + 1;
+        }
 
         const visibleTiles = this.getVisibleTiles(context);
         const diff = this.difficulty;
@@ -67,13 +78,43 @@ export class BotLogic {
             let evalScore = qualityScore;
             evalScore += ukeire.ukeireCount * ukeireWeight;
 
-            if (evalScore > bestScore) {
-                bestScore = evalScore;
-                bestTile = tileToDiscard;
+            // Lightweight preference: isolated honor tiles are usually the first discard.
+            const tileKey = `${tileToDiscard.suit}${tileToDiscard.rank}`;
+            const isIsolatedHonorSingleton = tileToDiscard.suit === 'z' && (tileCounts[tileKey] ?? 0) === 1;
+            if (isIsolatedHonorSingleton) {
+                evalScore += 600;
             }
+
+            candidates.push({
+                tile: tileToDiscard,
+                evalScore,
+                shanten: ukeire.shanten,
+                ukeireCount: ukeire.ukeireCount,
+                isIsolatedHonorSingleton
+            });
         }
 
-        return bestTile;
+        if (candidates.length === 0) return null;
+
+        const pickBest = (pool: DiscardCandidate[]) => pool.reduce((best, current) => {
+            if (current.evalScore > best.evalScore) return current;
+            if (current.evalScore < best.evalScore) return best;
+            return current.ukeireCount > best.ukeireCount ? current : best;
+        });
+
+        const bestOverall = pickBest(candidates);
+
+        // Prefer isolated honors only when they do not lose clear speed.
+        const competitiveIsolatedHonors = candidates.filter((candidate) =>
+            candidate.isIsolatedHonorSingleton &&
+            candidate.shanten <= bestOverall.shanten &&
+            candidate.ukeireCount + 4 >= bestOverall.ukeireCount
+        );
+        if (competitiveIsolatedHonors.length > 0) {
+            return pickBest(competitiveIsolatedHonors).tile;
+        }
+
+        return bestOverall.tile;
     }
 
     // --- Ported Logic from Client HandAnalysis ---
@@ -490,15 +531,57 @@ export class BotLogic {
 
         tryAddCandidate(baseIndices.slice(0, 13));
 
-        return [...unique.values()]
-            .sort((a, b) => {
-                const aTotal = a.score.points + (a.score.quality ?? 0);
-                const bTotal = b.score.points + (b.score.quality ?? 0);
-                const aEffectiveWaits = a.waits.length - (a.furitenWaits?.length ?? 0);
-                const bEffectiveWaits = b.waits.length - (b.furitenWaits?.length ?? 0);
-                return bTotal - aTotal || bEffectiveWaits - aEffectiveWaits;
-            })
-            .slice(0, maxCount);
+        const compareCandidates = (a: CandidateEvaluation, b: CandidateEvaluation) => {
+            const aTotal = a.score.points + (a.score.quality ?? 0);
+            const bTotal = b.score.points + (b.score.quality ?? 0);
+            const aEffectiveWaits = a.waits.length - (a.furitenWaits?.length ?? 0);
+            const bEffectiveWaits = b.waits.length - (b.furitenWaits?.length ?? 0);
+            return bTotal - aTotal || bEffectiveWaits - aEffectiveWaits;
+        };
+        const getPrimaryYaku = (candidate: CandidateEvaluation) =>
+            candidate.score.yaku.find((yaku) => yaku !== 'Riichi (Auto)' && !yaku.startsWith('Dora')) ?? 'RiichiOnly';
+
+        const sorted = [...unique.values()].sort(compareCandidates);
+        if (maxCount <= 0) return [];
+        if (sorted.length <= maxCount) return sorted;
+
+        const selected = sorted.slice(0, maxCount);
+        const yakuCounts = new Map<string, number>();
+        for (const candidate of selected) {
+            const key = getPrimaryYaku(candidate);
+            yakuCounts.set(key, (yakuCounts.get(key) ?? 0) + 1);
+        }
+
+        for (const candidate of sorted.slice(maxCount)) {
+            const incomingKey = getPrimaryYaku(candidate);
+            if (yakuCounts.has(incomingKey)) continue;
+
+            let replaceIndex = -1;
+            for (let i = selected.length - 1; i >= 0; i--) {
+                const currentKey = getPrimaryYaku(selected[i]);
+                const count = yakuCounts.get(currentKey) ?? 0;
+                if (count > 1 || currentKey === 'RiichiOnly') {
+                    replaceIndex = i;
+                    break;
+                }
+            }
+            if (replaceIndex < 0) {
+                break;
+            }
+
+            const removedKey = getPrimaryYaku(selected[replaceIndex]);
+            const removedCount = (yakuCounts.get(removedKey) ?? 1) - 1;
+            if (removedCount <= 0) {
+                yakuCounts.delete(removedKey);
+            } else {
+                yakuCounts.set(removedKey, removedCount);
+            }
+
+            selected[replaceIndex] = candidate;
+            yakuCounts.set(incomingKey, (yakuCounts.get(incomingKey) ?? 0) + 1);
+        }
+
+        return selected.sort(compareCandidates);
     }
 
     private calculateCandidateScoreHeuristic(
@@ -531,6 +614,15 @@ export class BotLogic {
         }
 
         let quality = evaluateHandQuality(hand, difficulty, doraIndicators, dangerMap, scoreDiff);
+        const waitFlexibilityWeight = difficulty === 'HARD' ? 1000 : (difficulty === 'MEDIUM' ? 700 : 300);
+        quality += waits.length * waitFlexibilityWeight;
+
+        // Pinfu tends to be undervalued by pure shape scoring; lift it slightly so
+        // practical ryanmen-based hands are retained in top candidates.
+        if (bestYaku.includes('Pinfu')) {
+            quality += difficulty === 'HARD' ? 3500 : (difficulty === 'MEDIUM' ? 2500 : 800);
+        }
+
         if (bestLimit === 'Yakuman' || bestYaku.some((yaku) => YAKUMAN_YAKU.has(yaku))) {
             quality += 200000 + waits.length * 10000;
         }

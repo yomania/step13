@@ -104,6 +104,7 @@ export class GameRoom {
     private async handleAnalysisQuery(playerId: PlayerId, event: any) {
         const { queryId, hand, doraIndicators, options } = event;
         const result: any = { type: 'ANALYSIS_RESULT', queryId };
+        let tempBot: Bot | undefined;
 
         try {
             if (event.queryType === 'SHANTEN') {
@@ -112,7 +113,8 @@ export class GameRoom {
                 const wait = event.wait;
                 result.scoreResult = calculateScore(hand, wait, false, doraIndicators || [], options || {});
             } else if (event.queryType === 'SCORE_PREVIEW') {
-                const tempBot = new Bot('temp', this.machine as any, this.ruleset);
+                // Query-only bot must not subscribe to room actor updates.
+                tempBot = new Bot('temp', this.machine as any, this.ruleset, undefined, false);
                 if (Array.isArray(hand) && hand.length === 13) {
                     result.scoreResult = tempBot.evaluateHandScoreForQuery(hand, doraIndicators || []);
                 } else {
@@ -120,7 +122,7 @@ export class GameRoom {
                 }
             } else if (event.queryType === 'AI_HINT') {
                 // Use bot's evaluation logic for hints
-                const tempBot = new Bot('temp', this.machine as any, this.ruleset);
+                tempBot = new Bot('temp', this.machine as any, this.ruleset, undefined, false);
                 if (Array.isArray(hand) && hand.length === 13) {
                     result.scoreResult = tempBot.evaluateHandScoreForQuery(hand, doraIndicators || []);
                 }
@@ -134,7 +136,7 @@ export class GameRoom {
                 );
                 result.candidates = candidates;
             } else if (event.queryType === 'MINI_GAME_EVAL') {
-                const tempBot = new Bot('temp', this.machine as any, this.ruleset);
+                tempBot = new Bot('temp', this.machine as any, this.ruleset, undefined, false);
                 const miniResult = await tempBot.evaluateMiniGameForQuery(hand, event.dealtTiles || [], doraIndicators || []);
                 result.miniResult = miniResult;
             }
@@ -145,6 +147,8 @@ export class GameRoom {
             }
         } catch (e) {
             console.error('Analysis query failed:', e);
+        } finally {
+            tempBot?.dispose();
         }
     }
 
