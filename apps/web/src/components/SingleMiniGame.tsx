@@ -7,6 +7,16 @@ type MiniRound = {
     doraIndicators: Tile[];
 };
 
+type WaitBreakdown = {
+    wait: Tile;
+    han: number;
+    fu: number;
+    points: number;
+    doraCount: number;
+    yaku: string[];
+    limit?: string;
+};
+
 type MiniResult = {
     player: {
         hand: Tile[];
@@ -17,6 +27,7 @@ type MiniResult = {
         points: number;
         yaku: string[];
         bestWait: Tile | null;
+        waitBreakdown?: WaitBreakdown[];
     };
     ai: {
         hand: Tile[];
@@ -27,6 +38,7 @@ type MiniResult = {
         points: number;
         yaku: string[];
         bestWait: Tile | null;
+        waitBreakdown?: WaitBreakdown[];
     };
     rate: number;
     description: string;
@@ -604,6 +616,24 @@ export function SingleMiniGame({ onExit, queryAnalysis, analysisResult, debugMod
                                     <span className="text-xs text-slate-400">없음</span>
                                 )}
                             </div>
+                            {Array.isArray(visibleResult.player.waitBreakdown) && visibleResult.player.waitBreakdown.length > 0 && (
+                                <>
+                                    <div className="text-xs text-emerald-300 mt-2 mb-1">내 대기별 점수</div>
+                                    <div className="space-y-1">
+                                        {visibleResult.player.waitBreakdown.map((entry, idx) => (
+                                            <div key={`player-wait-score-${entry.wait.suit}-${entry.wait.rank}-${idx}`} className="rounded-lg border border-slate-700 bg-slate-900/60 px-2 py-1 text-[11px] text-slate-200 flex items-center justify-between gap-2">
+                                                <div className="flex items-center gap-1">
+                                                    <div className="transform scale-75 origin-left-top -mr-1">
+                                                        <TileView tile={entry.wait} disabled={true} size="sm" />
+                                                    </div>
+                                                    <span>{entry.han}판 {entry.fu ?? 0}부 / {entry.points}점</span>
+                                                </div>
+                                                <span className="text-amber-300">도라 {entry.doraCount}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </>
+                            )}
                             <div className="text-xs text-emerald-300 mt-2 mb-1">내 역</div>
                             {visibleResult.player.yaku.length > 0 ? (
                                 <div className="space-y-1">
@@ -646,6 +676,24 @@ export function SingleMiniGame({ onExit, queryAnalysis, analysisResult, debugMod
                                     <span className="text-xs text-slate-400">없음</span>
                                 )}
                             </div>
+                            {Array.isArray(visibleResult.ai.waitBreakdown) && visibleResult.ai.waitBreakdown.length > 0 && (
+                                <>
+                                    <div className="text-xs text-cyan-300 mt-2 mb-1">AI 대기별 점수</div>
+                                    <div className="space-y-1">
+                                        {visibleResult.ai.waitBreakdown.map((entry, idx) => (
+                                            <div key={`ai-wait-score-${entry.wait.suit}-${entry.wait.rank}-${idx}`} className="rounded-lg border border-slate-700 bg-slate-900/60 px-2 py-1 text-[11px] text-slate-200 flex items-center justify-between gap-2">
+                                                <div className="flex items-center gap-1">
+                                                    <div className="transform scale-75 origin-left-top -mr-1">
+                                                        <TileView tile={entry.wait} disabled={true} size="sm" />
+                                                    </div>
+                                                    <span>{entry.han}판 {entry.fu ?? 0}부 / {entry.points}점</span>
+                                                </div>
+                                                <span className="text-amber-300">도라 {entry.doraCount}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </>
+                            )}
                             <div className="text-xs text-cyan-300 mt-2 mb-1">AI 역</div>
                             {visibleResult.ai.yaku.length > 0 ? (
                                 <div className="space-y-1">

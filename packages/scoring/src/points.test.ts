@@ -180,7 +180,7 @@ describe('calculateScore', () => {
         expect(result.han).toBeGreaterThanOrEqual(1);
     });
 
-    it('counts seat and round wind separately when same wind', () => {
+    it('does not add round wind yakuhai in 17-step', () => {
         const hand: Tile[] = [
             t('z', 1), t('z', 1), t('z', 1),
             t('man', 2), t('man', 3), t('man', 4),
@@ -190,13 +190,13 @@ describe('calculateScore', () => {
         ];
 
         const result = calculateScore(hand, t('man', 5), false, [], {
-            seatWind: 'EAST',
+            seatWind: 'SOUTH',
             roundWind: 'EAST',
             autoRiichiFallback: false
         });
 
-        expect(result.yaku).toContain('Yakuhai(Seat): z1');
-        expect(result.yaku).toContain('Yakuhai(Round): z1');
+        expect(result.yaku).not.toContain('Yakuhai(Round): z1');
+        expect(result.yaku).not.toContain('Yakuhai(Seat): z1');
     });
 
     it('includes pinfu for all-sequence hand with non-value pair', () => {

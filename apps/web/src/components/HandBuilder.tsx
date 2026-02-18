@@ -21,6 +21,16 @@ interface HandBuilderProps {
     scoreDiff?: number;
 }
 
+type WaitBreakdown = {
+    wait: TileType;
+    han: number;
+    fu: number;
+    points: number;
+    doraCount: number;
+    yaku: string[];
+    limit?: string;
+};
+
 function toKoreanLimit(limit: string): string {
     const map: Record<string, string> = {
         Mangan: '만관',
@@ -306,6 +316,9 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
     const tenpai = serverPotentialScore && serverPotentialScore.points > 0;
     const hasAnalysisScore = Boolean(serverPotentialScore);
     const isMangan = serverPotentialScore ? serverPotentialScore.points >= 8000 : false;
+    const waitBreakdown: WaitBreakdown[] = Array.isArray(serverPotentialScore?.waitBreakdown)
+        ? serverPotentialScore.waitBreakdown
+        : [];
     const canSubmit = tenpai && !submitted && !loading;
 
     const toggleTile = (originalIndex: number) => {
@@ -515,13 +528,44 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
             {tenpai && (
                 <div className="surface-panel rounded-2xl p-3">
                     <div className="text-sm font-bold text-emerald-300 mb-2">대기패</div>
-                    <div className="flex flex-wrap gap-1">
-                        {serverPotentialScore?.bestWait && (
-                            <div className="transform scale-90 origin-left-top relative">
-                                <Tile tile={serverPotentialScore.bestWait} disabled={true} size="sm" />
-                            </div>
-                        )}
-                    </div>
+                    {waitBreakdown.length > 0 ? (
+                        <div className="space-y-2">
+                            {waitBreakdown.map((entry, idx) => (
+                                <div key={`wait-breakdown-${entry.wait.suit}-${entry.wait.rank}-${idx}`} className="rounded-xl border border-slate-700 bg-slate-900/60 p-2 text-xs text-slate-200">
+                                    <div className="flex items-center justify-between gap-2">
+                                        <div className="flex items-center gap-1">
+                                            <div className="transform scale-90 origin-left-top -mr-1">
+                                                <Tile tile={entry.wait} disabled={true} size="sm" />
+                                            </div>
+                                            <span className="font-semibold">{entry.han}판 {entry.fu ?? 0}부 / {entry.points}점</span>
+                                            {serverPotentialScore?.bestWait &&
+                                                entry.wait.suit === serverPotentialScore.bestWait.suit &&
+                                                entry.wait.rank === serverPotentialScore.bestWait.rank && (
+                                                    <span className="px-1.5 py-0.5 rounded bg-cyan-700/70 text-[10px] text-cyan-100">최대</span>
+                                                )}
+                                        </div>
+                                        <span className="text-amber-300 font-semibold">도라 {entry.doraCount}</span>
+                                    </div>
+                                    {entry.yaku.length > 0 && (
+                                        <div className="mt-1 text-[10px] text-slate-400">
+                                            {entry.yaku.map(toKoreanYaku).join(', ')}
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="flex flex-wrap gap-1">
+                            {serverPotentialScore?.bestWait && (
+                                <div className="transform scale-90 origin-left-top relative">
+                                    <Tile tile={serverPotentialScore.bestWait} disabled={true} size="sm" />
+                                </div>
+                            )}
+                            {!serverPotentialScore?.bestWait && (
+                                <span className="text-xs text-slate-400">없음</span>
+                            )}
+                        </div>
+                    )}
                 </div>
             )}
 

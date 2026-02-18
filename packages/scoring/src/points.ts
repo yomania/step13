@@ -107,7 +107,7 @@ export function calculateScore(
     }
 
     if (!isChiitoi) {
-        if (hasPinfu(decompositions, winTile, resolved.seatWind, resolved.roundWind)) {
+        if (hasPinfu(decompositions, winTile, resolved.seatWind)) {
             yaku.push('Pinfu');
             yakuHan += 1;
         }
@@ -165,12 +165,6 @@ export function calculateScore(
         yakuHan += 1;
     }
 
-    const roundWindTile = resolved.roundWind ? windToHonorTileKey(resolved.roundWind) : null;
-    if (roundWindTile && (counts[roundWindTile] || 0) >= 3) {
-        yaku.push(`Yakuhai(Round): ${roundWindTile}`);
-        yakuHan += 1;
-    }
-
     const doraCount = countDora(fullHand, doraIndicators);
     if (doraCount > 0) {
         yaku.push(`Dora ${doraCount}`);
@@ -187,8 +181,7 @@ export function calculateScore(
         winTile,
         isChiitoi,
         decompositions,
-        resolved.seatWind,
-        resolved.roundWind
+        resolved.seatWind
     );
     // 5판 이상은 부수 계산 구간이 아니므로 노출용 부수는 0으로 둔다.
     const fu = han >= 5 ? 0 : calculatedFu;
@@ -313,16 +306,14 @@ function hasSanshokuDoukou(counts: Record<string, number>): boolean {
 function hasPinfu(
     decompositions: HandDecomposition[],
     winTile: Tile | null,
-    seatWind?: Wind,
-    roundWind?: Wind
+    seatWind?: Wind
 ): boolean {
     if (!winTile) return false;
     const seatWindTile = seatWind ? windToHonorTileKey(seatWind) : '';
-    const roundWindTile = roundWind ? windToHonorTileKey(roundWind) : '';
 
     return decompositions.some((decomp) => {
         if (decomp.melds.some((meld) => meld.type !== 'sequence')) return false;
-        if (decomp.pairKey === seatWindTile || decomp.pairKey === roundWindTile) return false;
+        if (decomp.pairKey === seatWindTile) return false;
         if (decomp.pairKey === 'z5' || decomp.pairKey === 'z6' || decomp.pairKey === 'z7') return false;
         const sequences = decomp.melds as SequenceMeld[];
         return hasRyanmenWin(sequences, winTile);
@@ -527,8 +518,7 @@ function calculateRonFu(
     winTile: Tile | null,
     isChiitoi: boolean,
     decompositions: HandDecomposition[],
-    seatWind?: Wind,
-    roundWind?: Wind
+    seatWind?: Wind
 ): number {
     if (isChiitoi) {
         return 30;
@@ -539,7 +529,6 @@ function calculateRonFu(
     }
 
     const seatWindTile = seatWind ? windToHonorTileKey(seatWind) : null;
-    const roundWindTile = roundWind ? windToHonorTileKey(roundWind) : null;
     const winKey = winTile ? tileKey(winTile) : null;
     let maxFu = 30;
 
@@ -551,9 +540,6 @@ function calculateRonFu(
             fu += 2;
         }
         if (seatWindTile && decomp.pairKey === seatWindTile) {
-            fu += 2;
-        }
-        if (roundWindTile && decomp.pairKey === roundWindTile) {
             fu += 2;
         }
 

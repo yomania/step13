@@ -73,5 +73,7 @@ describe('BotLogic mini-game evaluation', () => {
         expect(result.player.waits).toHaveLength(2);
         expect(result.player.furitenWaits).toHaveLength(1);
         expect(result.player.furitenWaits[0]).toMatchObject({ suit: 'pin', rank: 3 });
+        expect(result.player.waitBreakdown).toHaveLength(2);
+        expect(result.ai.waitBreakdown).toHaveLength(2);
     });
 });

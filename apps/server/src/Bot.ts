@@ -101,21 +101,28 @@ export class Bot {
         const waits = this.logic.getWinningTiles(hand);
         if (waits.length === 0) return null;
 
-        let best: ReturnType<typeof calculateScore> | null = null;
-        let bestWait: Tile | null = null;
+        const waitBreakdown = waits
+            .map((wait) => {
+                const score = calculateScore(hand, wait, false, doraIndicators, SCORE_OPTIONS);
+                return {
+                    wait,
+                    han: score.han,
+                    fu: score.fu,
+                    points: score.points,
+                    doraCount: score.doraCount,
+                    limit: score.limit,
+                    yaku: score.yaku
+                };
+            })
+            .sort((a, b) => b.points - a.points || b.han - a.han || b.fu - a.fu);
 
-        for (const wait of waits) {
-            const score = calculateScore(hand, wait, false, doraIndicators, SCORE_OPTIONS);
-            if (!best || score.points > best.points || (score.points === best.points && score.han > best.han)) {
-                best = score;
-                bestWait = wait;
-            }
-        }
-
-        if (!best) return null;
+        const bestWaitScore = waitBreakdown[0];
+        if (!bestWaitScore) return null;
+        const best = calculateScore(hand, bestWaitScore.wait, false, doraIndicators, SCORE_OPTIONS);
         return {
             ...best,
-            bestWait
+            bestWait: bestWaitScore.wait,
+            waitBreakdown
         };
     }
 

@@ -11,7 +11,7 @@ const YAKU_INFOS: YakuInfo[] = [
     { key: 'tanyao', name: '탕야오', han: '1판', condition: '2~8 수패만으로 구성 (자패/1/9 제외)', tip: '가벼운 손에서 가장 자주 노리는 역.' },
     { key: 'pinfu', name: '핑후', han: '1판', condition: '순자 4개 + 비역패 머리 + 양면 대기', tip: '타점은 낮지만 속도가 빠름.' },
     { key: 'iipeikou', name: '이페코', han: '1판', condition: '같은 수패의 동일 순자 2세트', tip: '멘젠에서 핑후와 자주 같이 붙음.' },
-    { key: 'yakuhai', name: '역패', han: '1판', condition: '장풍/자풍/삼원패를 각(3장)으로 구성', tip: '자풍패 + 장풍패가 동시에 성립할 수 있음.' },
+    { key: 'yakuhai', name: '역패', han: '1판', condition: '자풍/삼원패를 각(3장)으로 구성', tip: '17보에서는 장풍패 역을 사용하지 않음.' },
     { key: 'chiitoitsu', name: '치또이츠', han: '2판', condition: '서로 다른 또이츠 7개', tip: '형태가 특수해서 일반 멘츠 손과 평가가 다름.' },
     { key: 'toitoi', name: '또이또이', han: '2판', condition: '모든 몸통이 각자 형태', tip: '중장패보다 역패/자패 활용이 쉬움.' },
     { key: 'sanankou', name: '삼암각', han: '2판', condition: '암각 3개 이상', tip: '또이또이와 함께 고타점 루트가 가능.' },

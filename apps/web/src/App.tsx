@@ -10,6 +10,7 @@ import { ReplayViewer } from './components/ReplayViewer';
 import { SingleMiniGame } from './components/SingleMiniGame';
 import { YakuInfoLayer } from './components/YakuInfoLayer';
 import { PlayerId, Tile } from '@step13/proto';
+import { calculateScore, calculateShanten, type ScoreResult } from '@step13/scoring';
 import { preloadRealTileAssets } from './lib/tileAssets';
 import { AnimatePresence, motion } from 'framer-motion';
 
@@ -19,13 +20,60 @@ type BotPersonaOption = {
     difficulty: 'EASY' | 'MEDIUM' | 'HARD';
 };
 
+function getWinningWaits(hand: Tile[]): Tile[] {
+    if (hand.length !== RULES.tiles.handSize) {
+        return [];
+    }
+
+    const waits: Tile[] = [];
+    const suits: Tile['suit'][] = ['man', 'pin', 'sou', 'z'];
+    for (const suit of suits) {
+        const maxRank = suit === 'z' ? 7 : 9;
+        for (let rank = 1; rank <= maxRank; rank++) {
+            const wait: Tile = { suit, rank: rank as Tile['rank'], isRed: false };
+            if (calculateShanten([...hand, wait]) === -1) {
+                waits.push(wait);
+            }
+        }
+    }
+    return waits;
+}
+
+function pickBestWaitScore(hand: Tile[], waits: Tile[], doraIndicators: Tile[], seatWind: 'EAST' | 'WEST' | undefined): ScoreResult {
+    const empty: ScoreResult = {
+        han: 0,
+        fu: 0,
+        points: 0,
+        yaku: [],
+        isMangan: false,
+        doraCount: 0,
+        pointsDelta: 0
+    };
+    if (waits.length === 0) {
+        return empty;
+    }
+
+    return waits.reduce((best, wait) => {
+        const score = calculateScore(hand, wait, false, doraIndicators, {
+            seatWind,
+            roundWind: 'EAST'
+        });
+        if (score.points !== best.points) {
+            return score.points > best.points ? score : best;
+        }
+        if (score.han !== best.han) {
+            return score.han > best.han ? score : best;
+        }
+        return score.yaku.length > best.yaku.length ? score : best;
+    }, empty);
+}
+
 
 
 export default function App() {
     const [localState, , actor] = useMachine(gameMachine);
     const [serverState, setServerState] = useState<any>(null);
     const [analysisResult, setAnalysisResult] = useState<any>(null);
-    const [hintCandidates, setHintCandidates] = useState<any[]>([]);
     const [botPersonas, setBotPersonas] = useState<BotPersonaOption[]>([]);
 
     // Pass the actor and a callback to update serverState
@@ -35,9 +83,6 @@ export default function App() {
 
     const handleAnalysisResult = useCallback((result: any) => {
         setAnalysisResult(result);
-        if (Array.isArray(result?.candidates)) {
-            setHintCandidates(result.candidates);
-        }
     }, []);
 
     const handlePersonaListResult = useCallback((result: any) => {
@@ -117,34 +162,37 @@ export default function App() {
             ? 'WEST'
             : undefined;
 
-    // Use analysis results from server
-    const myWaitKeys = useMemo(() => {
-        if (!hintCandidates[0]) return new Set<string>();
-        return new Set<string>((hintCandidates[0].waits || []).map((t: Tile) => `${t.suit}-${t.rank}`));
-    }, [hintCandidates]);
-
     const myWaitTiles = useMemo(() => {
-        if (!hintCandidates[0]) return [];
-        return hintCandidates[0].waits || [];
-    }, [hintCandidates]);
+        return getWinningWaits(myHand);
+    }, [myHand]);
+
+    const myWaitKeys = useMemo(() => {
+        return new Set<string>(myWaitTiles.map((t: Tile) => `${t.suit}-${t.rank}`));
+    }, [myWaitTiles]);
 
     const isFuriten = useMemo(() => {
         return myDiscards.some((tile: Tile) => myWaitKeys.has(`${tile.suit}-${tile.rank}`));
     }, [myDiscards, myWaitKeys]);
     const myRoundEndConfirmed = Boolean(context.roundEndConfirmedBy?.[playerId]);
     const roundEndSummaries = useMemo(() => {
-        // Simplified: In roundEnd, server usually sends full state or we can query
-        // For now, just show names and confirmations. Full details should be sent in sanitizedState after round end.
         return (context.players as PlayerId[]).map((pid) => {
+            const hand = (context.hands?.[pid] || []) as Tile[];
+            const waits = getWinningWaits(hand);
+            const seatWind = context.seatMap?.[pid] === 'EAST'
+                ? 'EAST'
+                : context.seatMap?.[pid] === 'WEST'
+                    ? 'WEST'
+                    : undefined;
+            const best = pickBestWaitScore(hand, waits, doraIndicators, seatWind);
             return {
                 playerId: pid,
-                waits: [] as Tile[],
-                best: { points: 0, han: 0, yaku: [] as string[] },
+                waits,
+                best,
                 confirmed: Boolean(context.roundEndConfirmedBy?.[pid]),
                 isBot: pid.startsWith('bot-')
             };
         });
-    }, [context.players, context.roundEndConfirmedBy]);
+    }, [context.players, context.hands, context.seatMap, context.roundEndConfirmedBy, doraIndicators]);
 
     // Helper to check state value
     const matches = (value: string) => {
@@ -307,12 +355,6 @@ export default function App() {
             }
         }
     }, [analysisResult]);
-
-    useEffect(() => {
-        if (!isGameLoop) {
-            setHintCandidates([]);
-        }
-    }, [isGameLoop]);
 
     const [showReplay, setShowReplay] = useState(false);
     const [showYakuInfo, setShowYakuInfo] = useState(false);

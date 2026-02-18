@@ -9,8 +9,19 @@ export interface PotentialScore {
     limit?: string;
     yaku: string[];
     bestWait: Tile | null;
+    waitBreakdown?: WaitScoreBreakdown[];
     quality?: number; // Internal heuristic score for search
 }
+
+export type WaitScoreBreakdown = {
+    wait: Tile;
+    han: number;
+    fu: number;
+    points: number;
+    doraCount: number;
+    limit?: string;
+    yaku: string[];
+};
 
 export type CandidateEvaluation = {
     indices: number[];
@@ -90,39 +101,45 @@ export class BotLogic {
         doraIndicators: Tile[],
         _options?: { seatWind?: string; roundWind?: string }
     ): Promise<PotentialScore | null> {
-        let bestPoints = -1;
-        let bestHan = -1;
-        let bestFu = 0;
-        let bestLimit = '';
-        let bestYaku: string[] = [];
-        let bestWait: Tile | null = null;
-
-        for (const wait of waits) {
-            const res = calculateScore(hand, wait, false, doraIndicators, {
-                ...SCORE_OPTIONS,
-                seatWind: _options?.seatWind as any,
-                roundWind: _options?.roundWind as any
-            });
-            if (res.points > bestPoints || (res.points === bestPoints && res.han > bestHan)) {
-                bestPoints = res.points;
-                bestHan = res.han;
-                bestFu = res.fu;
-                bestLimit = res.limit || '';
-                bestYaku = [...res.yaku];
-                bestWait = wait;
-            }
-        }
-
-        if (bestPoints === -1) return null;
+        const waitBreakdown = this.buildWaitBreakdown(hand, waits, doraIndicators, _options);
+        if (waitBreakdown.length === 0) return null;
+        const best = waitBreakdown[0];
 
         return {
-            points: bestPoints,
-            han: bestHan,
-            fu: bestFu,
-            limit: bestLimit,
-            yaku: bestYaku,
-            bestWait
+            points: best.points,
+            han: best.han,
+            fu: best.fu,
+            limit: best.limit || '',
+            yaku: [...best.yaku],
+            bestWait: best.wait,
+            waitBreakdown
         };
+    }
+
+    private buildWaitBreakdown(
+        hand: Tile[],
+        waits: Tile[],
+        doraIndicators: Tile[],
+        options?: { seatWind?: string; roundWind?: string }
+    ): WaitScoreBreakdown[] {
+        return waits
+            .map((wait) => {
+                const res = calculateScore(hand, wait, false, doraIndicators, {
+                    ...SCORE_OPTIONS,
+                    seatWind: options?.seatWind as any,
+                    roundWind: options?.roundWind as any
+                });
+                return {
+                    wait,
+                    han: res.han,
+                    fu: res.fu,
+                    points: res.points,
+                    doraCount: res.doraCount,
+                    limit: res.limit,
+                    yaku: [...res.yaku]
+                };
+            })
+            .sort((a, b) => b.points - a.points || b.han - a.han || b.fu - a.fu);
     }
 
     public buildBestCandidates(
@@ -146,6 +163,8 @@ export class BotLogic {
         const improveSteps = params.improveSteps;
 
         const unique = new Map<string, CandidateEvaluation>();
+        // 패 구성(suit+rank 정렬) 기반 중복 제거용 Set - 동일한 패 조합이 다른 인덱스로 중복 등록되는 것을 방지
+        const uniqueHandCompositions = new Set<string>();
         const baseIndices = dealtTiles.map((_, index) => index);
         const randomPick = <T,>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)];
         const getHandByIndices = (indices: number[]) => indices.map((index) => dealtTiles[index]);
@@ -172,6 +191,15 @@ export class BotLogic {
             if (unique.has(key)) return;
 
             const hand = getHandByIndices(selected);
+
+            // 패 구성(suit+rank 정렬) 기반 중복 제거: 같은 종류의 패가 여러 장 있을 때
+            // 다른 인덱스로 동일한 패 조합이 중복 등록되는 것을 방지
+            const handCompositionKey = [...hand]
+                .map(t => `${t.suit}${t.rank}`)
+                .sort()
+                .join(',');
+            if (uniqueHandCompositions.has(handCompositionKey)) return;
+
             const waits = this.getWinningTiles(hand);
             if (!includeNonTenpai && waits.length === 0) return;
 
@@ -202,6 +230,7 @@ export class BotLogic {
                 furitenWaits,
                 score
             });
+            uniqueHandCompositions.add(handCompositionKey);
         };
 
         const runHillClimb = (initialSelected: number[], steps: number) => {
@@ -471,7 +500,11 @@ export class BotLogic {
                     fu: score.fu,
                     points: score.points,
                     yaku: score.yaku,
-                    bestWait: score.bestWait
+                    bestWait: score.bestWait,
+                    waitBreakdown: score.waitBreakdown ?? this.buildWaitBreakdown(playerHand, rawWaits, doraIndicators, {
+                        seatWind: 'EAST',
+                        roundWind: 'EAST'
+                    })
                 };
             }
         }
@@ -485,7 +518,8 @@ export class BotLogic {
                 fu: 0,
                 points: 0,
                 yaku: [],
-                bestWait: null
+                bestWait: null,
+                waitBreakdown: []
             };
         }
 
@@ -511,7 +545,11 @@ export class BotLogic {
                 fu: aiBest.score.fu,
                 points: aiBest.score.points,
                 yaku: aiBest.score.yaku,
-                bestWait: aiBest.score.bestWait
+                bestWait: aiBest.score.bestWait,
+                waitBreakdown: this.buildWaitBreakdown(aiBest.hand, aiBest.waits, doraIndicators, {
+                    seatWind: 'EAST',
+                    roundWind: 'EAST'
+                })
             },
             rate,
             gaveUp,
