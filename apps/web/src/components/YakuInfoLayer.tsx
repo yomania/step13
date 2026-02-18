@@ -23,7 +23,11 @@ const YAKU_INFOS: YakuInfo[] = [
     { key: 'honitsu', name: '혼일색', han: '3판', condition: '한 종류 수패 + 자패', tip: '조패 단계에서 수패 한 종류 집중이 핵심.' },
     { key: 'chinitsu', name: '청일색', han: '6판', condition: '한 종류 수패만 사용', tip: '최고 난이도 고타점 역 중 하나.' },
     { key: 'honroutou', name: '혼노두', han: '2판', condition: '1, 9, 자패로만 구성', tip: '또이또이/치또이츠와 결합이 쉬운 편.' },
-    { key: 'shousangen', name: '소삼원', han: '2판', condition: '삼원패 2각 + 삼원패 머리', tip: '삼원패가 2종류 이상 보이면 즉시 체크.' }
+    { key: 'shousangen', name: '소삼원', han: '2판', condition: '삼원패 2각 + 삼원패 머리', tip: '삼원패가 2종류 이상 보이면 즉시 체크.' },
+    { key: 'kokushi', name: '국사무쌍', han: '역만', condition: '19/자패 13종 + 같은 패 1장', tip: '후보 패종이 한정적이라 조패 단계에서 빠른 체크 가능.' },
+    { key: 'daisangen', name: '대삼원', han: '역만', condition: '백/발/중을 모두 각으로 완성', tip: '삼원패가 많이 보이면 초반에 방향성을 고정.' },
+    { key: 'shousushi', name: '소사희', han: '역만', condition: '동남서북 3각 + 1머리', tip: '풍패 집중 시 대사희/소사희 분기까지 확인.' },
+    { key: 'daisushi', name: '대사희', han: '역만', condition: '동남서북 4각 완성', tip: '성공 확률은 낮지만 즉시 최고타점 후보.' }
 ];
 
 interface YakuInfoLayerProps {

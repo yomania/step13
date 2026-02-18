@@ -50,6 +50,17 @@ const DEFAULT_OPTIONS = {
     roundWind: undefined as Wind | undefined
 };
 
+const KOKUSHI_TILE_KEYS = [
+    'man1', 'man9',
+    'pin1', 'pin9',
+    'sou1', 'sou9',
+    'z1', 'z2', 'z3', 'z4', 'z5', 'z6', 'z7'
+] as const;
+
+const KOKUSHI_TILE_KEY_SET = new Set<string>(KOKUSHI_TILE_KEYS);
+const WIND_TILE_KEYS = ['z1', 'z2', 'z3', 'z4'] as const;
+const DRAGON_TILE_KEYS = ['z5', 'z6', 'z7'] as const;
+
 export function calculateScore(
     hand: Tile[],
     winTile: Tile | null,
@@ -79,6 +90,22 @@ export function calculateScore(
     }
 
     const counts = countTiles(fullHand);
+    const yakumanYaku = detectYakuman(fullHand, counts);
+    if (yakumanYaku.length > 0) {
+        const yakumanPoints = 32000 * yakumanYaku.length;
+        return {
+            han: 13 * yakumanYaku.length,
+            fu: 0,
+            points: yakumanPoints,
+            yaku: yakumanYaku,
+            isMangan: true,
+            doraCount: 0,
+            pointsDelta: yakumanPoints,
+            limitCategory: 'Yakuman',
+            limit: 'Yakuman'
+        };
+    }
+
     const isChiitoi = isChiitoitsu(fullHand, counts);
     const decompositions = isChiitoi ? [] : enumerateStandardHandDecompositions(counts);
 
@@ -259,6 +286,65 @@ function isChiitoitsu(fullHand: Tile[], counts: Record<string, number>): boolean
 
     const values = Object.values(counts);
     return values.length === 7 && values.every((count) => count === 2);
+}
+
+function detectYakuman(fullHand: Tile[], counts: Record<string, number>): string[] {
+    if (fullHand.length !== 14) {
+        return [];
+    }
+
+    const yaku: string[] = [];
+
+    if (isKokushiMusou(counts)) {
+        yaku.push('KokushiMusou');
+    }
+    if (isDaisangen(counts)) {
+        yaku.push('Daisangen');
+    }
+
+    const windYakuman = detectWindYakuman(counts);
+    if (windYakuman) {
+        yaku.push(windYakuman);
+    }
+
+    return yaku;
+}
+
+function isKokushiMusou(counts: Record<string, number>): boolean {
+    const keys = Object.keys(counts);
+    if (keys.some((key) => !KOKUSHI_TILE_KEY_SET.has(key))) {
+        return false;
+    }
+
+    let uniqueRequiredTiles = 0;
+    let hasPair = false;
+    for (const key of KOKUSHI_TILE_KEYS) {
+        const count = counts[key] ?? 0;
+        if (count >= 1) {
+            uniqueRequiredTiles += 1;
+        }
+        if (count >= 2) {
+            hasPair = true;
+        }
+    }
+
+    return uniqueRequiredTiles === KOKUSHI_TILE_KEYS.length && hasPair;
+}
+
+function isDaisangen(counts: Record<string, number>): boolean {
+    return DRAGON_TILE_KEYS.every((key) => (counts[key] ?? 0) >= 3);
+}
+
+function detectWindYakuman(counts: Record<string, number>): 'Daisushi' | 'Shousushi' | null {
+    const windCounts = WIND_TILE_KEYS.map((key) => counts[key] ?? 0);
+    const tripletCount = windCounts.filter((count) => count >= 3).length;
+    if (tripletCount === 4) {
+        return 'Daisushi';
+    }
+    if (tripletCount === 3 && windCounts.some((count) => count === 2)) {
+        return 'Shousushi';
+    }
+    return null;
 }
 
 function hasIttsuu(counts: Record<string, number>): boolean {

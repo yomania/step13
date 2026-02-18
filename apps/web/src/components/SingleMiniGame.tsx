@@ -176,6 +176,7 @@ function toKoreanYakuName(yaku: string): string {
     }
     const map: Record<string, string> = {
         Chiitoitsu: '치또이츠',
+        KokushiMusou: '국사무쌍',
         Pinfu: '핑후',
         SanshokuDoukou: '삼색동각',
         SanshokuDoujun: '삼색동순',
@@ -185,6 +186,9 @@ function toKoreanYakuName(yaku: string): string {
         Junchan: '준찬',
         Honroutou: '혼노두',
         Shousangen: '소삼원',
+        Shousushi: '소사희',
+        Daisushi: '대사희',
+        Daisangen: '대삼원',
         Tanyao: '탕야오',
         Chinitsu: '청일색',
         Honitsu: '혼일색',
@@ -244,6 +248,10 @@ function yakuDetailText(yaku: string, hand: Tile[], waits: Tile[], doraIndicator
     if (yaku === 'Junchan') return '모든 몸통/머리에 요구패 포함(자패 없음)';
     if (yaku === 'Honroutou') return '요구패/자패로만 구성';
     if (yaku === 'Shousangen') return '삼원패 2각 + 삼원패 머리';
+    if (yaku === 'KokushiMusou') return '19/자패 13종을 모두 모으고 한 종류를 한 장 더';
+    if (yaku === 'Daisangen') return '백/발/중 삼원패를 모두 각으로 완성';
+    if (yaku === 'Shousushi') return '동남서북 중 3각 + 1머리';
+    if (yaku === 'Daisushi') return '동남서북 4개 모두 각으로 완성';
 
     if (yaku === 'Tanyao') return '2~8 수패 중심';
     if (yaku === 'Chinitsu') return '한 가지 수패로 구성';

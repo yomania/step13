@@ -496,4 +496,52 @@ describe('calculateScore', () => {
         expect(result5Han30FuType.han).toBe(5);
         expect(result5Han30FuType.fu).toBe(0);
     });
+
+    it('detects kokushi musou as yakuman with fast path scoring', () => {
+        const hand: Tile[] = [
+            t('man', 1), t('man', 9),
+            t('pin', 1), t('pin', 9),
+            t('sou', 1), t('sou', 9),
+            t('z', 1), t('z', 2), t('z', 3), t('z', 4), t('z', 5), t('z', 6), t('z', 7)
+        ];
+
+        const result = calculateScore(hand, t('z', 7), false, [], {
+            requireManganMinimum: true,
+            autoRiichiFallback: true
+        });
+
+        expect(result.yaku).toContain('KokushiMusou');
+        expect(result.points).toBe(32000);
+        expect(result.limitCategory).toBe('Yakuman');
+    });
+
+    it('detects daisangen as yakuman', () => {
+        const hand: Tile[] = [
+            t('z', 5), t('z', 5), t('z', 5),
+            t('z', 6), t('z', 6), t('z', 6),
+            t('z', 7), t('z', 7), t('z', 7),
+            t('man', 1), t('man', 2), t('man', 3),
+            t('pin', 9)
+        ];
+
+        const result = calculateScore(hand, t('pin', 9), false, []);
+        expect(result.yaku).toContain('Daisangen');
+        expect(result.points).toBe(32000);
+        expect(result.limitCategory).toBe('Yakuman');
+    });
+
+    it('detects daisushi as yakuman', () => {
+        const hand: Tile[] = [
+            t('z', 1), t('z', 1), t('z', 1),
+            t('z', 2), t('z', 2), t('z', 2),
+            t('z', 3), t('z', 3), t('z', 3),
+            t('z', 4), t('z', 4), t('z', 4),
+            t('man', 5)
+        ];
+
+        const result = calculateScore(hand, t('man', 5), false, []);
+        expect(result.yaku).toContain('Daisushi');
+        expect(result.points).toBe(32000);
+        expect(result.limitCategory).toBe('Yakuman');
+    });
 });

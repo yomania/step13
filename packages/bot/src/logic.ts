@@ -40,6 +40,8 @@ const SCORE_OPTIONS: ScoreOptions = {
     autoRiichiFallback: true
 };
 
+const YAKUMAN_YAKU = new Set(['KokushiMusou', 'Daisangen', 'Shousushi', 'Daisushi']);
+
 export class BotLogic {
     constructor(private playerId: string, private difficulty: Difficulty = 'HARD') { }
 
@@ -233,6 +235,113 @@ export class BotLogic {
             uniqueHandCompositions.add(handCompositionKey);
         };
 
+        const byTileKey = new Map<string, number[]>();
+        for (const idx of baseIndices) {
+            const tile = dealtTiles[idx];
+            const key = `${tile.suit}${tile.rank}`;
+            const bucket = byTileKey.get(key);
+            if (bucket) {
+                bucket.push(idx);
+            } else {
+                byTileKey.set(key, [idx]);
+            }
+        }
+
+        const buildMandatoryIndices = (specs: Array<{ key: string; count: number }>): number[] | null => {
+            const selected: number[] = [];
+            for (const spec of specs) {
+                const bucket = byTileKey.get(spec.key) ?? [];
+                if (bucket.length < spec.count) {
+                    return null;
+                }
+                selected.push(...bucket.slice(0, spec.count));
+            }
+            if (selected.length > 13) {
+                return null;
+            }
+            return selected;
+        };
+
+        const addCandidatesFromMandatory = (mandatory: number[], pickCount: number, maxCombos: number) => {
+            const mandatorySet = new Set(mandatory);
+            const remaining = baseIndices.filter((idx) => !mandatorySet.has(idx));
+            if (pickCount < 0 || mandatory.length + pickCount !== 13) {
+                return;
+            }
+            if (pickCount === 0) {
+                tryAddCandidate(mandatory);
+                return;
+            }
+            if (remaining.length < pickCount) {
+                return;
+            }
+
+            let tested = 0;
+            const picked = new Array<number>(pickCount);
+            const dfs = (depth: number, start: number) => {
+                if (tested >= maxCombos) {
+                    return;
+                }
+                if (depth === pickCount) {
+                    tested += 1;
+                    tryAddCandidate([...mandatory, ...picked]);
+                    return;
+                }
+                for (let i = start; i <= remaining.length - (pickCount - depth); i++) {
+                    picked[depth] = remaining[i];
+                    dfs(depth + 1, i + 1);
+                    if (tested >= maxCombos) {
+                        return;
+                    }
+                }
+            };
+            dfs(0, 0);
+        };
+
+        const seedYakumanCandidates = () => {
+            const kokushi = buildMandatoryIndices([
+                { key: 'man1', count: 1 }, { key: 'man9', count: 1 },
+                { key: 'pin1', count: 1 }, { key: 'pin9', count: 1 },
+                { key: 'sou1', count: 1 }, { key: 'sou9', count: 1 },
+                { key: 'z1', count: 1 }, { key: 'z2', count: 1 }, { key: 'z3', count: 1 }, { key: 'z4', count: 1 },
+                { key: 'z5', count: 1 }, { key: 'z6', count: 1 }, { key: 'z7', count: 1 }
+            ]);
+            if (kokushi) {
+                addCandidatesFromMandatory(kokushi, 0, 1);
+            }
+
+            const daisangen = buildMandatoryIndices([
+                { key: 'z5', count: 3 },
+                { key: 'z6', count: 3 },
+                { key: 'z7', count: 3 }
+            ]);
+            if (daisangen) {
+                addCandidatesFromMandatory(daisangen, 4, 240);
+            }
+
+            const daisushi = buildMandatoryIndices([
+                { key: 'z1', count: 3 },
+                { key: 'z2', count: 3 },
+                { key: 'z3', count: 3 },
+                { key: 'z4', count: 3 }
+            ]);
+            if (daisushi) {
+                addCandidatesFromMandatory(daisushi, 1, 64);
+            }
+
+            const windKeys = ['z1', 'z2', 'z3', 'z4'] as const;
+            for (const pairWind of windKeys) {
+                const specs = windKeys.map((key) => ({
+                    key,
+                    count: key === pairWind ? 2 : 3
+                }));
+                const shousushi = buildMandatoryIndices(specs);
+                if (shousushi) {
+                    addCandidatesFromMandatory(shousushi, 2, 160);
+                }
+            }
+        };
+
         const runHillClimb = (initialSelected: number[], steps: number) => {
             let selected = [...initialSelected];
             let currentHand = getHandByIndices(selected);
@@ -257,6 +366,8 @@ export class BotLogic {
                 }
             }
         };
+
+        seedYakumanCandidates();
 
         if (params.suitSeeds) {
             // Seed with flushed hands logic
@@ -420,6 +531,9 @@ export class BotLogic {
         }
 
         let quality = evaluateHandQuality(hand, difficulty, doraIndicators, dangerMap, scoreDiff);
+        if (bestLimit === 'Yakuman' || bestYaku.some((yaku) => YAKUMAN_YAKU.has(yaku))) {
+            quality += 200000 + waits.length * 10000;
+        }
 
         // Apply soft penalty for potential furiten
         const waitIsFuriten = waits.some(wait => {

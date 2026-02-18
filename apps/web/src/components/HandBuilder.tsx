@@ -69,6 +69,7 @@ function toKoreanYaku(yaku: string): string {
 
     const map: Record<string, string> = {
         Chiitoitsu: '치또이츠',
+        KokushiMusou: '국사무쌍',
         Pinfu: '핑후',
         SanshokuDoukou: '삼색동각',
         SanshokuDoujun: '삼색동순',
@@ -78,6 +79,9 @@ function toKoreanYaku(yaku: string): string {
         Junchan: '준찬',
         Honroutou: '혼노두',
         Shousangen: '소삼원',
+        Shousushi: '소사희',
+        Daisushi: '대사희',
+        Daisangen: '대삼원',
         Tanyao: '탕야오',
         Chinitsu: '청일색',
         Honitsu: '혼일색',
