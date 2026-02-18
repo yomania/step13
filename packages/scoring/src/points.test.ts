@@ -436,4 +436,41 @@ describe('calculateScore', () => {
         const chiiResult = calculateScore(chiitoiHand, t('z', 7), false, []);
         expect(chiiResult.fu).toBe(30);
     });
+
+    it('validates fu handling for 4han 30fu, 4han 40fu, and 5han no-fu-display', () => {
+        // 4판 30부: 탕야오 + 핑후 + 이페코 + 리치(자동)
+        const hand4Han30Fu: Tile[] = [
+            t('man', 2), t('man', 3), t('man', 4),
+            t('man', 2), t('man', 3), t('man', 4),
+            t('pin', 4), t('pin', 5), t('pin', 6),
+            t('sou', 2), t('sou', 2),
+            t('sou', 6), t('sou', 7)
+        ];
+        const result4Han30Fu = calculateScore(hand4Han30Fu, t('sou', 8), false, [], {
+            autoRiichiFallback: true
+        });
+        expect(result4Han30Fu.han).toBe(4);
+        expect(result4Han30Fu.fu).toBe(30);
+
+        // 4판 40부: 탕야오 + 삼색동순 + 리치(자동), 칸짱 대기(+2부)
+        const hand4Han40Fu: Tile[] = [
+            t('man', 2), t('man', 2), t('man', 2), t('man', 4),
+            t('pin', 2), t('pin', 3), t('pin', 4),
+            t('pin', 5), t('pin', 6), t('pin', 7),
+            t('sou', 2), t('sou', 3), t('sou', 4)
+        ];
+        const result4Han40Fu = calculateScore(hand4Han40Fu, t('man', 3), false, [], {
+            autoRiichiFallback: true
+        });
+        expect(result4Han40Fu.han).toBe(4);
+        expect(result4Han40Fu.fu).toBe(40);
+
+        // 5판(내부 30부형): 4판 30부 구성 + 도라 1
+        // 5판 이상은 부수 표시/검증 대상이 아니므로 fu는 0으로 노출되어야 함
+        const result5Han30FuType = calculateScore(hand4Han30Fu, t('sou', 8), false, [t('pin', 3)], {
+            autoRiichiFallback: true
+        });
+        expect(result5Han30FuType.han).toBe(5);
+        expect(result5Han30FuType.fu).toBe(0);
+    });
 });
