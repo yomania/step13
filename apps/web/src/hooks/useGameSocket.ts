@@ -85,6 +85,8 @@ export function useGameSocket(
     const sendEvent = useCallback((event: any) => {
         if (event?.type === 'JOIN' && typeof event.playerId === 'string') {
             joinPlayerIdRef.current = event.playerId;
+        } else if (event?.type === 'LEAVE' && typeof event.playerId === 'string' && joinPlayerIdRef.current === event.playerId) {
+            joinPlayerIdRef.current = null;
         } else {
             lastNonJoinEventRef.current = event;
         }

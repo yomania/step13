@@ -328,6 +328,19 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                     eventLog: [...context.eventLog, event]
                 };
             }),
+            removePlayerFromLobby: assign(({ context, event }) => {
+                if (event.type !== 'LEAVE') {
+                    return {};
+                }
+                if (!context.players.includes(event.playerId)) {
+                    return {};
+                }
+
+                return {
+                    players: context.players.filter((playerId) => playerId !== event.playerId),
+                    eventLog: [...context.eventLog, event]
+                };
+            }),
             resetGame: assign(() => initialContext),
             markRoundEndConfirmed: assign(({ context, event }) => {
                 if (event.type !== 'CONFIRM_ROUND_END') {
@@ -377,6 +390,9 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                                 eventLog: [...context.eventLog, event]
                             };
                         })
+                    },
+                    LEAVE: {
+                        actions: 'removePlayerFromLobby'
                     },
                     START_MATCH: {
                         target: 'matchStart',

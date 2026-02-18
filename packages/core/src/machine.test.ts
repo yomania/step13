@@ -82,6 +82,34 @@ afterEach(() => {
 });
 
 describe('gameMachine full cycle and edge cases', () => {
+    it('allows players to leave the lobby while idle', () => {
+        const actor = createActor(gameMachine);
+        actor.start();
+
+        actor.send({ type: 'JOIN', playerId: 'p1' });
+        actor.send({ type: 'JOIN', playerId: 'p2' });
+        expect(actor.getSnapshot().context.players).toEqual(['p1', 'p2']);
+
+        actor.send({ type: 'LEAVE', playerId: 'p2' });
+
+        const snapshot = actor.getSnapshot();
+        expect(snapshot.value).toBe('idle');
+        expect(snapshot.context.players).toEqual(['p1']);
+        expect(snapshot.context.eventLog[snapshot.context.eventLog.length - 1]).toEqual({ type: 'LEAVE', playerId: 'p2' });
+    });
+
+    it('ignores leave events for players that are not in lobby', () => {
+        const actor = createActor(gameMachine);
+        actor.start();
+
+        actor.send({ type: 'JOIN', playerId: 'p1' });
+        actor.send({ type: 'LEAVE', playerId: 'ghost' });
+
+        const snapshot = actor.getSnapshot();
+        expect(snapshot.context.players).toEqual(['p1']);
+        expect(snapshot.context.eventLog[snapshot.context.eventLog.length - 1]).toEqual({ type: 'JOIN', playerId: 'p1' });
+    });
+
     it('falls back to first wall tile when dealer sends an invalid dora tile id', { timeout: 20000 }, async () => {
         vi.useFakeTimers();
 

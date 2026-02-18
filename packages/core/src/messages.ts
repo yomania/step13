@@ -32,6 +32,7 @@ export type GameContext = {
 
 export type GameEvents =
     | { type: 'JOIN'; playerId: PlayerId }
+    | { type: 'LEAVE'; playerId: PlayerId }
     | { type: 'START_MATCH'; dealtTiles?: Record<PlayerId, Tile[]>; seed?: number } // Updated for Replay
     | { type: 'SUBMIT_HAND'; playerId: PlayerId; hand: Tile[]; pool: Tile[] }
     | { type: 'SELECT_DORA'; playerId: PlayerId; tileId: string }

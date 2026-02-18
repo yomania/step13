@@ -20,6 +20,9 @@ type BotPersonaOption = {
     difficulty: 'EASY' | 'MEDIUM' | 'HARD';
 };
 
+type EntryMode = 'home' | 'single' | 'online';
+type SingleMode = 'menu' | 'mini' | 'ai';
+
 function getWinningWaits(hand: Tile[]): Tile[] {
     if (hand.length !== RULES.tiles.handSize) {
         return [];
@@ -179,7 +182,8 @@ export default function App() {
         return saved === 'real' ? 'real' : 'classic';
     });
     const [showOptions, setShowOptions] = useState(false);
-    const [mainMode, setMainMode] = useState<'match' | 'mini'>('match');
+    const [entryMode, setEntryMode] = useState<EntryMode>('home');
+    const [singleMode, setSingleMode] = useState<SingleMode>('menu');
     const [botPersonaId, setBotPersonaId] = useState<string>('');
 
     // Initial connection check effect (mock)
@@ -201,10 +205,6 @@ export default function App() {
         // Warm image cache early so switching to real skin feels instant.
         preloadRealTileAssets().catch(() => undefined);
     }, []);
-
-    useEffect(() => {
-        queryPersonas({ playerId });
-    }, [queryPersonas, playerId]);
 
     // Helper to abstract state source (Server > Local)
     const context = serverState ? serverState.context : localState.context;
@@ -267,6 +267,11 @@ export default function App() {
     const isDoraSelect = matches('doraSelect');
     const isGameLoop = matches('gameLoop');
     const isRoundEnd = matches('roundEnd');
+    const isPlayerInLobby = context.players.includes(playerId);
+    const isHomeMode = entryMode === 'home';
+    const isSingleMiniMode = entryMode === 'single' && singleMode === 'mini';
+    const isSingleAiMode = entryMode === 'single' && singleMode === 'ai';
+    const isOnlineMode = entryMode === 'online';
 
     const scoreDiff = useMemo(() => {
         const opponentId = context.players.find((p: PlayerId) => p !== playerId);
@@ -342,15 +347,79 @@ export default function App() {
         sendEvent({ type: 'JOIN', playerId });
     };
 
+    const handleLeaveLobby = () => {
+        if (!isPlayerInLobby) return;
+        sendEvent({ type: 'LEAVE', playerId });
+    };
+
     const handleStartMatch = () => {
         sendEvent({ type: 'START_MATCH' });
     };
 
-    const handleAddBot = () => {
-        sendEvent({
-            type: 'ADD_BOT',
-            personaId: botPersonaId || undefined
-        });
+    const handleGoHome = () => {
+        if (isIdle && isPlayerInLobby) {
+            sendEvent({ type: 'LEAVE', playerId });
+        }
+        setShowAiExitMenu(false);
+        setAiRematchStep('none');
+        setEntryMode('home');
+        setSingleMode('menu');
+    };
+
+    const handleOpenSingleMenu = () => {
+        if (isIdle && isPlayerInLobby) {
+            sendEvent({ type: 'LEAVE', playerId });
+        }
+        setShowAiExitMenu(false);
+        setAiRematchStep('none');
+        setEntryMode('single');
+        setSingleMode('menu');
+    };
+
+    const handleOpenOnlineMode = () => {
+        if (isIdle && isPlayerInLobby) {
+            sendEvent({ type: 'LEAVE', playerId });
+        }
+        setShowAiExitMenu(false);
+        setAiRematchStep('none');
+        setEntryMode('online');
+        setSingleMode('menu');
+    };
+
+    const handleOpenMiniGame = () => {
+        if (isIdle && isPlayerInLobby) {
+            sendEvent({ type: 'LEAVE', playerId });
+        }
+        setEntryMode('single');
+        setSingleMode('mini');
+    };
+
+    const handleExitMiniGame = () => {
+        if (isIdle && isPlayerInLobby) {
+            sendEvent({ type: 'LEAVE', playerId });
+        }
+        setSingleMode('menu');
+    };
+
+    const handleStartSingleAi = () => {
+        setEntryMode('single');
+        setSingleMode('ai');
+        setShowAiExitMenu(false);
+        queryPersonas({ playerId });
+        if (!isIdle || context.players.length > 0) {
+            sendEvent({ type: 'RESTART' });
+        }
+        setAiRematchStep('join');
+    };
+
+    const handleExitSingleAiSetup = () => {
+        setShowAiExitMenu(false);
+        setAiRematchStep('none');
+        if (isIdle && context.players.length > 0) {
+            sendEvent({ type: 'RESTART' });
+        }
+        setEntryMode('single');
+        setSingleMode('menu');
     };
 
     const onSubmitHand = (hand: Tile[], pool: Tile[]) => {
@@ -377,8 +446,10 @@ export default function App() {
     };
 
     const onRestart = () => {
-        // Send restart if implemented, or just refresh
-        window.location.reload();
+        sendEvent({ type: 'RESTART' });
+        if (isSingleAiMode) {
+            setSingleMode('menu');
+        }
     };
 
     // Ron Opportunity (Query server when lastDiscard changes)
@@ -437,6 +508,22 @@ export default function App() {
     const [showAiExitMenu, setShowAiExitMenu] = useState(false);
     const [aiRematchStep, setAiRematchStep] = useState<'none' | 'join' | 'waitSelf' | 'addBot' | 'waitBot' | 'start'>('none');
     const [showRoundEndOverlay, setShowRoundEndOverlay] = useState(true);
+    const aiRematchStatusText = useMemo(() => {
+        switch (aiRematchStep) {
+            case 'join':
+                return '플레이어를 싱글 대전에 등록 중입니다.';
+            case 'waitSelf':
+                return '대기실 등록 반영을 기다리는 중입니다.';
+            case 'addBot':
+                return 'AI 상대를 추가하고 있습니다.';
+            case 'waitBot':
+                return 'AI 참가 완료를 기다리는 중입니다.';
+            case 'start':
+                return '매치를 시작하는 중입니다.';
+            default:
+                return '준비 완료. 버튼을 눌러 AI 대전을 시작하세요.';
+        }
+    }, [aiRematchStep]);
 
     useEffect(() => {
         if (showReplay) {
@@ -457,7 +544,12 @@ export default function App() {
     }, [isRoundEnd]);
 
     useEffect(() => {
-        if (aiRematchStep === 'none' || !isIdle) return;
+        if (!isSingleAiMode) return;
+        queryPersonas({ playerId });
+    }, [isSingleAiMode, queryPersonas, playerId]);
+
+    useEffect(() => {
+        if (aiRematchStep === 'none' || !isIdle || !isSingleAiMode) return;
 
         const hasSelf = context.players.includes(playerId);
         const hasBot = context.players.some((p: PlayerId) => p.startsWith('bot-'));
@@ -504,7 +596,7 @@ export default function App() {
             sendEvent({ type: 'START_MATCH' });
             setAiRematchStep('none');
         }
-    }, [aiRematchStep, botPersonaId, isIdle, context.players, playerId, sendEvent]);
+    }, [aiRematchStep, botPersonaId, isIdle, isSingleAiMode, context.players, playerId, sendEvent]);
 
     useEffect(() => {
         if (botPersonas.length === 0) return;
@@ -521,11 +613,15 @@ export default function App() {
     const onAiExitToLobby = () => {
         setShowAiExitMenu(false);
         setAiRematchStep('none');
+        setEntryMode('single');
+        setSingleMode('menu');
         sendEvent({ type: 'RESTART' });
     };
 
     const onAiExitToHandBuild = () => {
         setShowAiExitMenu(false);
+        setEntryMode('single');
+        setSingleMode('ai');
         setAiRematchStep('join');
         sendEvent({ type: 'RESTART' });
     };
@@ -542,7 +638,7 @@ export default function App() {
         );
     }
 
-    if (mainMode === 'mini') {
+    if (isSingleMiniMode) {
         return (
             <TileSkinProvider skin={tileSkin}>
                 <div className="app-noise flex flex-col items-center justify-center min-h-screen text-white font-sans relative overflow-x-hidden px-3 py-4 sm:px-5">
@@ -557,7 +653,7 @@ export default function App() {
                         </button>
                     </div>
                     <SingleMiniGame
-                        onExit={() => setMainMode('match')}
+                        onExit={handleExitMiniGame}
                         queryAnalysis={queryAnalysisWithPlayer}
                         analysisResult={analysisResult}
                         debugMode={debugMode}
@@ -573,7 +669,7 @@ export default function App() {
             <div className="app-noise flex flex-col items-center justify-center min-h-screen text-white font-sans relative overflow-x-hidden px-3 py-4 sm:px-5">
                 <div className="pointer-events-none absolute -top-20 -left-20 w-72 h-72 rounded-full bg-cyan-500/20 blur-3xl" />
                 <div className="pointer-events-none absolute -bottom-24 -right-16 w-80 h-80 rounded-full bg-emerald-500/20 blur-3xl" />
-                {(isIdle || isHandBuild) && (
+                {((isIdle && !isHomeMode) || isHandBuild) && (
                     <div className="absolute top-4 left-4 z-[70]">
                         <button
                             onClick={() => setShowYakuInfo(true)}
@@ -583,7 +679,7 @@ export default function App() {
                         </button>
                     </div>
                 )}
-                {isAiMatch && !isIdle && (
+                {isAiMatch && isSingleAiMode && !isIdle && (
                     <div className="absolute top-4 right-4 z-[60]">
                         <button
                             onClick={() => setShowAiExitMenu(true)}
@@ -605,7 +701,7 @@ export default function App() {
                                     onClick={onAiExitToLobby}
                                     className="w-full px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm font-semibold"
                                 >
-                                    최초 화면(로비)로 이동
+                                    싱글 메뉴로 이동
                                 </button>
                                 <button
                                     onClick={onAiExitToHandBuild}
@@ -707,53 +803,74 @@ export default function App() {
 
                         {matches('idle') && (
                             <div className="flex-1 flex flex-col items-center justify-center space-y-8">
-                                {/* ... Lobby UI ... */}
-                                <div className="text-center space-y-2">
-                                    <h2 className="text-3xl font-bold text-white">대기실</h2>
-                                    <p className="text-gray-400">상대를 기다리거나 봇을 추가하세요.</p>
-                                </div>
-
-                                <div className="flex flex-col gap-4 w-full max-w-md">
-                                    <button
-                                        onClick={() => setMainMode('mini')}
-                                        className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 rounded-2xl font-bold text-lg shadow-lg"
-                                    >
-                                        싱글 미니게임: 조패하기
-                                    </button>
-                                    {!context.players.includes(playerId) ? (
-                                        <button onClick={handleJoin} className="w-full py-3 bg-cyan-600 hover:bg-cyan-500 rounded-2xl font-bold text-lg shadow-lg">
-                                            게임 참가
-                                        </button>
-                                    ) : (
-                                        <div className="text-green-300 bg-green-900/30 py-2 px-4 rounded-xl text-center border border-green-500/50">
-                                            참가 완료! ({context.players.indexOf(playerId) + 1}P)
+                                {isHomeMode && (
+                                    <>
+                                        <div className="text-center space-y-2">
+                                            <h2 className="text-3xl font-bold text-white">모드 선택</h2>
+                                            <p className="text-gray-400">싱글 플레이 또는 온라인 대전을 선택하세요.</p>
                                         </div>
-                                    )}
-
-                                    {context.players.length > 0 && (
-                                        <div className="surface-panel p-4 rounded-2xl">
-                                            <h3 className="text-sm font-bold text-slate-400 mb-2 uppercase tracking-wider">Players</h3>
-                                            <ul className="space-y-2">
-                                                {context.players.map((p: PlayerId) => (
-                                                    <li key={p} className="flex items-center gap-2 p-2 bg-slate-800/80 rounded-xl">
-                                                        <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                                                        <span className={p === playerId ? "text-yellow-300 font-bold" : "text-gray-300"}>
-                                                            {p} {p === playerId && "(YOU)"}
-                                                        </span>
-                                                    </li>
-                                                ))}
-                                            </ul>
+                                        <div className="grid w-full max-w-3xl grid-cols-1 gap-4 sm:grid-cols-2">
+                                            <button
+                                                onClick={handleOpenSingleMenu}
+                                                className="rounded-3xl border border-emerald-400/40 bg-emerald-700/20 p-6 text-left shadow-lg hover:bg-emerald-600/30"
+                                            >
+                                                <div className="text-2xl font-black text-emerald-200">싱글 모드</div>
+                                                <div className="mt-2 text-sm text-emerald-100/90">조패게임과 AI 대전을 혼자 플레이합니다.</div>
+                                            </button>
+                                            <button
+                                                onClick={handleOpenOnlineMode}
+                                                className="rounded-3xl border border-cyan-400/40 bg-cyan-700/20 p-6 text-left shadow-lg hover:bg-cyan-600/30"
+                                            >
+                                                <div className="text-2xl font-black text-cyan-100">온라인 모드</div>
+                                                <div className="mt-2 text-sm text-cyan-100/90">대기실에 입장해 다른 플레이어와 매치를 시작합니다.</div>
+                                            </button>
                                         </div>
-                                    )}
-                                    {context.players.includes(playerId) && context.players.length === 1 && (
-                                        <>
+                                    </>
+                                )}
+
+                                {entryMode === 'single' && singleMode === 'menu' && (
+                                    <>
+                                        <div className="text-center space-y-2">
+                                            <h2 className="text-3xl font-bold text-white">싱글 모드</h2>
+                                            <p className="text-gray-400">조패게임 또는 AI 대전을 선택하세요.</p>
+                                        </div>
+                                        <div className="flex flex-col gap-4 w-full max-w-md">
+                                            <button
+                                                onClick={handleOpenMiniGame}
+                                                className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 rounded-2xl font-bold text-lg shadow-lg"
+                                            >
+                                                조패게임
+                                            </button>
+                                            <button
+                                                onClick={handleStartSingleAi}
+                                                className="w-full py-3 bg-amber-600 hover:bg-amber-500 rounded-2xl font-bold text-lg shadow-lg"
+                                            >
+                                                AI 대전
+                                            </button>
+                                            <button
+                                                onClick={handleGoHome}
+                                                className="w-full py-3 bg-slate-700 hover:bg-slate-600 rounded-2xl font-semibold shadow"
+                                            >
+                                                모드 선택으로 돌아가기
+                                            </button>
+                                        </div>
+                                    </>
+                                )}
+
+                                {isSingleAiMode && (
+                                    <>
+                                        <div className="text-center space-y-2">
+                                            <h2 className="text-3xl font-bold text-white">싱글 AI 대전</h2>
+                                            <p className="text-gray-400">플레이어 + AI 1명으로 매치를 자동 준비합니다.</p>
+                                        </div>
+                                        <div className="flex flex-col gap-4 w-full max-w-md">
                                             <div className="surface-panel p-4 rounded-2xl">
                                                 <label className="text-sm font-bold text-slate-300 block mb-2">AI 페르소나</label>
                                                 <select
                                                     value={botPersonaId}
                                                     onChange={(event) => setBotPersonaId(event.target.value)}
                                                     className="w-full rounded-xl bg-slate-900/90 border border-slate-600 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-cyan-400"
-                                                    disabled={botPersonas.length === 0}
+                                                    disabled={botPersonas.length === 0 || aiRematchStep !== 'none'}
                                                 >
                                                     {botPersonas.length === 0 && (
                                                         <option value="">페르소나 목록 불러오는 중...</option>
@@ -765,17 +882,79 @@ export default function App() {
                                                     ))}
                                                 </select>
                                             </div>
-                                            <button onClick={handleAddBot} className="w-full py-3 bg-amber-600 hover:bg-amber-500 rounded-2xl font-bold shadow-lg">
-                                                AI 추가 (Add Bot)
+                                            <div className="surface-panel p-4 rounded-2xl text-sm text-slate-300">
+                                                {aiRematchStatusText}
+                                            </div>
+                                            <button
+                                                onClick={() => setAiRematchStep('join')}
+                                                disabled={aiRematchStep !== 'none'}
+                                                className={`w-full py-3 rounded-2xl font-bold text-lg shadow-lg ${aiRematchStep !== 'none'
+                                                    ? 'bg-slate-700 text-slate-300 cursor-not-allowed'
+                                                    : 'bg-amber-600 hover:bg-amber-500 text-white'
+                                                    }`}
+                                            >
+                                                AI 대전 시작
                                             </button>
-                                        </>
-                                    )}
-                                    {context.players.length === 2 && (
-                                        <button onClick={handleStartMatch} className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 rounded-2xl font-bold text-xl shadow-xl animate-pulse">
-                                            매치 시작 (Start)
-                                        </button>
-                                    )}
-                                </div>
+                                            <button
+                                                onClick={handleExitSingleAiSetup}
+                                                className="w-full py-3 bg-slate-700 hover:bg-slate-600 rounded-2xl font-semibold shadow"
+                                            >
+                                                싱글 메뉴로
+                                            </button>
+                                        </div>
+                                    </>
+                                )}
+
+                                {isOnlineMode && (
+                                    <>
+                                        <div className="text-center space-y-2">
+                                            <h2 className="text-3xl font-bold text-white">온라인 대기실</h2>
+                                            <p className="text-gray-400">대기실 입장 후 상대를 기다리거나 매치를 시작하세요.</p>
+                                        </div>
+                                        <div className="flex flex-col gap-4 w-full max-w-md">
+                                            {!isPlayerInLobby ? (
+                                                <button onClick={handleJoin} className="w-full py-3 bg-cyan-600 hover:bg-cyan-500 rounded-2xl font-bold text-lg shadow-lg">
+                                                    대기실 입장
+                                                </button>
+                                            ) : (
+                                                <div className="text-green-300 bg-green-900/30 py-2 px-4 rounded-xl text-center border border-green-500/50">
+                                                    입장 완료! ({context.players.indexOf(playerId) + 1}P)
+                                                </div>
+                                            )}
+                                            {isPlayerInLobby && (
+                                                <button onClick={handleLeaveLobby} className="w-full py-3 bg-rose-700 hover:bg-rose-600 rounded-2xl font-bold shadow-lg">
+                                                    대기실 나가기
+                                                </button>
+                                            )}
+                                            {context.players.length > 0 && (
+                                                <div className="surface-panel p-4 rounded-2xl">
+                                                    <h3 className="text-sm font-bold text-slate-400 mb-2 uppercase tracking-wider">Players</h3>
+                                                    <ul className="space-y-2">
+                                                        {context.players.map((p: PlayerId) => (
+                                                            <li key={p} className="flex items-center gap-2 p-2 bg-slate-800/80 rounded-xl">
+                                                                <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                                                                <span className={p === playerId ? "text-yellow-300 font-bold" : "text-gray-300"}>
+                                                                    {p} {p === playerId && "(YOU)"}
+                                                                </span>
+                                                            </li>
+                                                        ))}
+                                                    </ul>
+                                                </div>
+                                            )}
+                                            {isPlayerInLobby && context.players.length === 2 && (
+                                                <button onClick={handleStartMatch} className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 rounded-2xl font-bold text-xl shadow-xl animate-pulse">
+                                                    온라인 매치 시작
+                                                </button>
+                                            )}
+                                            <button
+                                                onClick={handleGoHome}
+                                                className="w-full py-3 bg-slate-700 hover:bg-slate-600 rounded-2xl font-semibold shadow"
+                                            >
+                                                모드 선택으로 돌아가기
+                                            </button>
+                                        </div>
+                                    </>
+                                )}
                             </div>
                         )}
 
