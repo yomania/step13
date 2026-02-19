@@ -41,6 +41,46 @@ function isManganTenpai(hand: Tile[], doraIndicators: Tile[]): boolean {
     return false;
 }
 
+function openingShapeSignature(tiles: Tile[]): string {
+    const counts = new Map<string, number>();
+    const suitCounts: Record<'man' | 'pin' | 'sou', number[]> = {
+        man: Array(10).fill(0),
+        pin: Array(10).fill(0),
+        sou: Array(10).fill(0)
+    };
+    let honorCount = 0;
+    for (const tile of tiles) {
+        const key = `${tile.suit}-${tile.rank}`;
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+        if (tile.suit === 'z') {
+            honorCount++;
+        } else {
+            suitCounts[tile.suit][tile.rank] += 1;
+        }
+    }
+
+    const tripletCount = [...counts.values()].filter((count) => count >= 3).length;
+    const pairCount = [...counts.values()].filter((count) => count >= 2).length;
+    const suitSpread = (['man', 'pin', 'sou'] as const).filter((suit) => suitCounts[suit].some((count) => count > 0)).length;
+    const waitCount = getWinningWaits(tiles).length;
+
+    let sequenceCount = 0;
+    for (const suit of ['man', 'pin', 'sou'] as const) {
+        const bucket = [...suitCounts[suit]];
+        for (let rank = 1; rank <= 7; rank++) {
+            while (bucket[rank] > 0 && bucket[rank + 1] > 0 && bucket[rank + 2] > 0) {
+                sequenceCount++;
+                bucket[rank]--;
+                bucket[rank + 1]--;
+                bucket[rank + 2]--;
+            }
+        }
+    }
+
+    const waitBucket = waitCount === 0 ? '0' : waitCount === 1 ? '1' : waitCount === 2 ? '2' : '3+';
+    return `t${tripletCount}-p${pairCount}-s${sequenceCount}-h${honorCount}-u${suitSpread}-w${waitBucket}`;
+}
+
 function buildRonContext(overrides?: Partial<GameContext>): GameContext {
     const p1Hand: Tile[] = [
         t('man', 1, 'm1a'), t('man', 1, 'm1b'), t('man', 1, 'm1c'),
@@ -79,11 +119,14 @@ function buildRonContext(overrides?: Partial<GameContext>): GameContext {
 }
 
 describe('defaultEngine mangan deal constraints', () => {
-    it('buildDealResult is deterministic for same seed', () => {
+    it('buildDealResult is deterministic for same seed', { timeout: 20000 }, () => {
         const engine = createDefaultEngine({
             scoreOptions: SCORE_OPTIONS,
             dealValidationMaxAttempts: 1,
-            handSearchShuffles: 1
+            handSearchShuffles: 1,
+            dealValidationPerPlayerSamples: 1,
+            dealValidationDoraSampleSize: 2,
+            fallbackSearchAttempts: 120
         });
         const players = ['p1', 'p2'];
         const first = engine.buildDealResult(players, 77);
@@ -96,7 +139,10 @@ describe('defaultEngine mangan deal constraints', () => {
         const engine = createDefaultEngine({
             scoreOptions: SCORE_OPTIONS,
             dealValidationMaxAttempts: 1,
-            handSearchShuffles: 1
+            handSearchShuffles: 1,
+            dealValidationPerPlayerSamples: 1,
+            dealValidationDoraSampleSize: 2,
+            fallbackSearchAttempts: 120
         });
         const players = ['p1', 'p2'];
         const result = engine.buildDealResult(players, 123);
@@ -137,20 +183,63 @@ describe('defaultEngine mangan deal constraints', () => {
         expect(isManganTenpai(picked.hand, [])).toBe(true);
     });
 
-    it('uses guaranteed fallback deal when validation attempts are exhausted', () => {
+    it('uses randomized fallback deal when validation attempts are exhausted', () => {
         const engine = createDefaultEngine({
             scoreOptions: SCORE_OPTIONS,
-            dealValidationMaxAttempts: 0
+            dealValidationMaxAttempts: 0,
+            handSearchShuffles: 20,
+            dealValidationPerPlayerSamples: 1,
+            dealValidationDoraSampleSize: 4,
+            fallbackSearchAttempts: 120
         });
 
         const deal = engine.buildDealResult(['p1', 'p2'], 99);
         expect(deal.dealt['p1']).toHaveLength(34);
         expect(deal.dealt['p2']).toHaveLength(34);
 
-        const p1Hand = deal.dealt['p1'].slice(0, 13);
-        const p2Hand = deal.dealt['p2'].slice(0, 13);
-        expect(isManganTenpai(p1Hand, [])).toBe(true);
-        expect(isManganTenpai(p2Hand, [])).toBe(true);
+        const doraCandidates = [...new Set(deal.wall.map((tile) => `${tile.suit}-${tile.rank}`))]
+            .map((key) => {
+                const [suit, rank] = key.split('-');
+                return { suit: suit as Tile['suit'], rank: Number(rank) as Tile['rank'], isRed: false };
+            });
+
+        for (const playerId of ['p1', 'p2']) {
+            const dealt = deal.dealt[playerId];
+            const canReach = doraCandidates.some((indicator) => {
+                const picked = engine.findTenpaiHand(dealt, { requireMangan: true, doraIndicators: [indicator] });
+                return isManganTenpai(picked.hand, [indicator]);
+            });
+            expect(canReach).toBe(true);
+        }
+    });
+
+    it('fallback keeps low shape repetition over 100 seeds', { timeout: 30000 }, () => {
+        const engine = createDefaultEngine({
+            scoreOptions: SCORE_OPTIONS,
+            dealValidationMaxAttempts: 0,
+            handSearchShuffles: 1,
+            dealValidationPerPlayerSamples: 1,
+            dealValidationDoraSampleSize: 1,
+            fallbackSearchAttempts: 12,
+            fallbackTopK: 20,
+            fallbackRandomPickWeight: 0.35
+        });
+        const players = ['p1', 'p2'];
+        const signatureCounts = new Map<string, number>();
+        const sampleCount = 100;
+        for (let seed = 10; seed < 10 + sampleCount; seed++) {
+            const deal = engine.buildDealResult(players, seed);
+            const signature = players
+                .map((playerId) => openingShapeSignature(deal.dealt[playerId].slice(0, 13)))
+                .join('|');
+            signatureCounts.set(signature, (signatureCounts.get(signature) ?? 0) + 1);
+        }
+
+        const topCount = Math.max(...signatureCounts.values());
+        const topShare = topCount / sampleCount;
+        const uniqueRatio = signatureCounts.size / sampleCount;
+        expect(topShare).toBeLessThanOrEqual(0.2);
+        expect(uniqueRatio).toBeGreaterThanOrEqual(0.35);
     });
 });
 

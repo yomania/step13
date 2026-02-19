@@ -1297,69 +1297,129 @@ export default function App() {
                             );
                         })()}
 
-                        {matches('matchEnd') && (
-                            <div className="absolute inset-0 z-50 bg-slate-900/95 flex flex-col items-center justify-center p-8 backdrop-blur-sm">
-                                <div className="glass-panel p-8 rounded-3xl shadow-2xl max-w-2xl w-full text-center animate-in zoom-in-50 duration-300">
-                                    <h2 className="text-5xl font-black text-white mb-2">
-                                        {context.winner ? (context.winner === playerId ? "WINNER!" : "LOSE...") : "DRAW (유국)"}
-                                    </h2>
-                                    <p className="text-2xl text-gray-400 mb-8">
-                                        {context.winner ? (context.winner === playerId ? "축하합니다! 승리하셨습니다." : "아쉽네요. 패배했습니다.") : "승부가 나지 않았습니다."}
-                                    </p>
+                        {matches('matchEnd') && (() => {
+                            const ronTile = context.winner && context.lastDiscard ? context.lastDiscard.tile : null;
+                            const ronLoserId = context.winner && context.lastDiscard ? context.lastDiscard.playerId : null;
 
-                                    {context.winResult && (
-                                        <div className="bg-black/30 p-6 rounded-xl mb-8 text-left space-y-2">
-                                            <div className="flex justify-between items-center border-b border-gray-700 pb-2 mb-2">
-                                                <span className="text-gray-400">Winning Hand Score</span>
-                                                <span className="text-3xl font-bold text-yellow-400">{context.winResult.points.toLocaleString()} pts</span>
-                                            </div>
-                                            <div className="flex gap-4 text-lg">
-                                                <span className="font-bold text-white">{context.winResult.han}판</span>
-                                                <span className="font-bold text-white">{context.winResult.fu}부</span>
-                                                {context.winResult.limit && <span className="bg-red-600 px-2 rounded text-xs leading-6 h-6">{toKoreanLimit(String(context.winResult.limit))}</span>}
-                                            </div>
-                                            <div className="pt-2">
-                                                <h4 className="text-sm text-gray-500 mb-1">Yaku (역)</h4>
-                                                <div className="flex flex-wrap gap-2">
-                                                    {context.winResult.yaku.length > 0 ? context.winResult.yaku.map((y: string) => (
-                                                        <span key={y} className="px-3 py-1 bg-blue-900/50 text-blue-200 rounded-full text-sm border border-blue-800">
-                                                            {toKoreanYaku(y)}
-                                                        </span>
-                                                    )) : <span className="text-gray-600">No Yaku?</span>}
+                            return (
+                                <div className="absolute inset-0 z-50 bg-slate-900/95 flex flex-col items-center justify-center p-8 backdrop-blur-sm">
+                                    <div className="glass-panel p-8 rounded-3xl shadow-2xl max-w-4xl w-full text-center animate-in zoom-in-50 duration-300">
+                                        <h2 className="text-5xl font-black text-white mb-2">
+                                            {context.winner ? (context.winner === playerId ? "WINNER!" : "LOSE...") : "DRAW (유국)"}
+                                        </h2>
+                                        <p className="text-2xl text-gray-400 mb-8">
+                                            {context.winner ? (context.winner === playerId ? "축하합니다! 승리하셨습니다." : "아쉽네요. 패배했습니다.") : "승부가 나지 않았습니다."}
+                                        </p>
+
+                                        {context.winResult && (
+                                            <div className="bg-black/30 p-6 rounded-xl mb-6 text-left space-y-2">
+                                                <div className="flex justify-between items-center border-b border-gray-700 pb-2 mb-2">
+                                                    <span className="text-gray-400">Winning Hand Score</span>
+                                                    <span className="text-3xl font-bold text-yellow-400">{context.winResult.points.toLocaleString()} pts</span>
+                                                </div>
+                                                <div className="flex gap-4 text-lg">
+                                                    <span className="font-bold text-white">{context.winResult.han}판</span>
+                                                    <span className="font-bold text-white">{context.winResult.fu}부</span>
+                                                    {context.winResult.limit && <span className="bg-red-600 px-2 rounded text-xs leading-6 h-6">{toKoreanLimit(String(context.winResult.limit))}</span>}
+                                                </div>
+                                                <div className="pt-2">
+                                                    <h4 className="text-sm text-gray-500 mb-1">Yaku (역)</h4>
+                                                    <div className="flex flex-wrap gap-2">
+                                                        {context.winResult.yaku.length > 0 ? context.winResult.yaku.map((y: string) => (
+                                                            <span key={y} className="px-3 py-1 bg-blue-900/50 text-blue-200 rounded-full text-sm border border-blue-800">
+                                                                {toKoreanYaku(y)}
+                                                            </span>
+                                                        )) : <span className="text-gray-600">No Yaku?</span>}
+                                                    </div>
                                                 </div>
                                             </div>
-                                        </div>
-                                    )}
-
-                                    <div className="flex gap-4 justify-center">
-                                        {isSingleAiMode && isAiMatch && (
-                                            <button
-                                                onClick={onAiExitToHandBuild}
-                                                disabled={aiRematchStep !== 'none'}
-                                                className={`px-8 py-3 font-bold rounded-full transition-colors ${aiRematchStep !== 'none'
-                                                    ? 'bg-slate-700 text-slate-300 cursor-not-allowed'
-                                                    : 'bg-amber-600 text-white hover:bg-amber-500'
-                                                    }`}
-                                            >
-                                                AI 대전 다시 시작
-                                            </button>
                                         )}
-                                        <button
-                                            onClick={onRestart}
-                                            className="px-8 py-3 bg-white text-slate-900 font-bold rounded-full hover:bg-gray-200 transition-colors"
-                                        >
-                                            로비로 돌아가기
-                                        </button>
-                                        <button
-                                            onClick={() => setShowReplay(true)}
-                                            className="px-8 py-3 bg-cyan-600 text-white font-bold rounded-full hover:bg-cyan-500 border border-cyan-300 shadow-lg"
-                                        >
-                                            리플레이 보기
-                                        </button>
+
+                                        <div className="mb-8 text-left">
+                                            <h3 className="text-sm text-slate-400 mb-2">최종 손패</h3>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                {(context.players as PlayerId[]).map((pid) => {
+                                                    const hand = (context.hands?.[pid] || []) as Tile[];
+                                                    const waits = getWinningWaits(hand);
+                                                    const isRonWinner = context.winner === pid && ronTile !== null;
+                                                    const isRonLoser = ronLoserId === pid && ronTile !== null;
+                                                    const score = (context.scores?.[pid] ?? 0) as number;
+
+                                                    return (
+                                                        <div
+                                                            key={`match-end-${pid}`}
+                                                            className={`rounded-xl border p-3 ${isRonWinner
+                                                                ? 'border-yellow-400/70 bg-yellow-900/20'
+                                                                : isRonLoser
+                                                                    ? 'border-rose-500/60 bg-rose-900/15'
+                                                                    : 'border-slate-600 bg-slate-900/60'
+                                                                }`}
+                                                        >
+                                                            <div className="flex items-center justify-between mb-2">
+                                                                <span className="font-bold text-slate-100">
+                                                                    {pid}{pid === playerId ? ' (YOU)' : ''}
+                                                                </span>
+                                                                <span className="text-sm font-semibold text-slate-300">
+                                                                    {score.toLocaleString()}점
+                                                                </span>
+                                                            </div>
+                                                            <div className="text-xs text-slate-400 mb-2">대기패 {waits.length}개</div>
+                                                            <div className="flex flex-wrap gap-1">
+                                                                {hand.length > 0 ? hand.map((tile, idx) => (
+                                                                    <TileView
+                                                                        key={`${pid}-${tile.id ?? `${tile.suit}-${tile.rank}-${idx}`}`}
+                                                                        tile={tile}
+                                                                        size="sm"
+                                                                        disabled={true}
+                                                                    />
+                                                                )) : (
+                                                                    <span className="text-xs text-slate-500">손패 정보 없음</span>
+                                                                )}
+                                                                {isRonWinner && ronTile && (
+                                                                    <div className="relative ring-2 ring-yellow-400 ring-offset-1 ring-offset-slate-900 rounded">
+                                                                        <TileView tile={ronTile} size="sm" disabled={true} />
+                                                                        <span className="absolute -top-1.5 -right-1.5 px-1 py-[1px] rounded bg-yellow-500 text-black text-[8px] font-black leading-none shadow">
+                                                                            론
+                                                                        </span>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+
+                                        <div className="flex gap-4 justify-center">
+                                            {isSingleAiMode && isAiMatch && (
+                                                <button
+                                                    onClick={onAiExitToHandBuild}
+                                                    disabled={aiRematchStep !== 'none'}
+                                                    className={`px-8 py-3 font-bold rounded-full transition-colors ${aiRematchStep !== 'none'
+                                                        ? 'bg-slate-700 text-slate-300 cursor-not-allowed'
+                                                        : 'bg-amber-600 text-white hover:bg-amber-500'
+                                                        }`}
+                                                >
+                                                    AI 대전 다시 시작
+                                                </button>
+                                            )}
+                                            <button
+                                                onClick={onRestart}
+                                                className="px-8 py-3 bg-white text-slate-900 font-bold rounded-full hover:bg-gray-200 transition-colors"
+                                            >
+                                                로비로 돌아가기
+                                            </button>
+                                            <button
+                                                onClick={() => setShowReplay(true)}
+                                                className="px-8 py-3 bg-cyan-600 text-white font-bold rounded-full hover:bg-cyan-500 border border-cyan-300 shadow-lg"
+                                            >
+                                                리플레이 보기
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        )}
+                            );
+                        })()}
                     </GameBoard>
                 )}
             </div>

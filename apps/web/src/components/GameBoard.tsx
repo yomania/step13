@@ -67,6 +67,7 @@ export function GameBoard({ context, myPlayerId, children }: GameBoardProps) {
     }, [clockStartMs, clockDurationMs, nowMs]);
 
     const turnTimeRemainingSec = Math.max(0, Math.ceil(turnTimeRemainingMs / 1000));
+    const isLowTurnTime = turnTimeRemainingSec <= 3;
 
     return (
         <div className="relative flex flex-col min-h-screen text-white px-3 py-4 sm:px-5 overflow-x-hidden">
@@ -77,12 +78,6 @@ export function GameBoard({ context, myPlayerId, children }: GameBoardProps) {
                 <div className="flex flex-wrap gap-2 items-center">
                     <div className="surface-panel px-3 py-1 rounded-lg">
                         Round: <span className="text-yellow-400">{context.round}</span>
-                    </div>
-                    <div className="surface-panel px-3 py-1 rounded-lg">
-                        Turn:
-                        <span className={`${isBonusClock ? 'text-yellow-300' : 'text-cyan-300'} ml-1 font-mono`}>
-                            {isBonusClock ? `+${turnTimeRemainingSec}s` : `${turnTimeRemainingSec}s`}
-                        </span>
                     </div>
                     <div className="surface-panel px-3 py-1 rounded-lg">
                         My Bank: <span className="text-green-300 font-mono">{formatBank(myTimeBankMs)}</span>
@@ -162,7 +157,7 @@ export function GameBoard({ context, myPlayerId, children }: GameBoardProps) {
                     </div>
 
                     {/* My Hand / Controls / Info */}
-                    <div className="flex items-center gap-6 w-full justify-between max-w-3xl">
+                    <div className="flex flex-col gap-4 w-full max-w-3xl sm:flex-row sm:items-end sm:justify-between">
                         <div className="flex items-center gap-3">
                             <div className="w-12 h-12 bg-cyan-600 rounded-full flex items-center justify-center font-bold text-xl border-4 border-cyan-400 shadow-lg relative overflow-hidden">
                                 {myPlayerId.slice(0, 1).toUpperCase()}
@@ -182,7 +177,23 @@ export function GameBoard({ context, myPlayerId, children }: GameBoardProps) {
                         </div>
 
                         {/* Children (HandBuilder, Action Buttons) */}
-                        <div className="flex-1 flex justify-end">
+                        <div className="w-full sm:flex-1 flex flex-col gap-2 items-stretch sm:items-end">
+                            <div className={`self-start sm:self-end px-3 py-2 rounded-xl border backdrop-blur-sm ${isLowTurnTime
+                                ? 'border-rose-400/80 bg-rose-950/45'
+                                : isBonusClock
+                                    ? 'border-yellow-400/70 bg-yellow-950/40'
+                                    : 'border-cyan-400/60 bg-cyan-950/35'
+                                }`}>
+                                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-200/90">현재 턴 제한시간</div>
+                                <div className={`font-mono text-2xl font-black leading-none ${isLowTurnTime
+                                    ? 'text-rose-300 animate-pulse'
+                                    : isBonusClock
+                                        ? 'text-yellow-300'
+                                        : 'text-cyan-200'
+                                    }`}>
+                                    {isBonusClock ? `+${turnTimeRemainingSec}s` : `${turnTimeRemainingSec}s`}
+                                </div>
+                            </div>
                             {children}
                         </div>
                     </div>
