@@ -10,6 +10,57 @@ afterEach(() => {
     vi.useRealTimers();
 });
 
+type ScheduledTask = {
+    id: number;
+    due: number;
+    callback: () => void;
+};
+
+function createTestClock() {
+    let now = 0;
+    let nextId = 1;
+    const tasks: ScheduledTask[] = [];
+
+    const sortTasks = () => {
+        tasks.sort((a, b) => a.due - b.due || a.id - b.id);
+    };
+
+    const runDueTasks = () => {
+        sortTasks();
+        while (tasks.length > 0 && tasks[0] && tasks[0].due <= now) {
+            const next = tasks.shift();
+            if (next) {
+                next.callback();
+            }
+        }
+    };
+
+    return {
+        clock: {
+            setTimeout: (callback: () => void, timeout: number) => {
+                const task: ScheduledTask = {
+                    id: nextId++,
+                    due: now + Math.max(0, timeout),
+                    callback
+                };
+                tasks.push(task);
+                sortTasks();
+                return task.id;
+            },
+            clearTimeout: (id: number) => {
+                const index = tasks.findIndex((task) => task.id === Number(id));
+                if (index >= 0) {
+                    tasks.splice(index, 1);
+                }
+            }
+        },
+        advanceBy: (ms: number) => {
+            now += Math.max(0, ms);
+            runDueTasks();
+        }
+    };
+}
+
 describe('replayMachine', () => {
     it('should load events and reproduce the final state', async () => {
         // 1. Play a short game to generate events
@@ -101,16 +152,15 @@ describe('replayMachine', () => {
         expect(replayActor.getSnapshot().context.currentIndex).toBe(0);
     });
 
-    it('replays delayed transitions before applying next logged event', async () => {
-        vi.useFakeTimers();
-
-        const gameActor = createActor(gameMachine);
+    it('replays delayed transitions before applying next logged event', () => {
+        const testClock = createTestClock();
+        const gameActor = createActor(gameMachine, { clock: testClock.clock as any });
         gameActor.start();
         gameActor.send({ type: 'JOIN', playerId: 'p1' });
         gameActor.send({ type: 'JOIN', playerId: 'p2' });
         gameActor.send({ type: 'START_MATCH', seed: 77 });
 
-        await vi.advanceTimersByTimeAsync(1000);
+        testClock.advanceBy(1000);
         const doraSnapshot = gameActor.getSnapshot();
         expect(doraSnapshot.value).toBe('doraSelect');
 
@@ -119,7 +169,7 @@ describe('replayMachine', () => {
         expect(doraTileId).toBeDefined();
         gameActor.send({ type: 'SELECT_DORA', playerId: dealer, tileId: doraTileId! });
 
-        await vi.advanceTimersByTimeAsync(RULES.timers.doraRevealTimeMs);
+        testClock.advanceBy(RULES.timers.doraRevealTimeMs);
         expect(gameActor.getSnapshot().value).toBe('handBuild');
 
         const loggedEvents = gameActor.getSnapshot().context.eventLog;
