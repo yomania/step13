@@ -1003,7 +1003,7 @@ export default function App() {
                     <div className="absolute top-4 left-4 z-[70]">
                         <button
                             onClick={() => setShowYakuInfo(true)}
-                            className="px-4 py-2 rounded-xl bg-cyan-700/90 hover:bg-cyan-600 text-white font-bold shadow-lg border border-cyan-300/70"
+                            className="px-4 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-yellow-500 font-bold shadow-[0_4px_10px_rgba(0,0,0,0.5)] border border-yellow-500/30 transition-all hover:scale-105"
                         >
                             17보 역정보
                         </button>
@@ -1029,7 +1029,7 @@ export default function App() {
                     <div className="absolute top-4 left-4 z-[70]">
                         <button
                             onClick={() => setShowYakuInfo(true)}
-                            className="px-4 py-2 rounded-xl bg-cyan-700/90 hover:bg-cyan-600 text-white font-bold shadow-lg border border-cyan-300/70"
+                            className="px-4 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-yellow-500 font-bold shadow-[0_4px_10px_rgba(0,0,0,0.5)] border border-yellow-500/30 transition-all hover:scale-105"
                         >
                             17보 역정보
                         </button>
@@ -1169,10 +1169,10 @@ export default function App() {
               */}
 
                 {(matches('idle') || matches('matchStart') || matches('doraSelect') || matches('handBuild')) ? (
-                    <div className="w-full max-w-5xl glass-panel rounded-3xl p-4 sm:p-6 min-h-[600px] flex flex-col relative m-2 sm:m-4 z-10">
+                    <div className="w-full h-full max-h-screen sm:aspect-video sm:h-auto sm:max-w-5xl glass-panel rounded-none sm:rounded-3xl p-4 sm:p-6 flex flex-col relative m-0 sm:m-4 z-10 overflow-hidden">
                         <header className="mb-4 text-center w-full flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-end border-b border-slate-700/80 pb-4">
                             <div>
-                                <h1 className="text-3xl sm:text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-sky-200 to-emerald-300">17보 마작</h1>
+                                <h1 className="text-3xl sm:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-500 via-amber-300 to-yellow-600 drop-shadow-sm tracking-tight text-stroke-sm">17보 마작</h1>
                                 <div className="text-xs text-gray-400 mt-1 space-x-2">
                                     <span>닉네임: <span className="text-white font-semibold">{authSession.profile.nickname}</span></span>
                                     <span>•</span>
@@ -1187,7 +1187,7 @@ export default function App() {
                                 <div className="flex items-center justify-end gap-2">
                                     <button
                                         onClick={() => setShowProfilePanel((prev) => !prev)}
-                                        className="px-3 py-1.5 rounded-xl border border-cyan-500/80 bg-cyan-900/60 hover:bg-cyan-800 text-sm font-semibold"
+                                        className="px-3 py-1.5 rounded-xl border border-yellow-500/50 bg-slate-800/80 hover:bg-slate-700 text-yellow-400 text-sm font-bold shadow-sm"
                                     >
                                         프로필
                                     </button>
@@ -1398,7 +1398,7 @@ export default function App() {
                                                 </div>
                                             )}
                                             {isPlayerInLobby && context.players.length === 2 && (
-                                                <button onClick={handleStartMatch} className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 rounded-2xl font-bold text-xl shadow-xl animate-pulse">
+                                                <button onClick={handleStartMatch} className="w-full py-4 bg-gradient-to-b from-yellow-500 to-yellow-700 hover:from-yellow-400 hover:to-yellow-600 text-black border border-yellow-400 rounded-2xl font-black text-xl shadow-[inset_0_1px_0_rgba(255,255,255,0.4),_0_4px_15px_rgba(0,0,0,0.5)] animate-pulse">
                                                     온라인 매치 시작
                                                 </button>
                                             )}

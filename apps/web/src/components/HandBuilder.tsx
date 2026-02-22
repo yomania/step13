@@ -426,8 +426,8 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
                             분석 중...
                         </span>
                     )}
-                    <div className="mt-2 w-full sm:w-56 h-1.5 rounded-full bg-slate-700 overflow-hidden">
-                        <div className="h-full bg-gradient-to-r from-cyan-400 to-emerald-400" style={{ width: `${(selectedTiles.length / 13) * 100}%` }} />
+                    <div className="mt-2 w-full sm:w-56 h-1.5 rounded-full bg-slate-900 border border-slate-700/50 overflow-hidden">
+                        <div className="h-full bg-gradient-to-r from-amber-600 to-yellow-400" style={{ width: `${(selectedTiles.length / 13) * 100}%` }} />
                     </div>
                 </div>
                 <div className="text-right flex flex-col items-end gap-2">
@@ -444,8 +444,8 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
                             선택 초기화
                         </button>
                     )}
-                    <div className="text-cyan-300 font-mono font-bold">남은 시간: {formatBuildTime(buildTimeRemainingMs)}</div>
-                    <div className="text-xs text-slate-300 mt-1">
+                    <div className="text-yellow-400 font-mono font-bold">남은 시간: {formatBuildTime(buildTimeRemainingMs)}</div>
+                    <div className="text-xs text-slate-400 mt-1">
                         도라: {doraIndicators.length > 0 ? `${doraIndicators.length}장 공개` : '오모테도라 미공개'}
                     </div>
                     <div className="flex justify-end gap-1 mt-1">
@@ -457,7 +457,7 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
                     </div>
                     {seatWind && (
                         <div className="mt-1 flex items-center justify-end gap-2">
-                            <span className="text-xs text-slate-300">자풍패: {windToKorean(seatWind)}</span>
+                            <span className="text-xs text-slate-400">자풍패: {windToKorean(seatWind)}</span>
                             <Tile tile={windToTile(seatWind)} disabled={true} size="sm" />
                         </div>
                     )}
@@ -581,7 +581,7 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
                                 </div>
                             )}
                             {!serverPotentialScore?.bestWait && (
-                                <span className="text-xs text-slate-400">없음</span>
+                                <span className="text-xs text-slate-500">없음</span>
                             )}
                         </div>
                     )}
@@ -639,11 +639,11 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
                                         </button>
                                     </div>
 
-                                    <div className="text-xs text-slate-300 mb-2">
+                                    <div className="text-xs text-slate-400 mb-2">
                                         역: {candidate.score.yaku.length > 0 ? candidate.score.yaku.map(toKoreanYaku).join(', ') : '없음'}
                                     </div>
 
-                                    <div className="text-xs text-cyan-300 mb-1">추천 13패</div>
+                                    <div className="text-xs text-amber-500 mb-1">추천 13패</div>
                                     <div className="flex flex-wrap gap-1 mb-2">
                                         {getSortedCandidateTiles(candidate).map((tile: TileType, handIdx: number) => (
                                             <div key={`${tile.id ?? `${tile.suit}-${tile.rank}`}-${handIdx}`} className="transform scale-90 origin-left-top">
@@ -671,19 +671,22 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
                 onClick={handleSubmit}
                 disabled={!canSubmit || loading}
                 className={`
-                    w-full py-4 rounded-2xl font-bold text-xl transition-all shadow-lg
+                    w-full py-4 rounded-t-none rounded-b-2xl sm:rounded-2xl font-bold text-xl transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.1),_0_4px_15px_rgba(0,0,0,0.5)] border-t sm:border border-slate-700/50 relative overflow-hidden group
                     ${canSubmit && !loading
-                        ? 'bg-gradient-to-r from-cyan-600 to-emerald-600 hover:from-cyan-500 hover:to-emerald-500 text-white transform hover:scale-[1.02]'
-                        : 'bg-slate-600 text-slate-400 cursor-not-allowed opacity-50'}
+                        ? 'bg-gradient-to-b from-slate-700 to-slate-800 hover:from-slate-600 hover:to-slate-700 text-yellow-500 transform hover:scale-[1.01] active:scale-95'
+                        : 'bg-slate-800/80 text-slate-500 cursor-not-allowed opacity-70'}
                 `}
             >
-                {loading
-                    ? loadingLabel
-                    : submitted
-                        ? (singleMode ? '제출 완료' : (opponentSubmitted ? '모두 준비 완료, 시작 중...' : '준비 완료 - 상대 대기 중'))
-                        : (canSubmit
-                            ? (submitActionLabel ?? (isMangan ? '만관 확정! 준비 완료' : '준비 완료 (만관 미만 주의)'))
-                            : '패를 완성해주세요')}
+                <div className="absolute inset-0 bg-gradient-to-b from-white/5 to-transparent pointer-events-none" />
+                <span className="relative z-10 drop-shadow-md">
+                    {loading
+                        ? loadingLabel
+                        : submitted
+                            ? (singleMode ? '제출 완료' : (opponentSubmitted ? '모두 준비 완료, 시작 중...' : '준비 완료 - 상대 대기 중'))
+                            : (canSubmit
+                                ? (submitActionLabel ?? (isMangan ? '만관 확정! 준비 완료' : '준비 완료 (만관 미만 주의)'))
+                                : '패를 완성해주세요')}
+                </span>
             </button>
         </div>
     );

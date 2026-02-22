@@ -5,16 +5,17 @@
 @tailwind utilities;
 
 :root {
-    --bg-0: #020617;
-    --bg-1: #0b1220;
-    --surface: rgba(15, 23, 42, 0.72);
-    --surface-strong: rgba(15, 23, 42, 0.9);
-    --line: rgba(148, 163, 184, 0.25);
-    --text: #e2e8f0;
-    --muted: #94a3b8;
-    --brand: #06b6d4;
-    --brand-2: #10b981;
-    --accent: #f59e0b;
+    --bg-0: #05160e;      /* Deepest dark green/black */
+    --bg-1: #0a291a;      /* Dark green felt shadow */
+    --surface: rgba(14, 18, 16, 0.85); /* Dark metallic/heavy surface */
+    --surface-strong: rgba(10, 14, 12, 0.95); /* Even darker heavy surface */
+    --line: rgba(184, 163, 148, 0.25); /* Muted gold/bronze lines */
+    --text: #e2e8f0;      /* Keep mostly light for readability, but can use gold accents */
+    --text-gold: #f5d061; /* Sharp Kaiji yellow/gold */
+    --muted: #8b9691;     /* Desaturated green-grey */
+    --brand: #eab308;     /* Replaced cyan with sharp yellow/gold */
+    --brand-2: #166534;   /* Deep solid green */
+    --accent: #dc2626;    /* Red accent for high-stakes/danger */
 }
 
 * {
@@ -32,9 +33,10 @@ body {
     margin: 0;
     color: var(--text);
     font-family: 'IBM Plex Sans KR', 'Space Grotesk', 'Segoe UI', sans-serif;
+    /* Create a dark green vignette felt texture effect */
     background:
-        radial-gradient(60rem 60rem at 10% -10%, rgba(6, 182, 212, 0.16), transparent 60%),
-        radial-gradient(48rem 48rem at 95% 0%, rgba(16, 185, 129, 0.14), transparent 58%),
+        radial-gradient(ellipse at center, rgba(20, 60, 40, 0.15) 0%, transparent 70%),
+        radial-gradient(circle at 50% 50%, rgba(0,0,0,0) 40%, rgba(0,0,0,0.8) 100%),
         linear-gradient(180deg, var(--bg-1), var(--bg-0));
     background-attachment: fixed;
 }
@@ -64,18 +66,20 @@ button {
 }
 
 .glass-panel {
-    background: linear-gradient(160deg, rgba(15, 23, 42, 0.88), rgba(2, 6, 23, 0.86));
-    border: 1px solid var(--line);
+    background: linear-gradient(160deg, rgba(20, 24, 22, 0.95), rgba(10, 12, 11, 0.98));
+    border: 1px solid rgba(245, 208, 97, 0.15); /* Subtle gold border */
     backdrop-filter: blur(12px);
     box-shadow:
-        0 24px 64px rgba(2, 6, 23, 0.5),
-        inset 0 1px 0 rgba(255, 255, 255, 0.04);
+        0 30px 60px rgba(0, 0, 0, 0.8),
+        inset 0 1px 0 rgba(255, 255, 255, 0.05),
+        inset 0 0 20px rgba(0, 0, 0, 0.5); /* Inner heavy shadow */
 }
 
 .surface-panel {
     background: var(--surface);
-    border: 1px solid var(--line);
+    border: 1px solid rgba(184, 163, 148, 0.2); /* Metallic/bronze border */
     backdrop-filter: blur(8px);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
 }
 
 .thin-scrollbar {

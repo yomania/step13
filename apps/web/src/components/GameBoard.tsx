@@ -70,17 +70,17 @@ export function GameBoard({ context, myPlayerId, children }: GameBoardProps) {
     const isLowTurnTime = turnTimeRemainingSec <= 3;
 
     return (
-        <div className="relative flex flex-col min-h-screen text-white px-3 py-4 sm:px-5 overflow-x-hidden">
-            <div className="pointer-events-none absolute -top-24 -left-24 w-72 h-72 rounded-full bg-cyan-500/15 blur-3xl" />
-            <div className="pointer-events-none absolute -bottom-20 -right-20 w-72 h-72 rounded-full bg-emerald-500/15 blur-3xl" />
-            <header className="z-10 p-3 sm:p-4 glass-panel rounded-2xl flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center mb-4">
-                <h1 className="text-lg sm:text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 to-emerald-300">17보 마작 실전</h1>
+        <div className="relative flex flex-col h-screen max-h-screen text-white sm:px-5 overflow-hidden">
+            <div className="pointer-events-none absolute -top-40 -left-40 w-96 h-96 rounded-full bg-slate-800/20 blur-[100px]" />
+            <div className="pointer-events-none absolute -bottom-40 -right-40 w-96 h-96 rounded-full bg-slate-800/20 blur-[100px]" />
+            <header className="z-10 p-3 sm:p-4 surface-panel sm:glass-panel rounded-none sm:rounded-2xl flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center mb-4 border-b sm:border border-slate-700/50 shadow-md">
+                <h1 className="text-lg sm:text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-500 to-yellow-200 drop-shadow-sm tracking-tight text-stroke-sm">17보 마작 실전</h1>
                 <div className="flex flex-wrap gap-2 items-center">
-                    <div className="surface-panel px-3 py-1 rounded-lg">
-                        Round: <span className="text-yellow-400">{context.round}</span>
+                    <div className="surface-panel px-3 py-1 rounded-lg border border-slate-700/50 shadow-inner">
+                        Round: <span className="text-yellow-500 font-bold">{context.round}</span>
                     </div>
-                    <div className="surface-panel px-3 py-1 rounded-lg">
-                        My Bank: <span className="text-green-300 font-mono">{formatBank(myTimeBankMs)}</span>
+                    <div className="surface-panel px-3 py-1 rounded-lg border border-slate-700/50 shadow-inner">
+                        My Bank: <span className="text-emerald-400 font-mono font-bold">{formatBank(myTimeBankMs)}</span>
                     </div>
                     {otherPlayerId && (
                         <div className="surface-panel px-3 py-1 rounded-lg">
@@ -91,7 +91,7 @@ export function GameBoard({ context, myPlayerId, children }: GameBoardProps) {
             </header>
 
             {/* Battle Area */}
-            <div className="z-10 flex-1 flex flex-col items-center justify-center relative w-full max-w-6xl mx-auto glass-panel rounded-3xl p-3 sm:p-5">
+            <div className="z-10 flex-1 flex flex-col items-center justify-center relative w-full h-full sm:aspect-video sm:h-auto sm:max-w-6xl mx-auto glass-panel rounded-none sm:rounded-3xl p-3 sm:p-5 overflow-hidden">
 
                 {/* Opponent Area (Top) */}
                 {otherPlayerId && (
@@ -132,45 +132,44 @@ export function GameBoard({ context, myPlayerId, children }: GameBoardProps) {
 
                 {/* Center / Game Info / Turn Indicator */}
                 <div className="my-4 text-center z-10">
-                    <div className="text-2xl font-bold mb-2 transition-all duration-300 transform scale-100">
+                    <div className="text-2xl font-black mb-2 transition-all duration-300 transform scale-100 tracking-wider">
                         {context.currentTurn === myPlayerId ? (
-                            <span className="text-blue-400 animate-pulse drop-shadow-[0_0_10px_rgba(59,130,246,0.5)]">YOUR TURN</span>
+                            <span className="text-yellow-500 animate-pulse drop-shadow-[0_0_15px_rgba(234,179,8,0.5)]">YOUR TURN</span>
                         ) : (
-                            <span className="text-red-400">OPPONENT'S TURN</span>
+                            <span className="text-rose-600 drop-shadow-md">OPPONENT'S TURN</span>
                         )}
                     </div>
-                    <div className="text-sm text-gray-500">
-                        Remains: {17 - (context.discards[myPlayerId]?.length || 0)} / 17
+                    <div className="text-sm font-bold text-slate-400">
+                        Remains: <span className="text-slate-200">{17 - (context.discards[myPlayerId]?.length || 0)} / 17</span>
                     </div>
                 </div>
 
                 {/* My Area (Bottom) */}
-                <div className="w-full flex flex-col items-center mt-auto p-4 sm:p-6 bg-gradient-to-t from-slate-900/70 to-transparent rounded-t-3xl">
+                <div className="w-full flex flex-col items-center mt-auto p-4 sm:p-6 bg-gradient-to-t from-slate-900/90 to-transparent rounded-t-3xl border-t border-slate-700/30">
                     {/* My Discards */}
-                    <div className="mb-6 relative group">
-                        <div className="absolute -top-6 left-1/2 transform -translate-x-1/2 bg-slate-900 px-3 py-1 rounded-lg text-xs text-gray-400 border border-slate-700 shadow-sm">
-                            MY DISCARDS
+                    <div className="mb-6 relative group w-full max-w-2xl">
+                        <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-slate-800 px-4 py-1 rounded-full text-xs font-bold text-slate-300 border border-slate-600 shadow-md z-10">
+                            내 버림패
                         </div>
-                        <div className="p-4 bg-slate-900/70 rounded-2xl shadow-inner border border-slate-700/50 backdrop-blur-sm">
+                        <div className="p-4 pt-6 bg-slate-900/80 rounded-2xl shadow-[inset_0_2px_10px_rgba(0,0,0,0.5)] border border-slate-700/50 backdrop-blur-md">
                             <DiscardPile discards={context.discards[myPlayerId] || []} />
                         </div>
                     </div>
 
                     {/* My Hand / Controls / Info */}
                     <div className="flex flex-col gap-4 w-full max-w-3xl sm:flex-row sm:items-end sm:justify-between">
-                        <div className="flex items-center gap-3">
-                            <div className="w-12 h-12 bg-cyan-600 rounded-full flex items-center justify-center font-bold text-xl border-4 border-cyan-400 shadow-lg relative overflow-hidden">
+                        <div className="flex items-center gap-4 bg-slate-900/60 p-3 rounded-2xl border border-slate-700/50 shadow-md">
+                            <div className="w-14 h-14 bg-gradient-to-br from-slate-600 to-slate-800 rounded-full flex items-center justify-center font-bold text-2xl border-2 border-slate-500 text-slate-200 shadow-[inset_0_2px_4px_rgba(255,255,255,0.1),_0_4px_10px_rgba(0,0,0,0.5)] relative overflow-hidden">
                                 {myPlayerId.slice(0, 1).toUpperCase()}
-                                <div className="absolute inset-0 bg-gradient-to-tr from-white/20 to-transparent"></div>
                             </div>
-                            <div className="flex flex-col">
-                                <span className="text-xl font-bold text-cyan-100 flex items-center gap-2">
-                                    {myPlayerId} (YOU)
+                            <div className="flex flex-col items-start">
+                                <span className="text-lg font-bold text-slate-200 flex items-center gap-2">
+                                    {myPlayerId}
                                     {context.dealer === myPlayerId && (
-                                        <span className="px-2 py-0.5 bg-yellow-500 text-black text-[10px] font-bold rounded uppercase tracking-wider">Dealer</span>
+                                        <span className="px-2 py-0.5 bg-gradient-to-b from-yellow-400 to-amber-600 text-black text-[10px] font-black rounded uppercase tracking-wider shadow-sm border border-yellow-300/50">Deal</span>
                                     )}
                                 </span>
-                                <span className="font-mono text-2xl text-yellow-400 font-bold drop-shadow-md">
+                                <span className="font-mono text-xl text-yellow-500 font-extrabold drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)] tracking-tight">
                                     {context.scores[myPlayerId] || 0} pts
                                 </span>
                             </div>
@@ -178,18 +177,18 @@ export function GameBoard({ context, myPlayerId, children }: GameBoardProps) {
 
                         {/* Children (HandBuilder, Action Buttons) */}
                         <div className="w-full sm:flex-1 flex flex-col gap-2 items-stretch sm:items-end">
-                            <div className={`self-start sm:self-end px-3 py-2 rounded-xl border backdrop-blur-sm ${isLowTurnTime
-                                ? 'border-rose-400/80 bg-rose-950/45'
+                            <div className={`self-start sm:self-end px-4 py-2 rounded-xl sm:rounded-2xl border backdrop-blur-sm shadow-lg ${isLowTurnTime
+                                ? 'border-rose-500 bg-rose-950/80 shadow-[0_0_15px_rgba(225,29,72,0.4)]'
                                 : isBonusClock
-                                    ? 'border-yellow-400/70 bg-yellow-950/40'
-                                    : 'border-cyan-400/60 bg-cyan-950/35'
+                                    ? 'border-yellow-500/80 bg-yellow-950/60 shadow-[0_0_10px_rgba(234,179,8,0.2)]'
+                                    : 'border-slate-600 bg-slate-900/80'
                                 }`}>
-                                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-200/90">현재 턴 제한시간</div>
-                                <div className={`font-mono text-2xl font-black leading-none ${isLowTurnTime
-                                    ? 'text-rose-300 animate-pulse'
+                                <div className="text-[10px] sm:text-[11px] font-bold text-slate-400">제한시간</div>
+                                <div className={`font-mono text-2xl sm:text-3xl font-black leading-none drop-shadow-md ${isLowTurnTime
+                                    ? 'text-rose-400 animate-pulse'
                                     : isBonusClock
-                                        ? 'text-yellow-300'
-                                        : 'text-cyan-200'
+                                        ? 'text-yellow-400'
+                                        : 'text-slate-200'
                                     }`}>
                                     {isBonusClock ? `+${turnTimeRemainingSec}s` : `${turnTimeRemainingSec}s`}
                                 </div>
