@@ -9,10 +9,24 @@ import { GameBoard } from './components/GameBoard';
 import { ReplayViewer } from './components/ReplayViewer';
 import { SingleMiniGame } from './components/SingleMiniGame';
 import { YakuInfoLayer } from './components/YakuInfoLayer';
-import { PlayerId, Tile } from '@step13/proto';
+import {
+    AuthSessionDTO,
+    PlayerId,
+    StatsSummaryDTO,
+    Tile
+} from '@step13/proto';
 import { calculateScore, calculateShanten, type ScoreResult } from '@step13/scoring';
 import { preloadRealTileAssets } from './lib/tileAssets';
 import { AnimatePresence, motion } from 'framer-motion';
+import {
+    ApiError,
+    getStatsSummaryApi,
+    loginApi,
+    logoutApi,
+    refreshApi,
+    registerApi,
+    updateProfileApi
+} from './lib/authApi';
 
 type BotPersonaOption = {
     id: string;
@@ -22,6 +36,9 @@ type BotPersonaOption = {
 
 type EntryMode = 'home' | 'single' | 'online';
 type SingleMode = 'menu' | 'mini' | 'ai';
+type AuthMode = 'login' | 'register';
+
+const REFRESH_TOKEN_STORAGE_KEY = 'step13-refresh-token';
 
 function getWinningWaits(hand: Tile[]): Tile[] {
     if (hand.length !== RULES.tiles.handSize) {
@@ -132,17 +149,53 @@ function toKoreanYaku(yaku: string): string {
     return map[yaku] ?? yaku;
 }
 
+function loadStoredRefreshToken(): string | null {
+    if (typeof window === 'undefined') return null;
+    return window.localStorage.getItem(REFRESH_TOKEN_STORAGE_KEY);
+}
+
+function saveStoredRefreshToken(refreshToken: string): void {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(REFRESH_TOKEN_STORAGE_KEY, refreshToken);
+}
+
+function clearStoredRefreshToken(): void {
+    if (typeof window === 'undefined') return;
+    window.localStorage.removeItem(REFRESH_TOKEN_STORAGE_KEY);
+}
+
 
 
 export default function App() {
     const [localState, , actor] = useMachine(gameMachine);
     const [serverState, setServerState] = useState<any>(null);
+    const [playerProfiles, setPlayerProfiles] = useState<Record<string, { nickname: string; avatarKey: string }>>({});
     const [analysisResult, setAnalysisResult] = useState<any>(null);
     const [botPersonas, setBotPersonas] = useState<BotPersonaOption[]>([]);
+    const [authSession, setAuthSession] = useState<AuthSessionDTO | null>(null);
+    const [authMode, setAuthMode] = useState<AuthMode>('login');
+    const [authEmailInput, setAuthEmailInput] = useState('');
+    const [authPasswordInput, setAuthPasswordInput] = useState('');
+    const [authNicknameInput, setAuthNicknameInput] = useState('');
+    const [authLoading, setAuthLoading] = useState(true);
+    const [authSubmitting, setAuthSubmitting] = useState(false);
+    const [authError, setAuthError] = useState<string | null>(null);
+    const [showProfilePanel, setShowProfilePanel] = useState(false);
+    const [profileNicknameInput, setProfileNicknameInput] = useState('');
+    const [profileBioInput, setProfileBioInput] = useState('');
+    const [profileSaving, setProfileSaving] = useState(false);
+    const [profileError, setProfileError] = useState<string | null>(null);
+    const [statsSummary, setStatsSummary] = useState<StatsSummaryDTO | null>(null);
+    const [statsLoading, setStatsLoading] = useState(false);
+    const apiBaseUrl = useMemo(() => import.meta.env.VITE_API_URL || 'http://localhost:3001', []);
+    const playerId = authSession?.profile.playerId ?? '__unauth__';
 
     // Pass the actor and a callback to update serverState
-    const handleServerStateUpdate = useCallback((newState: any) => {
+    const handleServerStateUpdate = useCallback((newState: any, incomingProfiles?: Record<string, { nickname: string; avatarKey: string }>) => {
         setServerState(newState);
+        if (incomingProfiles) {
+            setPlayerProfiles(incomingProfiles);
+        }
     }, []);
 
     const handleAnalysisResult = useCallback((result: any) => {
@@ -160,14 +213,40 @@ export default function App() {
         setBotPersonas(personas);
     }, []);
 
+    const handleSocketAuthExpired = useCallback(() => {
+        void (async () => {
+            const refreshToken = loadStoredRefreshToken();
+            if (!refreshToken) {
+                setAuthSession(null);
+                return;
+            }
+
+            try {
+                const session = await refreshApi(refreshToken, apiBaseUrl);
+                saveStoredRefreshToken(session.tokens.refreshToken);
+                setAuthSession(session);
+                setAuthError(null);
+            } catch {
+                clearStoredRefreshToken();
+                setAuthSession(null);
+            }
+        })();
+    }, [apiBaseUrl]);
+
+    const socketOptions = useMemo(() => ({
+        accessToken: authSession?.tokens.accessToken ?? null,
+        apiBaseUrl,
+        onAuthExpired: handleSocketAuthExpired
+    }), [authSession?.tokens.accessToken, apiBaseUrl, handleSocketAuthExpired]);
+
     const { sendEvent, queryAnalysis, queryPersonas } = useGameSocket(
         actor,
         handleServerStateUpdate,
         handleAnalysisResult,
-        handlePersonaListResult
+        handlePersonaListResult,
+        socketOptions
     );
 
-    const [playerId] = useState(`player-${Math.floor(Math.random() * 1000)}`);
     const queryAnalysisWithPlayer = useCallback((query: any) => {
         queryAnalysis({ ...query, playerId });
     }, [queryAnalysis, playerId]);
@@ -186,10 +265,9 @@ export default function App() {
     const [singleMode, setSingleMode] = useState<SingleMode>('menu');
     const [botPersonaId, setBotPersonaId] = useState<string>('');
 
-    // Initial connection check effect (mock)
     useEffect(() => {
-        setIsConnected(true);
-    }, []);
+        setIsConnected(Boolean(authSession));
+    }, [authSession]);
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -205,6 +283,201 @@ export default function App() {
         // Warm image cache early so switching to real skin feels instant.
         preloadRealTileAssets().catch(() => undefined);
     }, []);
+
+    useEffect(() => {
+        let cancelled = false;
+
+        const bootstrap = async () => {
+            const storedRefreshToken = loadStoredRefreshToken();
+            if (!storedRefreshToken) {
+                if (!cancelled) {
+                    setAuthSession(null);
+                    setAuthLoading(false);
+                }
+                return;
+            }
+
+            try {
+                const session = await refreshApi(storedRefreshToken, apiBaseUrl);
+                if (cancelled) return;
+                saveStoredRefreshToken(session.tokens.refreshToken);
+                setAuthSession(session);
+                setAuthError(null);
+            } catch {
+                if (cancelled) return;
+                clearStoredRefreshToken();
+                setAuthSession(null);
+            } finally {
+                if (!cancelled) {
+                    setAuthLoading(false);
+                }
+            }
+        };
+
+        void bootstrap();
+        return () => {
+            cancelled = true;
+        };
+    }, [apiBaseUrl]);
+
+    useEffect(() => {
+        if (!authSession) {
+            setProfileNicknameInput('');
+            setProfileBioInput('');
+            return;
+        }
+        setProfileNicknameInput(authSession.profile.nickname);
+        setProfileBioInput(authSession.profile.bio ?? '');
+    }, [authSession]);
+
+    const withAccessTokenRetry = useCallback(async <T,>(run: (accessToken: string) => Promise<T>): Promise<T> => {
+        const currentSession = authSession;
+        if (!currentSession) {
+            throw new ApiError('로그인이 필요합니다.', 401, 'AUTH_REQUIRED');
+        }
+
+        try {
+            return await run(currentSession.tokens.accessToken);
+        } catch (error) {
+            if (!(error instanceof ApiError) || (error.status !== 401 && error.status !== 403)) {
+                throw error;
+            }
+
+            const refreshToken = loadStoredRefreshToken();
+            if (!refreshToken) {
+                clearStoredRefreshToken();
+                setAuthSession(null);
+                throw error;
+            }
+
+            try {
+                const refreshed = await refreshApi(refreshToken, apiBaseUrl);
+                saveStoredRefreshToken(refreshed.tokens.refreshToken);
+                setAuthSession(refreshed);
+                return run(refreshed.tokens.accessToken);
+            } catch {
+                clearStoredRefreshToken();
+                setAuthSession(null);
+                throw error;
+            }
+        }
+    }, [authSession, apiBaseUrl]);
+
+    const refreshStats = useCallback(async () => {
+        const summary = await withAccessTokenRetry((accessToken) => getStatsSummaryApi(accessToken, apiBaseUrl));
+        setStatsSummary(summary);
+    }, [apiBaseUrl, withAccessTokenRetry]);
+
+    useEffect(() => {
+        if (!showProfilePanel || !authSession) {
+            return;
+        }
+
+        let cancelled = false;
+        setStatsLoading(true);
+        setProfileError(null);
+
+        void refreshStats()
+            .catch((error) => {
+                if (cancelled) return;
+                if (error instanceof Error) {
+                    setProfileError(error.message);
+                } else {
+                    setProfileError('전적 정보를 불러오지 못했습니다.');
+                }
+            })
+            .finally(() => {
+                if (!cancelled) {
+                    setStatsLoading(false);
+                }
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [showProfilePanel, authSession, refreshStats]);
+
+    const submitAuthForm = useCallback(async () => {
+        if (!authEmailInput || !authPasswordInput || (authMode === 'register' && !authNicknameInput)) {
+            setAuthError('이메일, 비밀번호, 닉네임을 확인해주세요.');
+            return;
+        }
+
+        setAuthSubmitting(true);
+        setAuthError(null);
+        try {
+            const session = authMode === 'login'
+                ? await loginApi({ email: authEmailInput, password: authPasswordInput }, apiBaseUrl)
+                : await registerApi({ email: authEmailInput, password: authPasswordInput, nickname: authNicknameInput }, apiBaseUrl);
+
+            saveStoredRefreshToken(session.tokens.refreshToken);
+            setAuthSession(session);
+            setAuthNicknameInput('');
+            setAuthPasswordInput('');
+            setAuthLoading(false);
+        } catch (error) {
+            if (error instanceof ApiError) {
+                setAuthError(error.message);
+            } else {
+                setAuthError('로그인 처리 중 오류가 발생했습니다.');
+            }
+        } finally {
+            setAuthSubmitting(false);
+        }
+    }, [apiBaseUrl, authEmailInput, authMode, authNicknameInput, authPasswordInput]);
+
+    const submitProfileUpdate = useCallback(async () => {
+        if (!authSession) return;
+
+        setProfileSaving(true);
+        setProfileError(null);
+        try {
+            const response = await withAccessTokenRetry((accessToken) => updateProfileApi(accessToken, {
+                nickname: profileNicknameInput,
+                bio: profileBioInput || null
+            }, apiBaseUrl));
+            setAuthSession((prev) => {
+                if (!prev) return prev;
+                return {
+                    ...prev,
+                    profile: response.profile
+                };
+            });
+            await refreshStats();
+        } catch (error) {
+            if (error instanceof ApiError) {
+                setProfileError(error.message);
+            } else {
+                setProfileError('프로필 저장 중 오류가 발생했습니다.');
+            }
+        } finally {
+            setProfileSaving(false);
+        }
+    }, [apiBaseUrl, authSession, profileBioInput, profileNicknameInput, refreshStats, withAccessTokenRetry]);
+
+    const handleLogout = useCallback(async () => {
+        const refreshToken = loadStoredRefreshToken();
+        try {
+            await logoutApi(refreshToken, apiBaseUrl);
+        } catch {
+            // No-op: logout should clear local session regardless of server response.
+        }
+
+        clearStoredRefreshToken();
+        setAuthSession(null);
+        setServerState(null);
+        setPlayerProfiles({});
+        setShowProfilePanel(false);
+        setStatsSummary(null);
+        setAuthError(null);
+    }, [apiBaseUrl]);
+
+    const getPlayerName = useCallback((pid: PlayerId) => {
+        if (pid === playerId) {
+            return authSession?.profile.nickname ?? playerProfiles[pid]?.nickname ?? pid;
+        }
+        return playerProfiles[pid]?.nickname ?? pid;
+    }, [authSession?.profile.nickname, playerId, playerProfiles]);
 
     // Helper to abstract state source (Server > Local)
     const context = serverState ? serverState.context : localState.context;
@@ -624,6 +897,91 @@ export default function App() {
         sendEvent({ type: 'RESTART' });
     };
 
+    if (authLoading || !authSession) {
+        return (
+            <TileSkinProvider skin={tileSkin}>
+                <div className="app-noise min-h-screen flex items-center justify-center px-4 py-8 text-white">
+                    <div className="w-full max-w-md glass-panel rounded-3xl p-6 shadow-2xl">
+                        <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-sky-200 to-emerald-300">
+                            17보 마작
+                        </h1>
+                        <p className="mt-2 text-sm text-slate-300">
+                            온라인 플레이를 위해 로그인하세요.
+                        </p>
+                        <div className="mt-4 grid grid-cols-2 gap-2">
+                            <button
+                                onClick={() => setAuthMode('login')}
+                                className={`px-3 py-2 rounded-xl font-semibold border ${authMode === 'login'
+                                    ? 'bg-cyan-700 border-cyan-400 text-white'
+                                    : 'bg-slate-800 border-slate-600 text-slate-300'
+                                    }`}
+                            >
+                                로그인
+                            </button>
+                            <button
+                                onClick={() => setAuthMode('register')}
+                                className={`px-3 py-2 rounded-xl font-semibold border ${authMode === 'register'
+                                    ? 'bg-emerald-700 border-emerald-400 text-white'
+                                    : 'bg-slate-800 border-slate-600 text-slate-300'
+                                    }`}
+                            >
+                                회원가입
+                            </button>
+                        </div>
+                        <form
+                            className="mt-5 flex flex-col gap-3"
+                            onSubmit={(event) => {
+                                event.preventDefault();
+                                void submitAuthForm();
+                            }}
+                        >
+                            <input
+                                type="email"
+                                value={authEmailInput}
+                                onChange={(event) => setAuthEmailInput(event.target.value)}
+                                placeholder="이메일"
+                                className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                            />
+                            <input
+                                type="password"
+                                value={authPasswordInput}
+                                onChange={(event) => setAuthPasswordInput(event.target.value)}
+                                placeholder="비밀번호 (8자 이상)"
+                                className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                            />
+                            {authMode === 'register' && (
+                                <input
+                                    type="text"
+                                    value={authNicknameInput}
+                                    onChange={(event) => setAuthNicknameInput(event.target.value)}
+                                    placeholder="닉네임 (2~20자)"
+                                    className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                />
+                            )}
+                            {authError && (
+                                <div className="text-sm text-rose-300 bg-rose-900/25 border border-rose-500/40 rounded-lg px-3 py-2">
+                                    {authError}
+                                </div>
+                            )}
+                            <button
+                                type="submit"
+                                disabled={authSubmitting || authLoading}
+                                className={`w-full py-3 rounded-2xl font-bold ${authSubmitting || authLoading
+                                    ? 'bg-slate-700 text-slate-300 cursor-not-allowed'
+                                    : authMode === 'login'
+                                        ? 'bg-cyan-600 hover:bg-cyan-500 text-white'
+                                        : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                                    }`}
+                            >
+                                {authSubmitting ? '처리 중...' : authMode === 'login' ? '로그인' : '회원가입'}
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </TileSkinProvider>
+        );
+    }
+
     if (showReplay) {
         return (
             <TileSkinProvider skin={tileSkin}>
@@ -717,6 +1075,90 @@ export default function App() {
                         </div>
                     </div>
                 )}
+                {showProfilePanel && (
+                    <div className="fixed inset-0 z-[82] flex items-center justify-center bg-black/60 px-4">
+                        <div className="w-full max-w-xl rounded-2xl glass-panel p-5 shadow-2xl">
+                            <div className="flex items-center justify-between">
+                                <h3 className="text-lg font-bold text-white">내 프로필</h3>
+                                <button
+                                    onClick={() => setShowProfilePanel(false)}
+                                    className="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm"
+                                >
+                                    닫기
+                                </button>
+                            </div>
+                            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-3">
+                                    <div>
+                                        <div className="text-xs text-slate-400 mb-1">닉네임</div>
+                                        <input
+                                            value={profileNicknameInput}
+                                            onChange={(event) => setProfileNicknameInput(event.target.value)}
+                                            className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                                        />
+                                    </div>
+                                    <div>
+                                        <div className="text-xs text-slate-400 mb-1">소개</div>
+                                        <textarea
+                                            value={profileBioInput}
+                                            onChange={(event) => setProfileBioInput(event.target.value)}
+                                            rows={4}
+                                            className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                                        />
+                                    </div>
+                                    {profileError && (
+                                        <div className="text-xs text-rose-300 bg-rose-900/30 border border-rose-500/40 rounded-lg px-2 py-1.5">
+                                            {profileError}
+                                        </div>
+                                    )}
+                                    <button
+                                        onClick={() => void submitProfileUpdate()}
+                                        disabled={profileSaving}
+                                        className={`w-full py-2 rounded-xl font-semibold ${profileSaving
+                                            ? 'bg-slate-700 text-slate-300 cursor-not-allowed'
+                                            : 'bg-cyan-700 hover:bg-cyan-600 text-white'
+                                            }`}
+                                    >
+                                        {profileSaving ? '저장 중...' : '프로필 저장'}
+                                    </button>
+                                </div>
+                                <div className="rounded-xl bg-slate-900/70 border border-slate-700 p-3">
+                                    <div className="text-sm font-semibold text-slate-200 mb-2">전적 요약</div>
+                                    {statsLoading && <div className="text-sm text-slate-400">불러오는 중...</div>}
+                                    {!statsLoading && statsSummary && (
+                                        <div className="space-y-2 text-sm text-slate-300">
+                                            <div>총 매치: <span className="text-white font-bold">{statsSummary.totalMatches}</span></div>
+                                            <div>승/패: <span className="text-emerald-300 font-bold">{statsSummary.wins}</span> / <span className="text-rose-300 font-bold">{statsSummary.losses}</span></div>
+                                            <div>승률: <span className="text-white font-bold">{(statsSummary.winRate * 100).toFixed(1)}%</span></div>
+                                            <div>총 점수 증감: <span className={`font-bold ${statsSummary.totalScoreDelta >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>{statsSummary.totalScoreDelta >= 0 ? '+' : ''}{statsSummary.totalScoreDelta}</span></div>
+                                            <div className="mt-3">
+                                                <div className="text-xs text-slate-400 mb-1">최근 매치</div>
+                                                <div className="max-h-48 overflow-y-auto space-y-1">
+                                                    {statsSummary.recentMatches.length === 0 && (
+                                                        <div className="text-xs text-slate-500">아직 전적이 없습니다.</div>
+                                                    )}
+                                                    {statsSummary.recentMatches.map((match) => (
+                                                        <div key={match.matchId} className="rounded-lg border border-slate-700 bg-slate-800/80 p-2 text-xs">
+                                                            <div className="flex justify-between">
+                                                                <span>{match.mode.toUpperCase()}</span>
+                                                                <span className={match.isWinner ? 'text-emerald-300' : 'text-rose-300'}>
+                                                                    {match.isWinner ? 'WIN' : 'LOSE'}
+                                                                </span>
+                                                            </div>
+                                                            <div className="text-slate-400">
+                                                                점수 {match.finalScore.toLocaleString()} ({match.scoreDelta >= 0 ? '+' : ''}{match.scoreDelta.toLocaleString()})
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
                 <YakuInfoLayer open={showYakuInfo} onClose={() => setShowYakuInfo(false)} />
                 {/* Lobby / Match Start / Hand Build Phases - Keep as overlays or separate views */}
                 {/* If gameLoop or matchEnd, we can use GameBoard as base? 
@@ -732,6 +1174,8 @@ export default function App() {
                             <div>
                                 <h1 className="text-3xl sm:text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-sky-200 to-emerald-300">17보 마작</h1>
                                 <div className="text-xs text-gray-400 mt-1 space-x-2">
+                                    <span>닉네임: <span className="text-white font-semibold">{authSession.profile.nickname}</span></span>
+                                    <span>•</span>
                                     <span>ID: <span className="text-white font-mono">{playerId}</span></span>
                                     <span>•</span>
                                     <span className={isConnected ? "text-green-500" : "text-red-500"}>
@@ -740,12 +1184,26 @@ export default function App() {
                                 </div>
                             </div>
                             <div className="text-right relative">
-                                <button
-                                    onClick={() => setShowOptions((prev) => !prev)}
-                                    className="px-3 py-1.5 rounded-xl border border-slate-500/80 bg-slate-800/80 hover:bg-slate-700 text-sm font-semibold"
-                                >
-                                    옵션
-                                </button>
+                                <div className="flex items-center justify-end gap-2">
+                                    <button
+                                        onClick={() => setShowProfilePanel((prev) => !prev)}
+                                        className="px-3 py-1.5 rounded-xl border border-cyan-500/80 bg-cyan-900/60 hover:bg-cyan-800 text-sm font-semibold"
+                                    >
+                                        프로필
+                                    </button>
+                                    <button
+                                        onClick={() => setShowOptions((prev) => !prev)}
+                                        className="px-3 py-1.5 rounded-xl border border-slate-500/80 bg-slate-800/80 hover:bg-slate-700 text-sm font-semibold"
+                                    >
+                                        옵션
+                                    </button>
+                                    <button
+                                        onClick={() => void handleLogout()}
+                                        className="px-3 py-1.5 rounded-xl border border-rose-500/80 bg-rose-900/50 hover:bg-rose-800 text-sm font-semibold"
+                                    >
+                                        로그아웃
+                                    </button>
+                                </div>
                                 {showOptions && (
                                     <div className="absolute right-0 mt-2 w-64 rounded-2xl glass-panel p-3 shadow-2xl z-[70] text-left">
                                         <div className="text-xs text-slate-400 mb-2">실행 옵션</div>
@@ -791,10 +1249,10 @@ export default function App() {
                                     <div className="text-slate-300 mb-1">선결정 주사위</div>
                                     <div className="text-yellow-300">
                                         {context.players.map((p: PlayerId) => (
-                                            <span key={p} className="ml-2">{p === playerId ? 'YOU' : 'OPP'}: {context.dealerDice?.[p] ?? '-'}</span>
+                                            <span key={p} className="ml-2">{getPlayerName(p)}: {context.dealerDice?.[p] ?? '-'}</span>
                                         ))}
                                     </div>
-                                    <div className="text-amber-300 mt-1">선: {context.dealer === playerId ? 'YOU' : context.dealer || '-'}</div>
+                                    <div className="text-amber-300 mt-1">선: {context.dealer ? getPlayerName(context.dealer) : '-'}</div>
                                 </div>
                             )}
                         </header>
@@ -932,7 +1390,7 @@ export default function App() {
                                                             <li key={p} className="flex items-center gap-2 p-2 bg-slate-800/80 rounded-xl">
                                                                 <div className="w-2 h-2 rounded-full bg-green-500"></div>
                                                                 <span className={p === playerId ? "text-yellow-300 font-bold" : "text-gray-300"}>
-                                                                    {p} {p === playerId && "(YOU)"}
+                                                                    {getPlayerName(p)} {p === playerId && "(YOU)"}
                                                                 </span>
                                                             </li>
                                                         ))}
@@ -1000,7 +1458,7 @@ export default function App() {
                                 <div className="mb-6">
                                     <h2 className="text-2xl font-bold text-white">도라 선택 단계</h2>
                                     <p className="text-gray-400 text-sm">
-                                        선({context.dealer === playerId ? 'YOU' : context.dealer})이 패산에서 도라 표시패를 선택합니다.
+                                        선({context.dealer ? getPlayerName(context.dealer) : '-'})이 패산에서 도라 표시패를 선택합니다.
                                     </p>
                                 </div>
 
@@ -1185,7 +1643,7 @@ export default function App() {
                                                             }`}
                                                     >
                                                         <div className="flex items-center justify-between">
-                                                            <div className="font-bold text-slate-100">{summary.playerId}{summary.playerId === playerId ? ' (YOU)' : ''}</div>
+                                                            <div className="font-bold text-slate-100">{getPlayerName(summary.playerId)}{summary.playerId === playerId ? ' (YOU)' : ''}</div>
                                                             <div className={`text-xs font-bold ${summary.confirmed ? 'text-emerald-300' : 'text-amber-300'}`}>
                                                                 {summary.confirmed ? '확인 완료' : summary.isBot ? '자동 확인 대기' : '확인 대기'}
                                                             </div>
@@ -1357,7 +1815,7 @@ export default function App() {
                                                         >
                                                             <div className="flex items-center justify-between mb-2">
                                                                 <span className="font-bold text-slate-100">
-                                                                    {pid}{pid === playerId ? ' (YOU)' : ''}
+                                                                    {getPlayerName(pid)}{pid === playerId ? ' (YOU)' : ''}
                                                                 </span>
                                                                 <span className="text-sm font-semibold text-slate-300">
                                                                     {score.toLocaleString()}점

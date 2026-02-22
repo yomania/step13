@@ -1,0 +1,91 @@
+generator client {
+    provider = "prisma-client-js"
+}
+
+datasource db {
+    provider = "postgresql"
+    url      = env("DATABASE_URL")
+}
+
+model User {
+    id           String         @id @default(uuid())
+    email        String         @unique
+    passwordHash String
+    createdAt    DateTime       @default(now())
+    updatedAt    DateTime       @updatedAt
+    lastLoginAt  DateTime?
+    profile      Profile?
+    refreshTokens RefreshToken[]
+    wsTickets    WsTicket[]
+    matchesWon   MatchSummary[] @relation("WinnerUser")
+    matchParticipants MatchParticipantSummary[]
+}
+
+model Profile {
+    userId    String   @id
+    nickname  String   @unique
+    avatarKey String   @default("default")
+    bio       String?
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+    user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model RefreshToken {
+    id            String    @id @default(uuid())
+    userId        String
+    tokenHash     String    @unique
+    expiresAt     DateTime
+    revokedAt     DateTime?
+    createdAt     DateTime  @default(now())
+    rotatedFromId String?
+    user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    @@index([userId])
+    @@index([expiresAt])
+}
+
+model WsTicket {
+    id         String    @id @default(uuid())
+    userId     String
+    ticketHash String    @unique
+    expiresAt  DateTime
+    usedAt     DateTime?
+    createdAt  DateTime  @default(now())
+    user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    @@index([userId])
+    @@index([expiresAt])
+}
+
+model MatchSummary {
+    id             String                     @id @default(uuid())
+    mode           String
+    roomId         String
+    endedAt        DateTime
+    totalRounds    Int
+    winnerUserId   String?
+    createdAt      DateTime                   @default(now())
+    winnerUser     User?                      @relation("WinnerUser", fields: [winnerUserId], references: [id])
+    participants   MatchParticipantSummary[]
+
+    @@index([endedAt])
+    @@index([winnerUserId])
+}
+
+model MatchParticipantSummary {
+    id           String      @id @default(uuid())
+    matchId      String
+    userId       String?
+    playerId     String
+    finalScore   Int
+    scoreDelta   Int
+    isWinner     Boolean
+    opponentType String
+    createdAt    DateTime    @default(now())
+    match        MatchSummary @relation(fields: [matchId], references: [id], onDelete: Cascade)
+    user         User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+    @@index([matchId])
+    @@index([userId])
+}

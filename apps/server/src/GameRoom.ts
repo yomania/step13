@@ -6,35 +6,59 @@ import { WebSocket } from 'ws';
 import { Bot } from './Bot';
 import { calculateScore, calculateShanten } from '@step13/scoring';
 import { getBotPersonaProfile, isBotPersonaProfileId, listBotPersonaProfiles } from '@step13/bot';
+import { MatchSummaryInput } from './auth/store';
 
 const HIDDEN_TILE: Tile = { suit: 'z', rank: 1, isRed: false, id: 'HIDDEN' };
 
 type MachineLogic = ReturnType<typeof createGameMachine>;
 
+type PlayerProfileSnapshot = {
+    userId: string | null;
+    nickname: string;
+    avatarKey: string;
+};
+
+type GameRoomOptions = {
+    onMatchEnded?: (summary: MatchSummaryInput) => Promise<void> | void;
+};
+
 export class GameRoom {
     private machineLogic: MachineLogic;
     private machine;
     private clients: Map<PlayerId, WebSocket> = new Map();
+    private playerProfiles: Map<PlayerId, PlayerProfileSnapshot> = new Map();
+    private baselineScoresByPlayer: Map<PlayerId, number> = new Map();
     private bots: Bot[] = [];
     private ruleset: RulesetName;
+    private onMatchEnded?: (summary: MatchSummaryInput) => Promise<void> | void;
+    private previousSnapshotValue: unknown = null;
+    private matchSummaryRecorded = false;
 
     public roomId: string;
 
-    constructor(roomId: string, ruleset: RulesetName = 'classic') {
+    constructor(roomId: string, ruleset: RulesetName = 'classic', options: GameRoomOptions = {}) {
         this.roomId = roomId;
         this.ruleset = ruleset;
+        this.onMatchEnded = options.onMatchEnded;
         this.machineLogic = createGameMachine({ ruleset });
         this.machine = createActor(this.machineLogic);
         this.machine.start();
 
         // Subscribe to state changes and broadcast to all clients
         this.machine.subscribe((snapshot) => {
+            this.handleSnapshotLifecycle(snapshot);
             this.broadcastState(snapshot);
         });
     }
 
-    public join(playerId: PlayerId, socket: WebSocket) {
+    public join(playerId: PlayerId, socket: WebSocket, profile?: Partial<PlayerProfileSnapshot>) {
         this.clients.set(playerId, socket);
+        const existing = this.playerProfiles.get(playerId);
+        this.playerProfiles.set(playerId, {
+            userId: profile?.userId ?? existing?.userId ?? null,
+            nickname: profile?.nickname ?? existing?.nickname ?? playerId,
+            avatarKey: profile?.avatarKey ?? existing?.avatarKey ?? 'default'
+        });
 
         // Forward JOIN to machine
         this.machine.send({ type: 'JOIN', playerId });
@@ -53,6 +77,11 @@ export class GameRoom {
         this.bots.push(bot);
 
         const resolved = getBotPersonaProfile(normalizedPersonaId);
+        this.playerProfiles.set(botId, {
+            userId: null,
+            nickname: resolved.name,
+            avatarKey: 'bot-default'
+        });
         console.log(`Adding Bot: ${botId} (${resolved.difficulty}, persona=${resolved.id})`);
         this.machine.send({ type: 'JOIN', playerId: botId });
     }
@@ -61,6 +90,9 @@ export class GameRoom {
         if (event.type === 'ADD_BOT') {
             this.addBot(this.normalizePersonaId(event?.personaId));
             return;
+        }
+        if (event.type === 'LEAVE') {
+            this.playerProfiles.delete(playerId);
         }
 
         // Translation for Hidden Wall Tiles (Fog of War)
@@ -306,9 +338,113 @@ export class GameRoom {
                 const sanitizedState = this.sanitizeState(snapshot, playerId);
                 ws.send(JSON.stringify({
                     type: 'UPDATE',
-                    state: sanitizedState
+                    state: sanitizedState,
+                    playerProfiles: this.getPlayerProfileMapForSnapshot(snapshot)
                 }));
             }
         });
     }
+
+    private getPlayerProfileMapForSnapshot(snapshot: SnapshotFrom<MachineLogic>): Record<PlayerId, { nickname: string; avatarKey: string }> {
+        const result: Record<PlayerId, { nickname: string; avatarKey: string }> = {} as Record<PlayerId, { nickname: string; avatarKey: string }>;
+        const players = snapshot.context.players ?? [];
+        players.forEach((playerId) => {
+            const profile = this.playerProfiles.get(playerId);
+            result[playerId] = {
+                nickname: profile?.nickname ?? playerId,
+                avatarKey: profile?.avatarKey ?? 'default'
+            };
+        });
+        return result;
+    }
+
+    private handleSnapshotLifecycle(snapshot: SnapshotFrom<MachineLogic>) {
+        const currentValue = snapshot.value;
+        if (isStateValue(currentValue, 'matchStart') && !isStateValue(this.previousSnapshotValue, 'matchStart')) {
+            if (this.baselineScoresByPlayer.size === 0) {
+                const scores = snapshot.context.scores ?? {};
+                Object.keys(scores).forEach((playerId) => {
+                    this.baselineScoresByPlayer.set(playerId, scores[playerId] ?? 0);
+                });
+            }
+            this.matchSummaryRecorded = false;
+        }
+
+        if (isStateValue(currentValue, 'matchEnd') && !isStateValue(this.previousSnapshotValue, 'matchEnd')) {
+            if (!this.matchSummaryRecorded) {
+                this.matchSummaryRecorded = true;
+                void this.persistMatchSummary(snapshot);
+            }
+        }
+
+        if (isStateValue(currentValue, 'idle') && isStateValue(this.previousSnapshotValue, 'matchEnd')) {
+            this.baselineScoresByPlayer.clear();
+            this.matchSummaryRecorded = false;
+        }
+
+        this.previousSnapshotValue = currentValue;
+    }
+
+    private async persistMatchSummary(snapshot: SnapshotFrom<MachineLogic>) {
+        if (!this.onMatchEnded) {
+            return;
+        }
+
+        const context = snapshot.context;
+        const players = context.players ?? [];
+        if (players.length === 0) {
+            return;
+        }
+
+        const mode: MatchSummaryInput['mode'] = players.some((playerId) => playerId.startsWith('bot-')) ? 'ai' : 'pvp';
+        const winnerUserId = context.winner ? parseUserIdFromPlayerId(context.winner) : null;
+
+        const participants = players.map((playerId) => {
+            const baselineScore = this.baselineScoresByPlayer.get(playerId) ?? 60000;
+            const finalScore = context.scores?.[playerId] ?? baselineScore;
+            const hasBotOpponent = players.some((otherId) => otherId !== playerId && otherId.startsWith('bot-'));
+
+            return {
+                userId: parseUserIdFromPlayerId(playerId),
+                playerId,
+                finalScore,
+                scoreDelta: finalScore - baselineScore,
+                isWinner: context.winner === playerId,
+                opponentType: hasBotOpponent ? 'bot' : 'user'
+            } as MatchSummaryInput['participants'][number];
+        });
+
+        const summary: MatchSummaryInput = {
+            mode,
+            roomId: this.roomId,
+            endedAt: new Date(),
+            totalRounds: Math.max(1, context.matchHandIndex ?? 1),
+            winnerUserId,
+            participants
+        };
+
+        try {
+            await this.onMatchEnded(summary);
+        } catch (error) {
+            console.error('Failed to persist match summary:', error);
+        }
+    }
+}
+
+function parseUserIdFromPlayerId(playerId: string): string | null {
+    if (!playerId.startsWith('user:')) {
+        return null;
+    }
+    const userId = playerId.slice('user:'.length).trim();
+    return userId.length > 0 ? userId : null;
+}
+
+function isStateValue(value: unknown, expected: string): boolean {
+    if (typeof value === 'string') {
+        return value === expected;
+    }
+    if (value && typeof value === 'object') {
+        return Object.prototype.hasOwnProperty.call(value, expected);
+    }
+    return false;
 }

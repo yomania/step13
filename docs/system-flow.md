@@ -1,6 +1,6 @@
 # Step13 시스템 흐름 (System Flow)
 
-기준일: `2026-02-18`
+기준일: `2026-02-20`
 
 ## 1. 매치 수명주기
 
@@ -23,11 +23,17 @@ stateDiagram-v2
 
 ```mermaid
 sequenceDiagram
-    participant C as Client
+    participant C as Client(Web)
+    participant A as Auth API
     participant S as GameRoom
     participant M as core machine
 
-    C->>S: JOIN
+    C->>A: POST /auth/login
+    A-->>C: access+refresh
+    C->>A: POST /auth/ws-ticket
+    A-->>C: ws ticket(30s, one-time)
+    C->>S: WS connect ?ticket=...
+    C->>S: JOIN (playerId 없음)
     C->>S: START_MATCH
     S->>M: START_MATCH
     M-->>S: UPDATE(matchStart -> doraSelect)
@@ -119,6 +125,13 @@ sequenceDiagram
 - `apps/web/src/App.tsx`
 - `apps/server/src/GameRoom.ts`
 
+## 5.5 인증/토큰 갱신 흐름
+
+1. access 만료 또는 401 수신
+2. 웹이 `POST /auth/refresh` 호출
+3. 서버가 refresh rotation 후 새 토큰 발급
+4. 웹은 새 refresh를 저장하고 이후 요청/소켓 티켓 발급에 재사용
+
 ## 6. AI 대전 종료/재시작 흐름
 
 `App.tsx`에서 AI 대전 중 종료 메뉴 제공:
@@ -140,6 +153,8 @@ sequenceDiagram
 
 ## 8. 운영 리스크 체크포인트
 
+- refresh token은 재사용 시 거부되어야 함(rotation)
+- ws ticket은 단일 사용 + 짧은 TTL을 유지해야 함
 - 비동기 질의 응답은 `queryId`로 반드시 상관관계 매칭
 - `dealtTiles`/라운드 변경 시 UI 상태 초기화는 실제 데이터 시그니처 변화로만 수행
 - 소켓/타이머 구독은 effect cleanup 보장

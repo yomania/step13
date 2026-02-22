@@ -1,6 +1,6 @@
 # Step13 시스템 아키텍처 (System Architecture)
 
-기준일: `2026-02-18`
+기준일: `2026-02-20`
 
 ## 1. 모노레포 구성
 
@@ -18,12 +18,16 @@
 
 ```mermaid
 flowchart LR
-    UI[apps/web\nReact/Vite] -->|JOIN, START_MATCH, QUERY_*| WS[apps/server\nGameRoom]
+    UI[apps/web\nReact/Vite] -->|register/login/refresh| AUTH[apps/server\nAuthService]
+    UI -->|ws-ticket 발급| AUTH
+    UI -->|JOIN, START_MATCH, QUERY_*| WS[apps/server\nGameRoom]
     WS -->|GameEvents| CORE[packages/core\ncreateGameMachine]
     CORE -->|snapshot| WS
     WS -->|UPDATE/ANALYSIS_RESULT| UI
     WS --- BOT[Server Bot Actor\napps/server/src/Bot.ts]
     BOT --> CORE
+    AUTH --- STORE[(InMemoryAuthStore\nPrisma schema 준비)]
+    WS -->|MATCH_END 요약 기록| AUTH
 ```
 
 핵심 원칙:
@@ -58,14 +62,21 @@ flowchart LR
 ## 4. Server 레이어
 
 중심 파일: `apps/server/src/GameRoom.ts`
+인증 파일: `apps/server/src/auth/*`, `apps/server/src/index.ts`
 
 책임:
 
+- HTTP 인증/프로필/전적 API
+  - `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`
+  - `POST /auth/ws-ticket`, `GET /me`, `PATCH /me/profile`, `GET /me/stats/summary`
+- WS 핸드셰이크 전 티켓 검증(1회용, 짧은 TTL)
+- 인증 사용자 -> 게임 `playerId(user:{userId})` 서버 강제 바인딩
 - 소켓 바인딩 플레이어 검증(`JOIN` 선행, playerId 고정)
 - 이벤트 전달 전 최소 검증(타인 playerId 위조 차단)
 - `QUERY_ANALYSIS`, `QUERY_PERSONAS` 처리
 - 봇 생명주기(`ADD_BOT`) 및 페르소나 정규화
 - 상태 브로드캐스트 시 포그오브워 마스킹 적용
+- `MATCH_END` 시 매치 요약 전적 저장
 
 마스킹 정책(클라이언트별 sanitize):
 
@@ -80,6 +91,9 @@ flowchart LR
 
 역할:
 
+- 로그인/회원가입/토큰 갱신 게이트
+- 프로필 편집(닉네임/소개) 및 전적 요약 UI
+- 소켓 연결 전 `POST /auth/ws-ticket` 수행
 - 메인 모드: 매치 모드 / 싱글 미니게임 모드
 - `useGameSocket`에서 reconnect 시 `JOIN` 재바인딩 + pending 이벤트 재전송
 - 분석 응답은 `queryId` 상관관계로 소비(오래된 응답 무시)
@@ -94,6 +108,14 @@ flowchart LR
 - 응답: `ANALYSIS_RESULT { queryId, ... }`
 
 `queryId`는 반드시 클라이언트에서 발급/매칭해야 하며, UI는 요청-응답 1:1로 소비한다.
+
+## 6.5 인증 세션 경로
+
+1. 사용자가 로그인/회원가입 (`/auth/login` 또는 `/auth/register`)
+2. 서버가 `accessToken + refreshToken` 발급
+3. 웹은 WS 연결 직전 `/auth/ws-ticket` 호출
+4. `/ws?ticket=...`로 연결, 서버는 티켓 1회 소비 후 사용자 바인딩
+5. WS 이벤트는 사용자 바인딩 기준으로 `playerId`를 서버가 강제
 
 ## 7. 테스트 아키텍처
 

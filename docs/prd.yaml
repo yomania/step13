@@ -1,6 +1,6 @@
 meta:
-  version: "2026-02-18-sync"
-  last_synced: "2026-02-18"
+  version: "2026-02-20-auth-profile-sync"
+  last_synced: "2026-02-20"
   source_of_truth:
     rules: "packages/core/src/rules.ts"
     machine: "packages/core/src/machine.ts"
@@ -14,6 +14,11 @@ product:
     transport: "WebSocket"
     server_authoritative: true
     default_room_id: "lobby"
+    authentication:
+      required: true
+      account_id: "email"
+      session: "access+refresh jwt"
+      ws_bootstrap: "POST /auth/ws-ticket -> ws://.../ws?ticket=..."
   modes:
     - id: "match_pvp"
       status: "implemented"
@@ -88,8 +93,17 @@ state_machine:
     bot_auto_confirm: true
 
 api_contract:
+  http_auth_profile:
+    - "POST /auth/register"
+    - "POST /auth/login"
+    - "POST /auth/refresh"
+    - "POST /auth/logout"
+    - "POST /auth/ws-ticket"
+    - "GET /me"
+    - "PATCH /me/profile"
+    - "GET /me/stats/summary"
   client_to_server:
-    - "JOIN"
+    - "JOIN (no payload playerId; server binds by authenticated user)"
     - "START_MATCH"
     - "ADD_BOT"
     - "SELECT_DORA"
@@ -106,6 +120,7 @@ api_contract:
     - "ANALYSIS_RESULT"
     - "PERSONA_LIST_RESULT"
     - "REJECTED_EVENT"
+    - "UPDATE.playerProfiles (playerId->nickname/avatarKey)"
   analysis_query_types:
     - "SHANTEN"
     - "SCORE"
@@ -117,6 +132,12 @@ api_contract:
     stale_response_should_be_ignored_by_client: true
 
 security_visibility:
+  auth:
+    access_token_ttl_sec: 900
+    refresh_token_ttl_sec: 2592000
+    refresh_rotation: true
+    ws_ticket_ttl_sec: 30
+    ws_ticket_single_use: true
   fog_of_war:
     wall:
       policy: "selected dora only visible, others masked as wall-{index}"
@@ -148,6 +169,22 @@ ai:
     - "medium_flush"
     - "hard_defensive"
     - "hard_value"
+
+profile_and_stats:
+  profile:
+    fields:
+      - "nickname (unique)"
+      - "avatarKey"
+      - "bio"
+  stats_v1:
+    scope: "match summary only"
+    recent_window: 10
+    stores:
+      - "mode (pvp/ai)"
+      - "winner"
+      - "finalScore"
+      - "scoreDelta"
+      - "totalRounds"
 
 non_goals_current:
   - "tsumo win flow"

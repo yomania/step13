@@ -130,4 +130,92 @@ declare const GameActionSchema: z.ZodObject<{
 }>;
 type GameAction = z.infer<typeof GameActionSchema>;
 
-export { type ActionType, ActionTypeSchema, type GameAction, GameActionSchema, type GamePhase, GamePhaseSchema, type HandSetup, HandSetupSchema, type PlayerId, PlayerIdSchema, type Rank, RankSchema, type Suit, SuitSchema, type Tile, TileSchema, type Wind, WindSchema };
+type ApiErrorDTO = {
+    code: string;
+    message: string;
+    details?: string;
+};
+type AuthUserDTO = {
+    id: string;
+    email: string;
+    createdAt: string;
+};
+type PublicProfileDTO = {
+    userId: string;
+    playerId: string;
+    nickname: string;
+    avatarKey: string;
+    bio: string | null;
+    createdAt: string;
+    updatedAt: string;
+};
+type AuthTokensDTO = {
+    accessToken: string;
+    refreshToken: string;
+    accessTokenExpiresAt: string;
+    refreshTokenExpiresAt: string;
+};
+type AuthSessionDTO = {
+    user: AuthUserDTO;
+    profile: PublicProfileDTO;
+    tokens: AuthTokensDTO;
+};
+type WsAuthTicketDTO = {
+    ticket: string;
+    expiresAt: string;
+};
+type UpdateProfileInputDTO = {
+    nickname?: string;
+    avatarKey?: string;
+    bio?: string | null;
+};
+type StatsRecentOpponentDTO = {
+    playerId: string;
+    userId: string | null;
+    nickname: string | null;
+    opponentType: 'user' | 'bot';
+    finalScore: number;
+    isWinner: boolean;
+};
+type StatsRecentMatchDTO = {
+    matchId: string;
+    mode: 'pvp' | 'ai';
+    roomId: string;
+    endedAt: string;
+    totalRounds: number;
+    finalScore: number;
+    scoreDelta: number;
+    isWinner: boolean;
+    opponents: StatsRecentOpponentDTO[];
+};
+type StatsSummaryDTO = {
+    totalMatches: number;
+    wins: number;
+    losses: number;
+    winRate: number;
+    totalScoreDelta: number;
+    recentMatches: StatsRecentMatchDTO[];
+};
+
+type PlayerProfileMapDTO = Record<PlayerId, Pick<PublicProfileDTO, 'nickname' | 'avatarKey'>>;
+type UpdateEnvelopeDTO = {
+    type: 'UPDATE';
+    state: any;
+    playerProfiles?: PlayerProfileMapDTO;
+};
+type AnalysisResultEnvelopeDTO = {
+    type: 'ANALYSIS_RESULT';
+    queryId?: string;
+    [key: string]: unknown;
+};
+type PersonaListEnvelopeDTO = {
+    type: 'PERSONA_LIST_RESULT';
+    personas: unknown[];
+};
+type RejectedEventEnvelopeDTO = {
+    type: 'REJECTED_EVENT';
+    reason: string;
+};
+type ServerWsEnvelopeDTO = UpdateEnvelopeDTO | AnalysisResultEnvelopeDTO | PersonaListEnvelopeDTO | RejectedEventEnvelopeDTO;
+
+export { type ActionType, ActionTypeSchema, type AnalysisResultEnvelopeDTO, type ApiErrorDTO, type AuthSessionDTO, type AuthTokensDTO, type AuthUserDTO, type GameAction, GameActionSchema, type GamePhase, GamePhaseSchema, type HandSetup, HandSetupSchema, type PersonaListEnvelopeDTO, type PlayerId, PlayerIdSchema, type PlayerProfileMapDTO, type PublicProfileDTO, type Rank, RankSchema, type RejectedEventEnvelopeDTO, type ServerWsEnvelopeDTO, type StatsRecentMatchDTO, type StatsRecentOpponentDTO, type StatsSummaryDTO, type Suit, SuitSchema, type Tile, TileSchema, type UpdateEnvelopeDTO, type UpdateProfileInputDTO, type Wind, WindSchema, type WsAuthTicketDTO };
