@@ -70,7 +70,7 @@ export function GameBoard({ context, myPlayerId, children }: GameBoardProps) {
     const isLowTurnTime = turnTimeRemainingSec <= 3;
 
     return (
-        <div className="relative flex flex-col h-screen max-h-screen text-white sm:px-5 overflow-hidden">
+        <div className="relative flex flex-col min-h-screen text-white sm:px-5 overflow-y-auto thin-scrollbar">
             <div className="pointer-events-none absolute -top-40 -left-40 w-96 h-96 rounded-full bg-slate-800/20 blur-[100px]" />
             <div className="pointer-events-none absolute -bottom-40 -right-40 w-96 h-96 rounded-full bg-slate-800/20 blur-[100px]" />
             <header className="z-10 p-3 sm:p-4 surface-panel sm:glass-panel rounded-none sm:rounded-2xl flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center mb-4 border-b sm:border border-slate-700/50 shadow-md">
@@ -91,7 +91,7 @@ export function GameBoard({ context, myPlayerId, children }: GameBoardProps) {
             </header>
 
             {/* Battle Area */}
-            <div className="z-10 flex-1 flex flex-col items-center justify-center relative w-full h-full sm:aspect-video sm:h-auto sm:max-w-6xl mx-auto glass-panel rounded-none sm:rounded-3xl p-3 sm:p-5 overflow-hidden">
+            <div className="z-10 flex-1 flex flex-col items-center justify-center relative w-full h-auto sm:max-w-6xl mx-auto glass-panel rounded-none sm:rounded-3xl p-3 sm:p-5 overflow-y-auto thin-scrollbar mb-8">
 
                 {/* Opponent Area (Top) */}
                 {otherPlayerId && (

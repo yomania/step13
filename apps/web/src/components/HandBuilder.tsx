@@ -498,7 +498,7 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
                 </div>
             </div>
 
-            <div className="grid grid-cols-8 sm:grid-cols-10 md:grid-cols-12 gap-1 p-2 surface-panel rounded-2xl overflow-y-auto max-h-[400px] thin-scrollbar">
+            <div className="grid grid-cols-8 sm:grid-cols-10 md:grid-cols-12 gap-1 p-3 pb-8 surface-panel rounded-2xl overflow-y-auto max-h-[400px] thin-scrollbar">
                 {sortedTilesWithIndices.map(({ tile, index }) => (
                     <div key={index} className="transform scale-90">
                         <Tile

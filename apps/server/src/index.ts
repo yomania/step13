@@ -3,7 +3,8 @@ import websocket from '@fastify/websocket';
 import cors from '@fastify/cors';
 import { GameRoom } from './GameRoom';
 import { RulesetName } from '@step13/core';
-import { AuthError, AuthService, InMemoryAuthStore } from './auth';
+import { AuthError, AuthService, PrismaAuthStore } from './auth';
+import { PrismaClient } from '@prisma/client';
 import { UpdateProfileInputDTO } from '@step13/proto';
 
 const ACCESS_TOKEN_TTL_SEC = 15 * 60;
@@ -15,8 +16,17 @@ const main = async () => {
         logger: true
     });
 
-    const authStore = new InMemoryAuthStore();
-    const jwtSecret = process.env.JWT_SECRET?.trim() || 'dev-insecure-jwt-secret-change-me';
+    const prisma = new PrismaClient();
+    const authStore = new PrismaAuthStore(prisma);
+    const isProduction = process.env.NODE_ENV === 'production';
+    const jwtSecretFromEnv = process.env.JWT_SECRET?.trim();
+    if (!jwtSecretFromEnv) {
+        if (isProduction) {
+            throw new Error('JWT_SECRET must be set in production.');
+        }
+        fastify.log.warn('JWT_SECRET not set. Using insecure development default.');
+    }
+    const jwtSecret = jwtSecretFromEnv || 'dev-insecure-jwt-secret-change-me';
     const authService = new AuthService({
         store: authStore,
         jwtSecret,
@@ -48,8 +58,28 @@ const main = async () => {
         void shutdown('SIGTERM');
     });
 
+    const corsOriginsFromEnv = process.env.CORS_ORIGINS?.split(',').map((origin) => origin.trim()).filter(Boolean) ?? [];
+    const defaultDevOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173'];
+    const allowedCorsOrigins = corsOriginsFromEnv.length > 0 ? corsOriginsFromEnv : defaultDevOrigins;
+    if (allowedCorsOrigins.includes('*')) {
+        if (isProduction) {
+            throw new Error('CORS_ORIGINS must not include "*" in production.');
+        }
+        fastify.log.warn('CORS_ORIGINS includes "*"; allowing all origins in development.');
+    }
+
     await fastify.register(cors, {
-        origin: '*'
+        origin: (origin, callback) => {
+            if (!origin) {
+                callback(null, true);
+                return;
+            }
+            if (allowedCorsOrigins.includes('*') || allowedCorsOrigins.includes(origin)) {
+                callback(null, true);
+                return;
+            }
+            callback(new Error(`CORS origin not allowed: ${origin}`), false);
+        }
     });
 
     await fastify.register(websocket);

@@ -1169,7 +1169,7 @@ export default function App() {
               */}
 
                 {(matches('idle') || matches('matchStart') || matches('doraSelect') || matches('handBuild')) ? (
-                    <div className="w-full h-full max-h-screen sm:aspect-video sm:h-auto sm:max-w-5xl glass-panel rounded-none sm:rounded-3xl p-4 sm:p-6 flex flex-col relative m-0 sm:m-4 z-10 overflow-hidden">
+                    <div className="w-full h-full min-h-screen sm:min-h-0 sm:h-auto sm:max-w-5xl glass-panel rounded-none sm:rounded-3xl p-4 sm:p-6 flex flex-col relative m-0 sm:m-4 z-10 overflow-y-auto thin-scrollbar">
                         <header className="mb-4 text-center w-full flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-end border-b border-slate-700/80 pb-4">
                             <div>
                                 <h1 className="text-3xl sm:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-500 via-amber-300 to-yellow-600 drop-shadow-sm tracking-tight text-stroke-sm">17보 마작</h1>
