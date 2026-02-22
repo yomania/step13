@@ -110,6 +110,25 @@ describe('gameMachine full cycle and edge cases', () => {
         expect(snapshot.context.eventLog[snapshot.context.eventLog.length - 1]).toEqual({ type: 'JOIN', playerId: 'p1' });
     });
 
+    it('ends the match when a player leaves during an active match', { timeout: 20000 }, async () => {
+        vi.useFakeTimers();
+
+        const actor = createActor(gameMachine);
+        actor.start();
+
+        actor.send({ type: 'JOIN', playerId: 'p1' });
+        actor.send({ type: 'JOIN', playerId: 'p2' });
+        actor.send({ type: 'START_MATCH', seed: 11 });
+
+        await advance(1);
+        actor.send({ type: 'LEAVE', playerId: 'p2' });
+
+        const snapshot = actor.getSnapshot();
+        expect(snapshot.value).toBe('matchEnd');
+        expect(snapshot.context.winner).toBe('p1');
+        expect(snapshot.context.eventLog[snapshot.context.eventLog.length - 1]).toEqual({ type: 'MATCH_END', winner: 'p1' });
+    });
+
     it('falls back to first wall tile when dealer sends an invalid dora tile id', { timeout: 20000 }, async () => {
         vi.useFakeTimers();
 

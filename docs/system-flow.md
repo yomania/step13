@@ -33,7 +33,7 @@ sequenceDiagram
     C->>A: POST /auth/ws-ticket
     A-->>C: ws ticket(30s, one-time)
     C->>S: WS connect ?ticket=...
-    C->>S: JOIN (playerId 없음)
+    C->>S: JOIN (playerId 없음, roomId는 ws 쿼리로 선택)
     C->>S: START_MATCH
     S->>M: START_MATCH
     M-->>S: UPDATE(matchStart -> doraSelect)
@@ -158,3 +158,13 @@ sequenceDiagram
 - 비동기 질의 응답은 `queryId`로 반드시 상관관계 매칭
 - `dealtTiles`/라운드 변경 시 UI 상태 초기화는 실제 데이터 시그니처 변화로만 수행
 - 소켓/타이머 구독은 effect cleanup 보장
+
+## 8.5 매치 중 이탈 처리
+
+- 매치 진행 중 `LEAVE` 발생 시 즉시 `matchEnd`로 전환
+- 남은 플레이어가 1명인 경우 해당 플레이어를 승자로 기록
+
+## 9. 룸 생성 흐름
+
+- 룸 생성: `POST /rooms` -> `roomId` 반환
+- 룸 접속: `ws://.../ws?ticket=...&roomId=...` (비기본 룸은 사전 생성 필요)

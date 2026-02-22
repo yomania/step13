@@ -20,6 +20,7 @@ type PlayerProfileSnapshot = {
 
 type GameRoomOptions = {
     onMatchEnded?: (summary: MatchSummaryInput) => Promise<void> | void;
+    onPlayerLeft?: (userId: string) => Promise<void> | void;
 };
 
 export class GameRoom {
@@ -31,8 +32,10 @@ export class GameRoom {
     private bots: Bot[] = [];
     private ruleset: RulesetName;
     private onMatchEnded?: (summary: MatchSummaryInput) => Promise<void> | void;
+    private onPlayerLeft?: (userId: string) => Promise<void> | void;
     private previousSnapshotValue: unknown = null;
     private matchSummaryRecorded = false;
+    private lastActivityAt = Date.now();
 
     public roomId: string;
 
@@ -40,6 +43,7 @@ export class GameRoom {
         this.roomId = roomId;
         this.ruleset = ruleset;
         this.onMatchEnded = options.onMatchEnded;
+        this.onPlayerLeft = options.onPlayerLeft;
         this.machineLogic = createGameMachine({ ruleset });
         this.machine = createActor(this.machineLogic);
         this.machine.start();
@@ -59,14 +63,10 @@ export class GameRoom {
             nickname: profile?.nickname ?? existing?.nickname ?? playerId,
             avatarKey: profile?.avatarKey ?? existing?.avatarKey ?? 'default'
         });
+        this.markActivity();
 
         // Forward JOIN to machine
         this.machine.send({ type: 'JOIN', playerId });
-
-        socket.on('close', () => {
-            console.log(`Player ${playerId} disconnected`);
-            this.clients.delete(playerId);
-        });
     }
 
     public addBot(personaId?: string) {
@@ -84,6 +84,7 @@ export class GameRoom {
         });
         console.log(`Adding Bot: ${botId} (${resolved.difficulty}, persona=${resolved.id})`);
         this.machine.send({ type: 'JOIN', playerId: botId });
+        this.markActivity();
     }
 
     public handleMessage(playerId: PlayerId, event: any) {
@@ -92,7 +93,13 @@ export class GameRoom {
             return;
         }
         if (event.type === 'LEAVE') {
+            const hadClient = this.clients.has(playerId);
+            const hadProfile = this.playerProfiles.has(playerId);
             this.playerProfiles.delete(playerId);
+            this.clients.delete(playerId);
+            if (hadClient || hadProfile) {
+                this.recordPlayerLeave(playerId);
+            }
         }
 
         // Translation for Hidden Wall Tiles (Fog of War)
@@ -131,6 +138,7 @@ export class GameRoom {
         console.log(`Processing event from ${playerId}:`, event.type);
         this.machine.send(event);
         this.emitTelemetry(event.type, playerId);
+        this.markActivity();
     }
 
     private async handleAnalysisQuery(playerId: PlayerId, event: any) {
@@ -177,6 +185,7 @@ export class GameRoom {
             if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify(result));
             }
+            this.markActivity();
         } catch (e) {
             console.error('Analysis query failed:', e);
         } finally {
@@ -200,10 +209,33 @@ export class GameRoom {
                 discard: persona.discard
             }))
         }));
+        this.markActivity();
     }
 
     public hasPlayer(playerId: PlayerId): boolean {
         return this.clients.has(playerId) || this.machine.getSnapshot().context.players.includes(playerId);
+    }
+
+    public getConnectedClientCount(): number {
+        return this.clients.size;
+    }
+
+    public getLastActivityAt(): number {
+        return this.lastActivityAt;
+    }
+
+    public handleDisconnect(playerId: PlayerId): void {
+        if (!this.clients.has(playerId) && !this.playerProfiles.has(playerId)) {
+            return;
+        }
+        this.clients.delete(playerId);
+        this.playerProfiles.delete(playerId);
+        this.recordPlayerLeave(playerId);
+        const snapshot = this.machine.getSnapshot();
+        if (!isStateValue(snapshot.value, 'matchEnd')) {
+            this.machine.send({ type: 'LEAVE', playerId });
+        }
+        this.markActivity();
     }
 
     private emitTelemetry(eventType: string, playerId: PlayerId) {
@@ -224,6 +256,18 @@ export class GameRoom {
             return raw;
         }
         return undefined;
+    }
+
+    private markActivity(): void {
+        this.lastActivityAt = Date.now();
+    }
+
+    private recordPlayerLeave(playerId: PlayerId): void {
+        const userId = parseUserIdFromPlayerId(playerId);
+        if (!userId || !this.onPlayerLeft) {
+            return;
+        }
+        void this.onPlayerLeft(userId);
     }
 
     private sanitizeState(snapshot: SnapshotFrom<MachineLogic>, playerId: PlayerId) {

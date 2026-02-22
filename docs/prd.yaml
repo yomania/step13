@@ -102,6 +102,8 @@ api_contract:
     - "GET /me"
     - "PATCH /me/profile"
     - "GET /me/stats/summary"
+  http_rooms:
+    - "POST /rooms"
   client_to_server:
     - "JOIN (no payload playerId; server binds by authenticated user)"
     - "START_MATCH"
@@ -130,6 +132,8 @@ api_contract:
   correlation_rule:
     query_id_required: true
     stale_response_should_be_ignored_by_client: true
+  ws_room:
+    query_param: "roomId (optional, defaults to lobby; non-default rooms must be created first)"
 
 security_visibility:
   auth:
@@ -176,6 +180,7 @@ profile_and_stats:
       - "nickname (unique)"
       - "avatarKey"
       - "bio"
+      - "leaveCount"
   stats_v1:
     scope: "match summary only"
     recent_window: 10

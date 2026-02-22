@@ -17,6 +17,7 @@ export type ProfileRecord = {
     nickname: string;
     avatarKey: string;
     bio: string | null;
+    leaveCount: number;
     createdAt: Date;
     updatedAt: Date;
 };
@@ -104,6 +105,7 @@ export type AuthStore = {
         avatarKey?: string;
         bio?: string | null;
     }): Promise<ProfileRecord>;
+    incrementLeaveCount(userId: string, at: Date): Promise<ProfileRecord>;
     createRefreshToken(record: RefreshTokenRecord): Promise<void>;
     findRefreshTokenByHash(tokenHash: string): Promise<RefreshTokenRecord | null>;
     revokeRefreshToken(tokenId: string, revokedAt: Date): Promise<void>;
@@ -168,6 +170,7 @@ export class InMemoryAuthStore implements AuthStore {
             nickname: normalizedNickname,
             avatarKey: (input.avatarKey ?? 'default').trim() || 'default',
             bio: input.bio ?? null,
+            leaveCount: 0,
             createdAt: now,
             updatedAt: now
         };
@@ -234,6 +237,20 @@ export class InMemoryAuthStore implements AuthStore {
             updatedAt: new Date()
         };
 
+        this.profilesByUserId.set(userId, updated);
+        return updated;
+    }
+
+    public async incrementLeaveCount(userId: string, at: Date): Promise<ProfileRecord> {
+        const existing = this.profilesByUserId.get(userId);
+        if (!existing) {
+            throw new Error('PROFILE_NOT_FOUND');
+        }
+        const updated: ProfileRecord = {
+            ...existing,
+            leaveCount: existing.leaveCount + 1,
+            updatedAt: at
+        };
         this.profilesByUserId.set(userId, updated);
         return updated;
     }

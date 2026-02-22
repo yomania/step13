@@ -1,15 +1,18 @@
 import Fastify from 'fastify';
 import websocket from '@fastify/websocket';
 import cors from '@fastify/cors';
-import { GameRoom } from './GameRoom';
+import { RoomRegistry } from './RoomRegistry';
 import { RulesetName } from '@step13/core';
 import { AuthError, AuthService, PrismaAuthStore } from './auth';
 import { PrismaClient } from '@prisma/client';
 import { UpdateProfileInputDTO } from '@step13/proto';
+import { randomUUID } from 'node:crypto';
 
 const ACCESS_TOKEN_TTL_SEC = 15 * 60;
 const REFRESH_TOKEN_TTL_SEC = 30 * 24 * 60 * 60;
 const WS_TICKET_TTL_SEC = 30;
+const ROOM_IDLE_TTL_MS = 15 * 60 * 1000;
+const ROOM_CLEANUP_INTERVAL_MS = 60 * 1000;
 
 const main = async () => {
     const fastify = Fastify({
@@ -42,6 +45,7 @@ const main = async () => {
         shuttingDown = true;
         fastify.log.info(`Received ${signal}. Closing server...`);
         try {
+            roomRegistry.shutdown();
             await fastify.close();
             fastify.log.info('Server closed cleanly');
             process.exit(0);
@@ -84,18 +88,24 @@ const main = async () => {
 
     await fastify.register(websocket);
 
-    // Simple in-memory storage for rooms
+    // Simple in-memory room registry.
     // In a production system, replace with Redis + persistent DB-backed room state.
-    const rooms = new Map<string, GameRoom>();
-
-    // Create a default room for now
     const defaultRoomId = 'lobby';
     const ruleset = (process.env.RULESET ?? 'classic') as RulesetName;
-    rooms.set(defaultRoomId, new GameRoom(defaultRoomId, ruleset, {
+    const roomIdleTtlMs = parseEnvNumber('ROOM_IDLE_TTL_MS', ROOM_IDLE_TTL_MS);
+    const roomCleanupIntervalMs = parseEnvNumber('ROOM_CLEANUP_INTERVAL_MS', ROOM_CLEANUP_INTERVAL_MS);
+    const roomRegistry = new RoomRegistry({
+        defaultRoomId,
+        ruleset,
+        idleTtlMs: roomIdleTtlMs,
+        cleanupIntervalMs: roomCleanupIntervalMs,
         onMatchEnded: async (summary) => {
             await authService.recordMatchSummary(summary);
+        },
+        onPlayerLeft: async (userId) => {
+            await authService.recordLeave(userId);
         }
-    }));
+    });
 
     fastify.get('/', async (_request, _reply) => {
         return { hello: 'world' };
@@ -219,14 +229,36 @@ const main = async () => {
         }
     });
 
+    fastify.post('/rooms', async (request, reply) => {
+        const body = request.body as Partial<{ roomId?: string }> | undefined;
+        const normalizedRoomId = normalizeRoomId(body?.roomId);
+        if (body?.roomId && !normalizedRoomId) {
+            return reply.status(400).send({ code: 'INVALID_ROOM_ID', message: 'roomId must be 1-64 chars of [A-Za-z0-9_-]' });
+        }
+        const roomId = normalizedRoomId ?? randomUUID();
+        if (roomRegistry.hasRoom(roomId)) {
+            return reply.status(409).send({ code: 'ROOM_ALREADY_EXISTS', message: 'roomId already exists' });
+        }
+        roomRegistry.createRoom(roomId);
+        return reply.status(201).send({ roomId });
+    });
+
     fastify.get('/ws', { websocket: true }, (connection, request) => {
         void bindAuthenticatedWebSocket(connection.socket, request.raw.url ?? '/ws');
     });
 
     async function bindAuthenticatedWebSocket(socket: { on: any; close: any; send: any }, rawUrl: string): Promise<void> {
-        const roomId = defaultRoomId;
-        const room = rooms.get(roomId);
+        const roomId = extractRoomId(rawUrl, defaultRoomId);
+        if (!roomId) {
+            socket.send(JSON.stringify({ type: 'REJECTED_EVENT', reason: 'invalid roomId' }));
+            socket.close();
+            return;
+        }
+        const room = roomRegistry.isDefaultRoom(roomId)
+            ? roomRegistry.getOrCreateRoom(roomId)
+            : roomRegistry.getRoom(roomId);
         if (!room) {
+            socket.send(JSON.stringify({ type: 'REJECTED_EVENT', reason: 'room not found' }));
             socket.close();
             return;
         }
@@ -286,7 +318,11 @@ const main = async () => {
         });
 
         socket.on('close', () => {
+            const wasJoined = joined;
             joined = false;
+            if (wasJoined) {
+                room.handleDisconnect(boundServerPlayerId);
+            }
         });
     }
 
@@ -347,10 +383,43 @@ function extractTicket(rawUrl: string): string | null {
     return ticket && ticket.trim().length > 0 ? ticket.trim() : null;
 }
 
+function extractRoomId(rawUrl: string, fallback: string): string | null {
+    const url = new URL(rawUrl, 'http://localhost');
+    const raw = url.searchParams.get('roomId');
+    if (!raw) {
+        return fallback;
+    }
+    return normalizeRoomId(raw);
+}
+
 function handleRouteError(reply: { status: (code: number) => { send: (body: unknown) => unknown } }, error: unknown) {
     if (error instanceof AuthError) {
         return reply.status(error.statusCode).send({ code: error.code, message: error.message });
     }
     const message = error instanceof Error ? error.message : 'Unexpected server error';
     return reply.status(500).send({ code: 'INTERNAL_ERROR', message });
+}
+
+function normalizeRoomId(raw: unknown): string | null {
+    if (typeof raw !== 'string') {
+        return null;
+    }
+    const value = raw.trim();
+    if (!value || value.length > 64) {
+        return null;
+    }
+    if (!/^[A-Za-z0-9_-]+$/.test(value)) {
+        return null;
+    }
+    return value;
+}
+
+function parseEnvNumber(key: string, fallback: number): number {
+    const raw = process.env[key];
+    if (!raw) return fallback;
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+        return fallback;
+    }
+    return parsed;
 }

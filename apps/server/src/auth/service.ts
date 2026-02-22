@@ -361,6 +361,17 @@ export class AuthService {
         await this.store.createMatchSummary(input);
     }
 
+    public async recordLeave(userId: string): Promise<void> {
+        try {
+            await this.store.incrementLeaveCount(userId, new Date());
+        } catch (error) {
+            if (error instanceof Error && error.message === 'PROFILE_NOT_FOUND') {
+                return;
+            }
+            throw error;
+        }
+    }
+
     private async issueTokens(userId: string, rotatedFromId: string | null): Promise<AuthTokensDTO> {
         const now = new Date();
         const accessExpiresAt = new Date(now.getTime() + this.accessTokenTtlSec * 1000);
@@ -421,6 +432,7 @@ function toPublicProfileDTO(profile: ProfileRecord): PublicProfileDTO {
         nickname: profile.nickname,
         avatarKey: profile.avatarKey,
         bio: profile.bio,
+        leaveCount: profile.leaveCount,
         createdAt: profile.createdAt.toISOString(),
         updatedAt: profile.updatedAt.toISOString()
     };

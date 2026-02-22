@@ -6,6 +6,7 @@ type PlayerProfileMap = Record<string, { nickname: string; avatarKey: string }>;
 type UseGameSocketOptions = {
     accessToken?: string | null;
     apiBaseUrl?: string;
+    roomId?: string | null;
     onAuthExpired?: () => void;
 };
 
@@ -54,7 +55,9 @@ export function useGameSocket(
 
                 const wsBaseUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:3001/ws';
                 const separator = wsBaseUrl.includes('?') ? '&' : '?';
-                const wsUrl = `${wsBaseUrl}${separator}ticket=${encodeURIComponent(ticket)}`;
+                const roomId = options.roomId?.trim();
+                const roomParam = roomId ? `&roomId=${encodeURIComponent(roomId)}` : '';
+                const wsUrl = `${wsBaseUrl}${separator}ticket=${encodeURIComponent(ticket)}${roomParam}`;
 
                 socket = new WebSocket(wsUrl);
                 socketRef.current = socket;

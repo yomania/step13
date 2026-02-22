@@ -87,7 +87,8 @@ export function createGameMachine(options: GameMachineOptions = {}) {
             },
             hasNextHand: ({ context }) => context.matchHandIndex < RULES.match.handsPerMatch,
             hasNoNextHand: ({ context }) => context.matchHandIndex >= RULES.match.handsPerMatch,
-            allRoundEndConfirmed: ({ context }) => context.players.every((playerId) => Boolean(context.roundEndConfirmedBy[playerId]))
+            allRoundEndConfirmed: ({ context }) => context.players.every((playerId) => Boolean(context.roundEndConfirmedBy[playerId])),
+            canForfeitOnLeave: ({ context }) => context.phase !== 'IDLE' && context.phase !== 'MATCH_END'
         },
         actions: {
             initializeMatch: assign(({ context, event }) => {
@@ -367,6 +368,19 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                 return {
                     roundEndConfirmedBy: next
                 };
+            }),
+            forfeitMatch: assign(({ context, event }) => {
+                if (event.type !== 'LEAVE') {
+                    return {};
+                }
+                const remaining = context.players.filter((playerId) => playerId !== event.playerId);
+                const winner = remaining.length === 1 ? remaining[0] : null;
+                return {
+                    phase: 'MATCH_END',
+                    winner,
+                    winResult: null,
+                    eventLog: [...context.eventLog, event, { type: 'MATCH_END', winner }]
+                };
             })
         }
     }).createMachine({
@@ -572,6 +586,11 @@ export function createGameMachine(options: GameMachineOptions = {}) {
             }
         },
         on: {
+            LEAVE: {
+                target: '.matchEnd',
+                guard: 'canForfeitOnLeave',
+                actions: 'forfeitMatch'
+            },
             RESTART: {
                 target: '.idle',
                 actions: 'resetGame'

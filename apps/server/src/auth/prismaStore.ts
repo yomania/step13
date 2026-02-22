@@ -101,6 +101,17 @@ export class PrismaAuthStore implements AuthStore {
         return updated;
     }
 
+    public async incrementLeaveCount(userId: string, at: Date): Promise<ProfileRecord> {
+        const updated = await this.prisma.profile.update({
+            where: { userId },
+            data: {
+                leaveCount: { increment: 1 },
+                updatedAt: at
+            }
+        });
+        return updated;
+    }
+
     public async createRefreshToken(record: RefreshTokenRecord): Promise<void> {
         await this.prisma.refreshToken.create({
             data: {
@@ -230,4 +241,3 @@ export class PrismaAuthStore implements AuthStore {
         }));
     }
 }
-

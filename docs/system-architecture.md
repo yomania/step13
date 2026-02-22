@@ -63,20 +63,25 @@ flowchart LR
 
 중심 파일: `apps/server/src/GameRoom.ts`
 인증 파일: `apps/server/src/auth/*`, `apps/server/src/index.ts`
+룸 레지스트리: `apps/server/src/RoomRegistry.ts`
 
 책임:
 
 - HTTP 인증/프로필/전적 API
   - `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`
   - `POST /auth/ws-ticket`, `GET /me`, `PATCH /me/profile`, `GET /me/stats/summary`
+- 룸 관리 API
+  - `POST /rooms` (room 생성)
 - WS 핸드셰이크 전 티켓 검증(1회용, 짧은 TTL)
 - 인증 사용자 -> 게임 `playerId(user:{userId})` 서버 강제 바인딩
 - 소켓 바인딩 플레이어 검증(`JOIN` 선행, playerId 고정)
 - 이벤트 전달 전 최소 검증(타인 playerId 위조 차단)
 - `QUERY_ANALYSIS`, `QUERY_PERSONAS` 처리
 - 봇 생명주기(`ADD_BOT`) 및 페르소나 정규화
+- 인메모리 룸 레지스트리 관리(기본 룸 유지, 기본값은 유휴 룸 정리 비활성)
 - 상태 브로드캐스트 시 포그오브워 마스킹 적용
 - `MATCH_END` 시 매치 요약 전적 저장
+- WS 접속 시 `roomId` 쿼리 파라미터를 통해 멀티룸 선택 지원 (미지정 시 기본 룸, 비기본 룸은 사전 생성 필요)
 
 마스킹 정책(클라이언트별 sanitize):
 

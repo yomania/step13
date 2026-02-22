@@ -16,6 +16,7 @@ export type PublicProfileDTO = {
     nickname: string;
     avatarKey: string;
     bio: string | null;
+    leaveCount: number;
     createdAt: string;
     updatedAt: string;
 };

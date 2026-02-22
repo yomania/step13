@@ -107,6 +107,19 @@ export async function getStatsSummaryApi(accessToken: string, apiBaseUrl?: strin
     });
 }
 
+export async function createRoomApi(
+    payload?: { roomId?: string },
+    apiBaseUrl?: string
+): Promise<{ roomId: string }> {
+    return requestJson<{ roomId: string }>(`${resolveApiBase(apiBaseUrl)}/rooms`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload ?? {})
+    });
+}
+
 function resolveApiBase(apiBaseUrl?: string): string {
     return apiBaseUrl ?? import.meta.env.VITE_API_URL ?? DEFAULT_API_BASE;
 }

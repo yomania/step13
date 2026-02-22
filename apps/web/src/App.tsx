@@ -20,6 +20,7 @@ import { preloadRealTileAssets } from './lib/tileAssets';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
     ApiError,
+    createRoomApi,
     getStatsSummaryApi,
     loginApi,
     logoutApi,
@@ -187,7 +188,14 @@ export default function App() {
     const [profileError, setProfileError] = useState<string | null>(null);
     const [statsSummary, setStatsSummary] = useState<StatsSummaryDTO | null>(null);
     const [statsLoading, setStatsLoading] = useState(false);
+    const [roomCreating, setRoomCreating] = useState(false);
+    const [roomCreateError, setRoomCreateError] = useState<string | null>(null);
     const apiBaseUrl = useMemo(() => import.meta.env.VITE_API_URL || 'http://localhost:3001', []);
+    const roomId = useMemo(() => {
+        if (typeof window === 'undefined') return null;
+        const value = new URLSearchParams(window.location.search).get('roomId');
+        return value && value.trim().length > 0 ? value.trim() : null;
+    }, []);
     const playerId = authSession?.profile.playerId ?? '__unauth__';
 
     // Pass the actor and a callback to update serverState
@@ -236,8 +244,9 @@ export default function App() {
     const socketOptions = useMemo(() => ({
         accessToken: authSession?.tokens.accessToken ?? null,
         apiBaseUrl,
+        roomId,
         onAuthExpired: handleSocketAuthExpired
-    }), [authSession?.tokens.accessToken, apiBaseUrl, handleSocketAuthExpired]);
+    }), [authSession?.tokens.accessToken, apiBaseUrl, handleSocketAuthExpired, roomId]);
 
     const { sendEvent, queryAnalysis, queryPersonas } = useGameSocket(
         actor,
@@ -264,6 +273,28 @@ export default function App() {
     const [entryMode, setEntryMode] = useState<EntryMode>('home');
     const [singleMode, setSingleMode] = useState<SingleMode>('menu');
     const [botPersonaId, setBotPersonaId] = useState<string>('');
+
+    const handleCreateRoom = useCallback(async () => {
+        if (roomCreating) return;
+        setRoomCreating(true);
+        setRoomCreateError(null);
+        try {
+            const result = await createRoomApi(undefined, apiBaseUrl);
+            if (typeof window !== 'undefined') {
+                const nextUrl = new URL(window.location.href);
+                nextUrl.searchParams.set('roomId', result.roomId);
+                window.location.assign(nextUrl.toString());
+            }
+        } catch (error) {
+            if (error instanceof ApiError) {
+                setRoomCreateError(error.message);
+            } else {
+                setRoomCreateError('룸 생성에 실패했습니다.');
+            }
+        } finally {
+            setRoomCreating(false);
+        }
+    }, [apiBaseUrl, roomCreating]);
 
     useEffect(() => {
         setIsConnected(Boolean(authSession));
@@ -1368,6 +1399,27 @@ export default function App() {
                                             <p className="text-gray-400">대기실 입장 후 상대를 기다리거나 매치를 시작하세요.</p>
                                         </div>
                                         <div className="flex flex-col gap-4 w-full max-w-md">
+                                            <div className="surface-panel p-4 rounded-2xl">
+                                                <div className="text-xs text-slate-400 mb-2">현재 룸</div>
+                                                <div className="text-sm font-semibold text-slate-200">
+                                                    {roomId ?? 'lobby'}
+                                                </div>
+                                            </div>
+                                            <button
+                                                onClick={handleCreateRoom}
+                                                disabled={roomCreating}
+                                                className={`w-full py-3 rounded-2xl font-bold text-lg shadow-lg ${roomCreating
+                                                    ? 'bg-slate-700 text-slate-300 cursor-not-allowed'
+                                                    : 'bg-violet-600 hover:bg-violet-500 text-white'
+                                                    }`}
+                                            >
+                                                {roomCreating ? '룸 생성 중...' : '새 룸 생성'}
+                                            </button>
+                                            {roomCreateError && (
+                                                <div className="text-xs text-rose-300 bg-rose-900/40 border border-rose-500/40 px-3 py-2 rounded-xl">
+                                                    {roomCreateError}
+                                                </div>
+                                            )}
                                             {!isPlayerInLobby ? (
                                                 <button onClick={handleJoin} className="w-full py-3 bg-cyan-600 hover:bg-cyan-500 rounded-2xl font-bold text-lg shadow-lg">
                                                     대기실 입장
