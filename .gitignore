@@ -9,6 +9,9 @@ dist/
 .env.*
 !.env.example
 
+# Local SQLite dev DB (must not be committed)
+apps/server/prisma/dev.db
+
 # Generated build artifacts accidentally emitted into package source trees
 packages/core/src/**/*.js
 packages/core/src/**/*.d.ts

@@ -9,7 +9,7 @@ Required in production:
   - Must be set. Server will refuse to start if missing in production.
   - Use a long, random string (32+ chars).
 - `CORS_ORIGINS`
-  - Comma-separated allowlist, example: `https://example.com,https://admin.example.com`
+  - Comma-separated allowlist, example: `https://mind17step.onrender.com,https://admin.example.com`
   - Must not include `*` in production.
 - `ROOM_IDLE_TTL_MS`
   - Milliseconds before an empty non-default room is eligible for cleanup.
@@ -34,4 +34,5 @@ Common development defaults:
 
 - `VITE_API_URL`
   - Base URL for the server API.
-  - Example: `http://localhost:3001`
+  - Local Example: `http://localhost:3001`
+  - Production Example: `https://mind17step.onrender.com`

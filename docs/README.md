@@ -23,6 +23,8 @@
   - 룰셋/엔진 확장 절차와 테스트 체크리스트
 - `docs/env.md`
   - 런타임 환경 변수(서버/웹) 가이드
+- `docs/deployment.md`
+  - 현재 운영(Production) 환경의 배포 정보 및 플랫폼 연결 가이드
 - `docs/ai-doc-first-workflow.md`
   - AI 작업용 "문서 선행 -> 코드 변경" 운영 가이드
 - `docs/CODE_DOCS_GAP_ANALYSIS.md`
