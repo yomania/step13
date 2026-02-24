@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import {
     AuthStore,
     MatchHistoryEntry,
@@ -240,7 +240,12 @@ export class PrismaAuthStore implements AuthStore {
             }
         });
 
-        return history.map(item => ({
+        type HistoryItem = Prisma.MatchParticipantSummaryGetPayload<{
+            include: { match: { include: { participants: true } } };
+        }>;
+        type Participant = HistoryItem['match']['participants'][number];
+
+        return history.map((item: HistoryItem) => ({
             match: {
                 ...item.match,
                 mode: item.match.mode as any
@@ -257,8 +262,8 @@ export class PrismaAuthStore implements AuthStore {
                 createdAt: item.createdAt
             },
             opponents: item.match.participants
-                .filter(p => p.id !== item.id)
-                .map(p => ({
+                .filter((p: Participant) => p.id !== item.id)
+                .map((p: Participant) => ({
                     id: p.id,
                     matchId: p.matchId,
                     userId: p.userId,
