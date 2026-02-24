@@ -148,6 +148,10 @@ security_visibility:
       inputs: "email, optional newPassword"
       behavior: "reset password hash + revoke all refresh tokens"
       temporary_password: "generated when newPassword omitted"
+      client_flow:
+        status: "planned"
+        temp_login_requires_change: true
+        change_password_endpoint: "planned (not implemented)"
   fog_of_war:
     wall:
       policy: "selected dora only visible, others masked as wall-{index}"
