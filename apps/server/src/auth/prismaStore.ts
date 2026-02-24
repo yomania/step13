@@ -71,6 +71,16 @@ export class PrismaAuthStore implements AuthStore {
         });
     }
 
+    public async updateUserPassword(userId: string, passwordHash: string, at: Date): Promise<void> {
+        await this.prisma.user.update({
+            where: { id: userId },
+            data: {
+                passwordHash,
+                updatedAt: at
+            }
+        });
+    }
+
     public async findProfileByUserId(userId: string): Promise<ProfileRecord | null> {
         const profile = await this.prisma.profile.findUnique({
             where: { userId }
@@ -136,6 +146,16 @@ export class PrismaAuthStore implements AuthStore {
     public async revokeRefreshToken(tokenId: string, revokedAt: Date): Promise<void> {
         await this.prisma.refreshToken.update({
             where: { id: tokenId },
+            data: { revokedAt }
+        });
+    }
+
+    public async revokeRefreshTokensForUser(userId: string, revokedAt: Date): Promise<void> {
+        await this.prisma.refreshToken.updateMany({
+            where: {
+                userId,
+                revokedAt: null
+            },
             data: { revokedAt }
         });
     }

@@ -1,6 +1,6 @@
 meta:
-  version: "2026-02-20-auth-profile-sync"
-  last_synced: "2026-02-20"
+  version: "2026-02-24-auth-password-reset-service"
+  last_synced: "2026-02-24"
   source_of_truth:
     rules: "packages/core/src/rules.ts"
     machine: "packages/core/src/machine.ts"
@@ -142,6 +142,12 @@ security_visibility:
     refresh_rotation: true
     ws_ticket_ttl_sec: 30
     ws_ticket_single_use: true
+    password_reset_service:
+      status: "implemented"
+      exposure: "service-only (no HTTP endpoint yet)"
+      inputs: "email, optional newPassword"
+      behavior: "reset password hash + revoke all refresh tokens"
+      temporary_password: "generated when newPassword omitted"
   fog_of_war:
     wall:
       policy: "selected dora only visible, others masked as wall-{index}"

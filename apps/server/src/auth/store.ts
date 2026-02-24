@@ -98,6 +98,7 @@ export type AuthStore = {
         bio?: string | null;
     }): Promise<{ user: UserRecord; profile: ProfileRecord }>;
     updateUserLastLogin(userId: string, at: Date): Promise<void>;
+    updateUserPassword(userId: string, passwordHash: string, at: Date): Promise<void>;
     findProfileByUserId(userId: string): Promise<ProfileRecord | null>;
     findProfileByNickname(nickname: string): Promise<ProfileRecord | null>;
     updateProfile(userId: string, patch: {
@@ -109,6 +110,7 @@ export type AuthStore = {
     createRefreshToken(record: RefreshTokenRecord): Promise<void>;
     findRefreshTokenByHash(tokenHash: string): Promise<RefreshTokenRecord | null>;
     revokeRefreshToken(tokenId: string, revokedAt: Date): Promise<void>;
+    revokeRefreshTokensForUser(userId: string, revokedAt: Date): Promise<void>;
     createWsTicket(record: WsTicketRecord): Promise<void>;
     consumeWsTicket(ticketHash: string, now: Date): Promise<WsTicketRecord | null>;
     createMatchSummary(input: MatchSummaryInput): Promise<void>;
@@ -189,6 +191,16 @@ export class InMemoryAuthStore implements AuthStore {
             return;
         }
         user.lastLoginAt = at;
+        user.updatedAt = at;
+        this.usersById.set(userId, user);
+    }
+
+    public async updateUserPassword(userId: string, passwordHash: string, at: Date): Promise<void> {
+        const user = this.usersById.get(userId);
+        if (!user) {
+            return;
+        }
+        user.passwordHash = passwordHash;
         user.updatedAt = at;
         this.usersById.set(userId, user);
     }
@@ -275,6 +287,15 @@ export class InMemoryAuthStore implements AuthStore {
             revokedAt
         };
         this.refreshTokensById.set(tokenId, updated);
+    }
+
+    public async revokeRefreshTokensForUser(userId: string, revokedAt: Date): Promise<void> {
+        this.refreshTokensById.forEach((token, tokenId) => {
+            if (token.userId !== userId || token.revokedAt !== null) {
+                return;
+            }
+            this.refreshTokensById.set(tokenId, { ...token, revokedAt });
+        });
     }
 
     public async createWsTicket(record: WsTicketRecord): Promise<void> {

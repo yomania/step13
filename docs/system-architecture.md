@@ -1,6 +1,6 @@
 # Step13 시스템 아키텍처 (System Architecture)
 
-기준일: `2026-02-20`
+기준일: `2026-02-24`
 
 ## 1. 모노레포 구성
 
@@ -70,6 +70,8 @@ flowchart LR
 - HTTP 인증/프로필/전적 API
   - `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`
   - `POST /auth/ws-ticket`, `GET /me`, `PATCH /me/profile`, `GET /me/stats/summary`
+- 비밀번호 초기화 서비스 (`AuthService.adminResetPassword`)
+  - 현재는 엔드포인트 미구현 (차후 어드민에서 연결 예정)
 - 룸 관리 API
   - `POST /rooms` (room 생성)
 - WS 핸드셰이크 전 티켓 검증(1회용, 짧은 TTL)

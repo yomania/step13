@@ -182,6 +182,34 @@ export class AuthService {
         await this.store.revokeRefreshToken(stored.id, new Date());
     }
 
+    public async adminResetPassword(input: { email: string; newPassword?: string }): Promise<{ userId: string; email: string; temporaryPassword?: string }> {
+        const email = normalizeEmail(input.email);
+        validateEmail(email);
+
+        const user = await this.store.findUserByEmail(email);
+        if (!user) {
+            throw new AuthError('ACCOUNT_NOT_FOUND', 'Account not found', 404);
+        }
+
+        const shouldGenerate = !input.newPassword;
+        const nextPassword = shouldGenerate
+            ? generateTemporaryPassword()
+            : input.newPassword;
+
+        validatePassword(nextPassword);
+
+        const now = new Date();
+        const passwordHash = hashPassword(nextPassword);
+        await this.store.updateUserPassword(user.id, passwordHash, now);
+        await this.store.revokeRefreshTokensForUser(user.id, now);
+
+        return {
+            userId: user.id,
+            email: user.email,
+            temporaryPassword: shouldGenerate ? nextPassword : undefined
+        };
+    }
+
     public async authenticateAccessToken(accessToken: string): Promise<{ user: AuthUserDTO; profile: PublicProfileDTO }> {
         const payload = verifyJwt(accessToken, this.jwtSecret, 'access');
         if (!payload) {
@@ -466,4 +494,8 @@ function normalizeEmail(email: string): string {
 
 function normalizeNickname(nickname: string): string {
     return nickname.trim();
+}
+
+function generateTemporaryPassword(): string {
+    return randomBytes(9).toString('base64url');
 }

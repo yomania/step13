@@ -196,6 +196,7 @@ const main = async () => {
         }
     });
 
+
     fastify.get('/me', async (request, reply) => {
         try {
             const accessToken = extractBearerToken(request.headers.authorization);
