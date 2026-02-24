@@ -191,10 +191,13 @@ export class AuthService {
             throw new AuthError('ACCOUNT_NOT_FOUND', 'Account not found', 404);
         }
 
-        const shouldGenerate = !input.newPassword;
+        const providedPassword = typeof input.newPassword === 'string' && input.newPassword.trim().length > 0
+            ? input.newPassword
+            : undefined;
+        const shouldGenerate = !providedPassword;
         const nextPassword = shouldGenerate
             ? generateTemporaryPassword()
-            : input.newPassword;
+            : providedPassword;
 
         validatePassword(nextPassword);
 
