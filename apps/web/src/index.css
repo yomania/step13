@@ -100,3 +100,79 @@ button {
 .thin-scrollbar::-webkit-scrollbar-track {
     background: transparent;
 }
+
+.game-shell {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+}
+
+.board-scroll {
+    min-height: 0;
+}
+
+.handbuilder-submit {
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+}
+
+@media (max-aspect-ratio: 9/16) {
+    .game-shell {
+        padding-left: 12px;
+        padding-right: 12px;
+    }
+
+    .header-bar {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+    }
+
+    .board-shell {
+        max-height: calc(100dvh - 120px);
+    }
+
+    .board-scroll {
+        overflow-y: auto;
+    }
+
+    .opponent-panel {
+        margin-bottom: 12px;
+        padding: 12px;
+    }
+
+    .player-panel {
+        padding: 12px;
+    }
+
+    .action-stack {
+        align-items: stretch;
+    }
+
+    .handbuilder-shell {
+        gap: 12px;
+        padding-bottom: 8px;
+    }
+
+    .handbuilder-tiles {
+        max-height: 32vh;
+    }
+
+    .handbuilder-submit {
+        position: sticky;
+        bottom: 8px;
+        border-radius: 16px;
+    }
+}
+
+@media (min-aspect-ratio: 16/9) {
+    .board-shell {
+        max-height: calc(100dvh - 104px);
+    }
+
+    .board-scroll {
+        overflow: hidden;
+    }
+
+    .opponent-panel {
+        margin-bottom: 20px;
+    }
+}

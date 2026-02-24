@@ -413,7 +413,7 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
     };
 
     return (
-        <div className="flex flex-col gap-4">
+        <div className="handbuilder-shell flex flex-col gap-4">
             <div className="surface-panel flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center p-3 rounded-2xl">
                 <div>
                     <span className="font-bold mr-4">선택됨: {selectedTiles.length} / 13</span>
@@ -498,7 +498,7 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
                 </div>
             </div>
 
-            <div className="grid grid-cols-8 sm:grid-cols-10 md:grid-cols-12 gap-1 p-3 pb-8 surface-panel rounded-2xl overflow-y-auto max-h-[400px] thin-scrollbar">
+            <div className="handbuilder-tiles grid grid-cols-8 sm:grid-cols-10 md:grid-cols-12 gap-1 p-3 pb-8 surface-panel rounded-2xl overflow-y-auto max-h-[400px] thin-scrollbar">
                 {sortedTilesWithIndices.map(({ tile, index }) => (
                     <div key={index} className="transform scale-90">
                         <Tile
@@ -671,6 +671,7 @@ export const HandBuilder: React.FC<HandBuilderProps> = ({
                 onClick={handleSubmit}
                 disabled={!canSubmit || loading}
                 className={`
+                    handbuilder-submit
                     w-full py-4 rounded-t-none rounded-b-2xl sm:rounded-2xl font-bold text-xl transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.1),_0_4px_15px_rgba(0,0,0,0.5)] border-t sm:border border-slate-700/50 relative overflow-hidden group
                     ${canSubmit && !loading
                         ? 'bg-gradient-to-b from-slate-700 to-slate-800 hover:from-slate-600 hover:to-slate-700 text-yellow-500 transform hover:scale-[1.01] active:scale-95'

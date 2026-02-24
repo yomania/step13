@@ -39,7 +39,7 @@ export function HandDisplay({
     });
 
     return (
-        <div className="w-full flex flex-col gap-3">
+        <div className="w-full max-w-3xl mx-auto flex flex-col gap-3">
             <div className="px-2 text-xs text-slate-400">내 손패 (고정 13장)</div>
             <div className="flex flex-wrap gap-1 justify-center p-2 bg-slate-800 rounded">
                 {sortedHand.map((tile, i) => (
