@@ -20,5 +20,3 @@ packages/scoring/src/**/*.d.ts
 # Bot outputs
 packages/bot/test_output*.txt
 packages/bot/logs/
-packages/proto/dist/index.d.mts
-packages/proto/dist/index.d.ts
