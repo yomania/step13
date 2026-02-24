@@ -1,12 +1,15 @@
 import Fastify from 'fastify';
 import websocket from '@fastify/websocket';
 import cors from '@fastify/cors';
+import fastifyStatic from '@fastify/static';
 import { RoomRegistry } from './RoomRegistry';
 import { RulesetName } from '@step13/core';
 import { AuthError, AuthService, PrismaAuthStore } from './auth';
 import { PrismaClient } from '@prisma/client';
 import { UpdateProfileInputDTO } from '@step13/proto';
 import { randomUUID } from 'node:crypto';
+import path from 'node:path';
+import fs from 'node:fs';
 
 const ACCESS_TOKEN_TTL_SEC = 15 * 60;
 const REFRESH_TOKEN_TTL_SEC = 30 * 24 * 60 * 60;
@@ -98,6 +101,17 @@ const main = async () => {
 
     await fastify.register(websocket);
 
+    const webDistDir = path.resolve(__dirname, '../../web/dist');
+    const hasWebDist = fs.existsSync(webDistDir);
+    if (hasWebDist) {
+        await fastify.register(fastifyStatic, {
+            root: webDistDir,
+            prefix: '/'
+        });
+    } else {
+        fastify.log.warn(`Web dist not found at ${webDistDir}. Static hosting disabled.`);
+    }
+
     // Simple in-memory room registry.
     // In a production system, replace with Redis + persistent DB-backed room state.
     const defaultRoomId = 'lobby';
@@ -117,9 +131,24 @@ const main = async () => {
         }
     });
 
-    fastify.get('/', async (_request, _reply) => {
+    fastify.get('/', async (_request, reply) => {
+        if (hasWebDist) {
+            return reply.sendFile('index.html');
+        }
         return { hello: 'world' };
     });
+
+    if (hasWebDist) {
+        fastify.setNotFoundHandler((request, reply) => {
+            if (request.method === 'GET') {
+                const accept = request.headers.accept ?? '';
+                if (accept.includes('text/html')) {
+                    return reply.sendFile('index.html');
+                }
+            }
+            return reply.status(404).send({ code: 'NOT_FOUND', message: 'Route not found' });
+        });
+    }
 
     fastify.post('/auth/register', async (request, reply) => {
         try {
@@ -357,8 +386,9 @@ const main = async () => {
     }
 
     try {
-        await fastify.listen({ port: 3001, host: '0.0.0.0' });
-        console.log('Server listening on http://localhost:3001');
+        const port = Number(process.env.PORT) || 3001;
+        await fastify.listen({ port, host: '0.0.0.0' });
+        console.log(`Server listening on http://localhost:${port}`);
     } catch (err) {
         fastify.log.error(err);
         process.exit(1);
