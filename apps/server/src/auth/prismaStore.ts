@@ -41,6 +41,7 @@ export class PrismaAuthStore implements AuthStore {
             data: {
                 email: input.email.toLowerCase(),
                 passwordHash: input.passwordHash,
+                mustChangePassword: false,
                 profile: {
                     create: {
                         nickname: input.nickname,
@@ -76,6 +77,16 @@ export class PrismaAuthStore implements AuthStore {
             where: { id: userId },
             data: {
                 passwordHash,
+                updatedAt: at
+            }
+        });
+    }
+
+    public async updateUserMustChangePassword(userId: string, mustChangePassword: boolean, at: Date): Promise<void> {
+        await this.prisma.user.update({
+            where: { id: userId },
+            data: {
+                mustChangePassword,
                 updatedAt: at
             }
         });

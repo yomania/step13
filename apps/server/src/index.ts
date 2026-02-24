@@ -182,6 +182,25 @@ const main = async () => {
         }
     });
 
+    fastify.post('/auth/change-password', async (request, reply) => {
+        try {
+            const accessToken = extractBearerToken(request.headers.authorization);
+            if (!accessToken) {
+                return reply.status(401).send({ code: 'MISSING_ACCESS_TOKEN', message: 'Authorization Bearer token is required' });
+            }
+
+            const body = request.body as Partial<{ newPassword: string }> | undefined;
+            if (!body || typeof body.newPassword !== 'string') {
+                return reply.status(400).send({ code: 'INVALID_PAYLOAD', message: 'newPassword is required' });
+            }
+
+            const session = await authService.changePassword(accessToken, { newPassword: body.newPassword });
+            return reply.send(session);
+        } catch (error) {
+            return handleRouteError(reply, error);
+        }
+    });
+
     fastify.post('/auth/ws-ticket', async (request, reply) => {
         try {
             const accessToken = extractBearerToken(request.headers.authorization);

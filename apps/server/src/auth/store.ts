@@ -7,6 +7,7 @@ export type UserRecord = {
     id: string;
     email: string;
     passwordHash: string;
+    mustChangePassword: boolean;
     createdAt: Date;
     updatedAt: Date;
     lastLoginAt: Date | null;
@@ -99,6 +100,7 @@ export type AuthStore = {
     }): Promise<{ user: UserRecord; profile: ProfileRecord }>;
     updateUserLastLogin(userId: string, at: Date): Promise<void>;
     updateUserPassword(userId: string, passwordHash: string, at: Date): Promise<void>;
+    updateUserMustChangePassword(userId: string, mustChangePassword: boolean, at: Date): Promise<void>;
     findProfileByUserId(userId: string): Promise<ProfileRecord | null>;
     findProfileByNickname(nickname: string): Promise<ProfileRecord | null>;
     updateProfile(userId: string, patch: {
@@ -163,6 +165,7 @@ export class InMemoryAuthStore implements AuthStore {
             id: userId,
             email: normalizedEmail,
             passwordHash: input.passwordHash,
+            mustChangePassword: false,
             createdAt: now,
             updatedAt: now,
             lastLoginAt: now
@@ -201,6 +204,16 @@ export class InMemoryAuthStore implements AuthStore {
             return;
         }
         user.passwordHash = passwordHash;
+        user.updatedAt = at;
+        this.usersById.set(userId, user);
+    }
+
+    public async updateUserMustChangePassword(userId: string, mustChangePassword: boolean, at: Date): Promise<void> {
+        const user = this.usersById.get(userId);
+        if (!user) {
+            return;
+        }
+        user.mustChangePassword = mustChangePassword;
         user.updatedAt = at;
         this.usersById.set(userId, user);
     }

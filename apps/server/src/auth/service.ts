@@ -204,12 +204,45 @@ export class AuthService {
         const now = new Date();
         const passwordHash = hashPassword(nextPassword);
         await this.store.updateUserPassword(user.id, passwordHash, now);
+        await this.store.updateUserMustChangePassword(user.id, true, now);
         await this.store.revokeRefreshTokensForUser(user.id, now);
 
         return {
             userId: user.id,
             email: user.email,
             temporaryPassword: shouldGenerate ? nextPassword : undefined
+        };
+    }
+
+    public async changePassword(accessToken: string, input: { newPassword: string }): Promise<AuthSessionDTO> {
+        const identity = await this.authenticateAccessToken(accessToken);
+        const userRecord = await this.store.findUserById(identity.user.id);
+        if (!userRecord) {
+            throw new AuthError('ACCOUNT_NOT_FOUND', 'Account no longer exists', 401);
+        }
+
+        if (!userRecord.mustChangePassword) {
+            throw new AuthError('PASSWORD_CHANGE_NOT_REQUIRED', 'Password change is not required', 400);
+        }
+
+        const nextPassword = input.newPassword;
+        validatePassword(nextPassword);
+
+        const now = new Date();
+        const passwordHash = hashPassword(nextPassword);
+        await this.store.updateUserPassword(userRecord.id, passwordHash, now);
+        await this.store.updateUserMustChangePassword(userRecord.id, false, now);
+        await this.store.revokeRefreshTokensForUser(userRecord.id, now);
+
+        const tokens = await this.issueTokens(userRecord.id, null);
+        return {
+            user: toAuthUserDTO({
+                ...userRecord,
+                mustChangePassword: false,
+                updatedAt: now
+            }),
+            profile: identity.profile,
+            tokens
         };
     }
 
@@ -452,7 +485,8 @@ function toAuthUserDTO(user: UserRecord): AuthUserDTO {
     return {
         id: user.id,
         email: user.email,
-        createdAt: user.createdAt.toISOString()
+        createdAt: user.createdAt.toISOString(),
+        mustChangePassword: user.mustChangePassword
     };
 }
 

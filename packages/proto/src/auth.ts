@@ -8,6 +8,7 @@ export type AuthUserDTO = {
     id: string;
     email: string;
     createdAt: string;
+    mustChangePassword: boolean;
 };
 
 export type PublicProfileDTO = {

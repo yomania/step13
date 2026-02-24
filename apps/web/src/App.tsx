@@ -20,6 +20,7 @@ import { preloadRealTileAssets } from './lib/tileAssets';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
     ApiError,
+    changePasswordApi,
     createRoomApi,
     getStatsSummaryApi,
     loginApi,
@@ -181,6 +182,10 @@ export default function App() {
     const [authLoading, setAuthLoading] = useState(true);
     const [authSubmitting, setAuthSubmitting] = useState(false);
     const [authError, setAuthError] = useState<string | null>(null);
+    const [passwordChangeInput, setPasswordChangeInput] = useState('');
+    const [passwordChangeConfirmInput, setPasswordChangeConfirmInput] = useState('');
+    const [passwordChangeSubmitting, setPasswordChangeSubmitting] = useState(false);
+    const [passwordChangeError, setPasswordChangeError] = useState<string | null>(null);
     const [showProfilePanel, setShowProfilePanel] = useState(false);
     const [profileNicknameInput, setProfileNicknameInput] = useState('');
     const [profileBioInput, setProfileBioInput] = useState('');
@@ -197,6 +202,9 @@ export default function App() {
         return value && value.trim().length > 0 ? value.trim() : null;
     }, []);
     const playerId = authSession?.profile.playerId ?? '__unauth__';
+    const effectiveAccessToken = authSession && !authSession.user.mustChangePassword
+        ? authSession.tokens.accessToken
+        : null;
 
     // Pass the actor and a callback to update serverState
     const handleServerStateUpdate = useCallback((newState: any, incomingProfiles?: Record<string, { nickname: string; avatarKey: string }>) => {
@@ -242,11 +250,11 @@ export default function App() {
     }, [apiBaseUrl]);
 
     const socketOptions = useMemo(() => ({
-        accessToken: authSession?.tokens.accessToken ?? null,
+        accessToken: effectiveAccessToken,
         apiBaseUrl,
         roomId,
         onAuthExpired: handleSocketAuthExpired
-    }), [authSession?.tokens.accessToken, apiBaseUrl, handleSocketAuthExpired, roomId]);
+    }), [apiBaseUrl, effectiveAccessToken, handleSocketAuthExpired, roomId]);
 
     const { sendEvent, queryAnalysis, queryPersonas } = useGameSocket(
         actor,
@@ -297,7 +305,7 @@ export default function App() {
     }, [apiBaseUrl, roomCreating]);
 
     useEffect(() => {
-        setIsConnected(Boolean(authSession));
+        setIsConnected(Boolean(authSession && !authSession.user.mustChangePassword));
     }, [authSession]);
 
     useEffect(() => {
@@ -456,6 +464,39 @@ export default function App() {
             setAuthSubmitting(false);
         }
     }, [apiBaseUrl, authEmailInput, authMode, authNicknameInput, authPasswordInput]);
+
+    const submitPasswordChange = useCallback(async () => {
+        if (!authSession) return;
+
+        if (!passwordChangeInput || !passwordChangeConfirmInput) {
+            setPasswordChangeError('새 비밀번호를 입력해주세요.');
+            return;
+        }
+        if (passwordChangeInput !== passwordChangeConfirmInput) {
+            setPasswordChangeError('비밀번호 확인이 일치하지 않습니다.');
+            return;
+        }
+
+        setPasswordChangeSubmitting(true);
+        setPasswordChangeError(null);
+        try {
+            const session = await changePasswordApi(authSession.tokens.accessToken, {
+                newPassword: passwordChangeInput
+            }, apiBaseUrl);
+            saveStoredRefreshToken(session.tokens.refreshToken);
+            setAuthSession(session);
+            setPasswordChangeInput('');
+            setPasswordChangeConfirmInput('');
+        } catch (error) {
+            if (error instanceof ApiError) {
+                setPasswordChangeError(error.message);
+            } else {
+                setPasswordChangeError('비밀번호 변경 중 오류가 발생했습니다.');
+            }
+        } finally {
+            setPasswordChangeSubmitting(false);
+        }
+    }, [apiBaseUrl, authSession, passwordChangeConfirmInput, passwordChangeInput]);
 
     const submitProfileUpdate = useCallback(async () => {
         if (!authSession) return;
@@ -1005,6 +1046,67 @@ export default function App() {
                                     }`}
                             >
                                 {authSubmitting ? '처리 중...' : authMode === 'login' ? '로그인' : '회원가입'}
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </TileSkinProvider>
+        );
+    }
+
+    if (authSession.user.mustChangePassword) {
+        return (
+            <TileSkinProvider skin={tileSkin}>
+                <div className="app-noise min-h-screen flex items-center justify-center px-4 py-8 text-white">
+                    <div className="w-full max-w-md glass-panel rounded-3xl p-6 shadow-2xl">
+                        <h1 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-rose-200 to-orange-300">
+                            비밀번호 변경 필요
+                        </h1>
+                        <p className="mt-2 text-sm text-slate-300">
+                            임시비밀번호로 로그인했습니다. 새 비밀번호를 설정해주세요.
+                        </p>
+                        <form
+                            className="mt-5 flex flex-col gap-3"
+                            onSubmit={(event) => {
+                                event.preventDefault();
+                                void submitPasswordChange();
+                            }}
+                        >
+                            <input
+                                type="password"
+                                value={passwordChangeInput}
+                                onChange={(event) => setPasswordChangeInput(event.target.value)}
+                                placeholder="새 비밀번호 (8자 이상)"
+                                className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                            />
+                            <input
+                                type="password"
+                                value={passwordChangeConfirmInput}
+                                onChange={(event) => setPasswordChangeConfirmInput(event.target.value)}
+                                placeholder="새 비밀번호 확인"
+                                className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                            />
+                            {passwordChangeError && (
+                                <div className="text-sm text-rose-300 bg-rose-900/25 border border-rose-500/40 rounded-lg px-3 py-2">
+                                    {passwordChangeError}
+                                </div>
+                            )}
+                            <button
+                                type="submit"
+                                disabled={passwordChangeSubmitting}
+                                className={`w-full py-3 rounded-2xl font-bold ${passwordChangeSubmitting
+                                    ? 'bg-slate-700 text-slate-300 cursor-not-allowed'
+                                    : 'bg-amber-600 hover:bg-amber-500 text-white'
+                                    }`}
+                            >
+                                {passwordChangeSubmitting ? '처리 중...' : '비밀번호 변경'}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => void handleLogout()}
+                                className="w-full py-2 rounded-2xl font-semibold bg-slate-800 text-slate-200 border border-slate-700 hover:bg-slate-700"
+                            >
+                                로그아웃
                             </button>
                         </form>
                     </div>

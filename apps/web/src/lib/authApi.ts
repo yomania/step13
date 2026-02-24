@@ -64,6 +64,21 @@ export async function refreshApi(refreshToken: string, apiBaseUrl?: string): Pro
     });
 }
 
+export async function changePasswordApi(
+    accessToken: string,
+    payload: { newPassword: string },
+    apiBaseUrl?: string
+): Promise<AuthSessionDTO> {
+    return requestJson<AuthSessionDTO>(`${resolveApiBase(apiBaseUrl)}/auth/change-password`, {
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+    });
+}
+
 export async function logoutApi(refreshToken: string | null, apiBaseUrl?: string): Promise<void> {
     await requestJson(`${resolveApiBase(apiBaseUrl)}/auth/logout`, {
         method: 'POST',
