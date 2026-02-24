@@ -268,7 +268,9 @@ export default function App() {
         queryAnalysis({ ...query, playerId });
     }, [queryAnalysis, playerId]);
     const [isConnected, setIsConnected] = useState(false);
+    const isDev = import.meta.env.DEV;
     const [debugMode, setDebugMode] = useState<boolean>(() => {
+        if (!isDev) return false;
         if (typeof window === 'undefined') return false;
         return window.localStorage.getItem('step13-debug-mode') === '1';
     });
@@ -309,9 +311,10 @@ export default function App() {
     }, [authSession]);
 
     useEffect(() => {
+        if (!isDev) return;
         if (typeof window === 'undefined') return;
         window.localStorage.setItem('step13-debug-mode', debugMode ? '1' : '0');
-    }, [debugMode]);
+    }, [debugMode, isDev]);
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -1196,7 +1199,7 @@ export default function App() {
                                     onClick={onAiExitToHandBuild}
                                     className="w-full px-3 py-2 rounded-xl bg-cyan-700 hover:bg-cyan-600 text-sm font-semibold"
                                 >
-                                    조패 단계부터 다시 시작
+                                    처음부터 다시 시작
                                 </button>
                                 <button
                                     onClick={() => setShowAiExitMenu(false)}
@@ -1342,19 +1345,21 @@ export default function App() {
                                         <div className="text-xs text-slate-400 mb-2">실행 옵션</div>
                                         <div className="mb-3">
                                             <div className="text-xs text-slate-300 mb-1">실행모드</div>
-                                            <div className="grid grid-cols-2 gap-1">
+                                            <div className={`grid ${isDev ? 'grid-cols-2' : 'grid-cols-1'} gap-1`}>
                                                 <button
                                                     onClick={() => setDebugMode(false)}
                                                     className={`px-2 py-1 rounded text-xs border ${!debugMode ? 'bg-blue-700 border-blue-500 text-white' : 'bg-slate-800 border-slate-600 text-slate-300'}`}
                                                 >
                                                     NORMAL
                                                 </button>
-                                                <button
-                                                    onClick={() => setDebugMode(true)}
-                                                    className={`px-2 py-1 rounded text-xs border ${debugMode ? 'bg-amber-700 border-amber-500 text-white' : 'bg-slate-800 border-slate-600 text-slate-300'}`}
-                                                >
-                                                    DEBUG
-                                                </button>
+                                                {isDev && (
+                                                    <button
+                                                        onClick={() => setDebugMode(true)}
+                                                        className={`px-2 py-1 rounded text-xs border ${debugMode ? 'bg-amber-700 border-amber-500 text-white' : 'bg-slate-800 border-slate-600 text-slate-300'}`}
+                                                    >
+                                                        DEBUG
+                                                    </button>
+                                                )}
                                             </div>
                                         </div>
                                         <div>
