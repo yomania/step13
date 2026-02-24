@@ -63,8 +63,18 @@ const main = async () => {
     });
 
     const corsOriginsFromEnv = process.env.CORS_ORIGINS?.split(',').map((origin) => origin.trim()).filter(Boolean) ?? [];
-    const defaultDevOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173'];
-    const allowedCorsOrigins = corsOriginsFromEnv.length > 0 ? corsOriginsFromEnv : defaultDevOrigins;
+    const defaultDevOrigins = [
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+        'http://localhost:3000',
+        'http://127.0.0.1:3000'
+    ];
+    if (isProduction && corsOriginsFromEnv.length === 0) {
+        throw new Error('CORS_ORIGINS must be set in production.');
+    }
+    const allowedCorsOrigins = isProduction
+        ? corsOriginsFromEnv
+        : Array.from(new Set([...defaultDevOrigins, ...corsOriginsFromEnv]));
     if (allowedCorsOrigins.includes('*')) {
         if (isProduction) {
             throw new Error('CORS_ORIGINS must not include "*" in production.');

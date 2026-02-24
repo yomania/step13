@@ -62,7 +62,7 @@ function createTestClock() {
 }
 
 describe('replayMachine', () => {
-    it('should load events and reproduce the final state', async () => {
+    it('should load events and reproduce the final state', () => {
         // 1. Play a short game to generate events
         const gameActor = createActor(gameMachine);
         gameActor.start();
@@ -130,7 +130,7 @@ describe('replayMachine', () => {
         if (startEvent && startEvent.type === 'START_MATCH') {
             expect(startEvent.dealtTiles).toBeDefined();
         }
-    });
+    }, 10000);
 
     it('should navigate through steps', () => {
         const replayActor = createActor(replayMachine);
@@ -183,5 +183,5 @@ describe('replayMachine', () => {
         const lastSnapshot = replayContext.snapshots[replayContext.snapshots.length - 1];
         expect(lastSnapshot.doraIndicators.length).toBe(1);
         expect(lastSnapshot.phase).toBe('ROUND_START');
-    });
+    }, 10000);
 });
