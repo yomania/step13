@@ -452,12 +452,20 @@ function extractRoomId(rawUrl: string, fallback: string): string | null {
     return normalizeRoomId(raw);
 }
 
-function handleRouteError(reply: { status: (code: number) => { send: (body: unknown) => unknown } }, error: unknown) {
+function handleRouteError(
+    reply: {
+        status: (code: number) => { send: (body: unknown) => unknown };
+        log?: { error: (error: unknown, message?: string) => void };
+    },
+    error: unknown
+) {
     if (error instanceof AuthError) {
         return reply.status(error.statusCode).send({ code: error.code, message: error.message });
     }
-    const message = error instanceof Error ? error.message : 'Unexpected server error';
-    return reply.status(500).send({ code: 'INTERNAL_ERROR', message });
+    if (reply.log?.error) {
+        reply.log.error(error, 'Unhandled route error');
+    }
+    return reply.status(500).send({ code: 'INTERNAL_ERROR', message: 'Internal server error' });
 }
 
 function normalizeRoomId(raw: unknown): string | null {
