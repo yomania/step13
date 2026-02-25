@@ -15,6 +15,7 @@
     "test:e2e": "pnpm --filter server exec tsx ../../scripts/test-e2e-flows.ts",
     "test:ai:difficulty": "pnpm --filter server exec tsx ../../scripts/test-e2e-flows.ts",
     "sim:ai": "pnpm --filter server exec tsx ../../scripts/simulate-ai-vs-ai.ts",
+    "build:server": "pnpm --filter server... build",
     "build": "turbo build",
     "dev": "turbo dev"
   },
