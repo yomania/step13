@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "prisma generate --schema prisma/schema.postgres.prisma && tsc",
+    "db:push": "prisma db push --schema prisma/schema.postgres.prisma",
     "start": "node dist/index.js"
   },
   "dependencies": {
