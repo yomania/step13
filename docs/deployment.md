@@ -8,7 +8,8 @@ Step13 운영 배포는 **Railway** 기준으로 관리합니다.
 ## 현재/목표 상태
 
 - 기존 운영 플랫폼: Render (`mind17step.onrender.com`)
-- 목표 운영 플랫폼: Railway (`<service>.up.railway.app` 또는 커스텀 도메인)
+- 현재 Railway 서비스 도메인: `https://zealous-growth.up.railway.app`
+- 목표 운영 플랫폼: Railway (위 도메인 또는 커스텀 도메인)
 - 전환 원칙:
   - 전환 기간에는 `CORS_ORIGINS`에 구 도메인/신 도메인을 함께 등록
   - 검증 완료 후 `VITE_API_URL`과 도메인 안내를 Railway 도메인으로 단일화
@@ -22,6 +23,8 @@ Step13 운영 배포는 **Railway** 기준으로 관리합니다.
    - `JWT_SECRET`
    - `DATABASE_URL`
    - `CORS_ORIGINS`
+   - `VITE_API_URL`
+   - `VITE_WS_URL`
    - `ROOM_IDLE_TTL_MS` (선택)
    - `ROOM_CLEANUP_INTERVAL_MS` (선택)
 4. 첫 배포 전에 DB 스키마를 반영합니다.
@@ -33,7 +36,8 @@ Step13 운영 배포는 **Railway** 기준으로 관리합니다.
 
 ## 도메인/환경 변수 운영 기준
 
-- `VITE_API_URL`은 최종적으로 Railway 운영 도메인을 사용합니다.
+- `VITE_API_URL`은 `https://zealous-growth.up.railway.app`를 사용합니다.
+- `VITE_WS_URL`은 `wss://zealous-growth.up.railway.app/ws`를 사용합니다.
 - `CORS_ORIGINS`는 실제 접속 가능한 Web 도메인만 허용합니다.
 - 커스텀 도메인 전환 시:
   1. DNS 연결 완료
