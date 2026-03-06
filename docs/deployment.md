@@ -1,24 +1,49 @@
 # 서비스 배포 (Deployment) 가이드
 
-기준일: `2026-02-25`
+기준일: `2026-03-06`
 
-현재 Step13 프로젝트는 **Render** 플랫폼을 통해 운영(Production) 환경에 배포되어 있습니다.
+Step13 운영 배포는 **Railway** 기준으로 관리합니다.  
+서버(`apps/server`)가 정적 웹(`apps/web/dist`)을 함께 서빙하므로, 단일 서비스로 Web + API + WebSocket(`/ws`)를 동시 운영합니다.
 
-## 배포 URL 정보
+## 현재/목표 상태
 
-- **운영 Web 접속 주소 (Frontend)**: `https://mind17step.onrender.com`
-- **운영 API Server 주소 (Backend)**: `https://mind17step.onrender.com` 
+- 기존 운영 플랫폼: Render (`mind17step.onrender.com`)
+- 목표 운영 플랫폼: Railway (`<service>.up.railway.app` 또는 커스텀 도메인)
+- 전환 원칙:
+  - 전환 기간에는 `CORS_ORIGINS`에 구 도메인/신 도메인을 함께 등록
+  - 검증 완료 후 `VITE_API_URL`과 도메인 안내를 Railway 도메인으로 단일화
 
-## 환경 변수 설정 기준
+## Railway 배포 절차
 
-운영 환경에서는 보안 및 정상 동작을 위해 다음 환경 변수가 적절히 설정되어야 합니다. (상세 내용은 `docs/env.md` 참조)
+1. Railway 프로젝트를 생성하고 이 저장소를 연결합니다.
+2. 루트 `Dockerfile` 기반으로 빌드/배포합니다.
+3. 필수 환경 변수를 설정합니다.
+   - `NODE_ENV=production`
+   - `JWT_SECRET`
+   - `DATABASE_URL`
+   - `CORS_ORIGINS`
+   - `ROOM_IDLE_TTL_MS` (선택)
+   - `ROOM_CLEANUP_INTERVAL_MS` (선택)
+4. 첫 배포 전에 DB 스키마를 반영합니다.
+   - `pnpm --filter server db:push`
+5. 배포 후 아래를 점검합니다.
+   - `GET /` 응답
+   - `POST /auth/login` 정상 동작
+   - `wss://<도메인>/ws` 연결 및 재연결 동작
 
-1. **`CORS_ORIGINS` (Server)**
-   - `https://mind17step.onrender.com` 주소가 반드시 화이트리스트에 포함되어 있어야 합니다.
-2. **`VITE_API_URL` (Web)**
-   - 프로덕션 배포 시 API 통신을 위해 `https://mind17step.onrender.com` 로 지정되어야 합니다.
+## 도메인/환경 변수 운영 기준
 
-## 관리 방안 가이드
+- `VITE_API_URL`은 최종적으로 Railway 운영 도메인을 사용합니다.
+- `CORS_ORIGINS`는 실제 접속 가능한 Web 도메인만 허용합니다.
+- 커스텀 도메인 전환 시:
+  1. DNS 연결 완료
+  2. `CORS_ORIGINS`에 커스텀 도메인 추가
+  3. `VITE_API_URL` 업데이트
+  4. 구 도메인 제거
 
-- 클라이언트가 API를 호출하거나 소켓을 연결할 때 항상 운영 도메인(`mind17step.onrender.com`)을 기준으로 올바르게 요청할 수 있도록 파이프라인에 환경 변수를 주입해야 합니다.
-- 새로운 서브도메인이 추가되거나 연동 서버(예: 분리된 봇 서버 등)가 생길 경우, 이 문서의 배포 URL 정보와 `docs/env.md`를 함께 갱신해야 합니다.
+## 롤백 가이드
+
+- Railway 배포 이슈 발생 시 즉시 Render 도메인으로 트래픽을 되돌릴 수 있도록 전환 기간 동안 설정을 유지합니다.
+- 롤백 시 필수 조치:
+  - `VITE_API_URL`을 Render 도메인으로 복구
+  - `CORS_ORIGINS`에 Render 도메인이 포함되어 있는지 확인
