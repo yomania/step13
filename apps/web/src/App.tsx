@@ -17,6 +17,7 @@ import {
 } from '@step13/proto';
 import { calculateScore, calculateShanten, type ScoreResult } from '@step13/scoring';
 import { preloadRealTileAssets } from './lib/tileAssets';
+import { resolveApiBaseUrl } from './lib/networkConfig';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
     ApiError,
@@ -195,7 +196,7 @@ export default function App() {
     const [statsLoading, setStatsLoading] = useState(false);
     const [roomCreating, setRoomCreating] = useState(false);
     const [roomCreateError, setRoomCreateError] = useState<string | null>(null);
-    const apiBaseUrl = useMemo(() => import.meta.env.VITE_API_URL || 'http://localhost:3001', []);
+    const apiBaseUrl = useMemo(() => resolveApiBaseUrl(), []);
     const roomId = useMemo(() => {
         if (typeof window === 'undefined') return null;
         const value = new URLSearchParams(window.location.search).get('roomId');

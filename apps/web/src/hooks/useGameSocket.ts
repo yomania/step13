@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { AnyActorRef } from 'xstate';
+import { resolveApiBaseUrl, resolveWsBaseUrl } from '../lib/networkConfig';
 
 type PlayerProfileMap = Record<string, { nickname: string; avatarKey: string }>;
 
@@ -53,7 +54,7 @@ export function useGameSocket(
                 const ticket = await requestWsTicket(accessToken, options.apiBaseUrl, abort.signal);
                 if (cancelled) return;
 
-                const wsBaseUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:3001/ws';
+                const wsBaseUrl = resolveWsBaseUrl();
                 const separator = wsBaseUrl.includes('?') ? '&' : '?';
                 const roomId = options.roomId?.trim();
                 const roomParam = roomId ? `&roomId=${encodeURIComponent(roomId)}` : '';
@@ -204,7 +205,7 @@ async function requestWsTicket(
     apiBaseUrl: string | undefined,
     signal: AbortSignal
 ): Promise<string> {
-    const apiBase = apiBaseUrl ?? import.meta.env.VITE_API_URL ?? 'http://localhost:3001';
+    const apiBase = resolveApiBaseUrl(apiBaseUrl);
     const response = await fetch(`${apiBase}/auth/ws-ticket`, {
         method: 'POST',
         headers: {

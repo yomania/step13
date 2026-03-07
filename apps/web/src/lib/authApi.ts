@@ -4,8 +4,7 @@ import {
     StatsSummaryDTO,
     UpdateProfileInputDTO
 } from '@step13/proto';
-
-const DEFAULT_API_BASE = 'http://localhost:3001';
+import { resolveApiBaseUrl } from './networkConfig';
 
 export type MeResponseDTO = {
     user: {
@@ -136,7 +135,7 @@ export async function createRoomApi(
 }
 
 function resolveApiBase(apiBaseUrl?: string): string {
-    return apiBaseUrl ?? import.meta.env.VITE_API_URL ?? DEFAULT_API_BASE;
+    return resolveApiBaseUrl(apiBaseUrl);
 }
 
 async function requestJson<T = unknown>(url: string, init: RequestInit): Promise<T> {
