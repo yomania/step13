@@ -66,7 +66,7 @@ const WEIGHTS: Record<Difficulty, HeuristicWeights> = {
         sanshoku: 3000,
         chanta: 2500,
         dora: 300,
-        koutsu: 100,
+        koutsu: 400, // 대폭 상향: 똑같은 패를 모으는 쪽으로 진화 유도 (또이또이/산안커)
         pair: 500,
         ryanmen: 150,
         speedvsValue: 0.9, // Higher focus on value
@@ -326,6 +326,18 @@ function evaluateYakuPotential(hand: Tile[], structure: HandStructure, weights: 
             // Tenpai for Chiitoitsu (6 pairs + single)
             score += 5000;
         }
+    }
+
+    // --- 다중 역(복합 역) 콤보 보너스 신설 ---
+    let pureYakuCount = 0;
+    if (sanshokuMatches > 0) pureYakuCount++;
+    if (terminalBlocks >= 4) pureYakuCount++;
+    if (totalSuited >= 9) pureYakuCount++; // Honitsu / Chinitsu 징조
+    if (pairCount >= 6) pureYakuCount++;
+
+    if (pureYakuCount >= 2) {
+        // 여러 역이 동시에 성립할 가능성이 높을 때 기하급수적 보너스
+        score += Math.pow(pureYakuCount, 2) * 5000;
     }
 
     return score;

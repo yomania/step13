@@ -339,6 +339,33 @@ export class BotLogic {
             dfs(0, 0);
         };
 
+        const seedTripletCandidates = () => {
+            const specs: Array<{ key: string; count: number }> = [];
+            for (const [key, count] of Object.entries(poolCounts)) {
+                if (count >= 3) {
+                    specs.push({ key, count: 3 });
+                }
+            }
+            if (specs.length >= 3) { // Try to build Sanankou/Toitoi base
+                // Sort by count descending, then randomly
+                specs.sort((a, b) => b.count - a.count || Math.random() - 0.5);
+
+                // Try combinations of 4 or 3 triplets
+                const topSpecs = specs.slice(0, 4);
+                const toitoiBase = buildMandatoryIndices(topSpecs);
+                if (toitoiBase) {
+                    addCandidatesFromMandatory(toitoiBase, 1, 100);
+                }
+
+                if (specs.length >= 3) {
+                    const sanankouBase = buildMandatoryIndices(specs.slice(0, 3));
+                    if (sanankouBase) {
+                        addCandidatesFromMandatory(sanankouBase, 4, 150);
+                    }
+                }
+            }
+        };
+
         const seedYakumanCandidates = () => {
             const kokushi = buildMandatoryIndices([
                 { key: 'man1', count: 1 }, { key: 'man9', count: 1 },
@@ -409,6 +436,7 @@ export class BotLogic {
         };
 
         seedYakumanCandidates();
+        seedTripletCandidates();
 
         if (params.suitSeeds) {
             // Seed with flushed hands logic
@@ -619,8 +647,14 @@ export class BotLogic {
 
         if (difficulty === 'HARD') {
             quality += (bestPoints * 1.5) + (bestHan * 5000); // 고타점 스노우볼링 강화
+            if (bestPoints === 0) {
+                quality -= 100000; // 0점(역 없음/판수 부족) 패 원천 차단
+            }
         } else if (difficulty === 'MEDIUM') {
             quality += (bestPoints * 0.5) + (bestHan * 1000);
+            if (bestPoints === 0) {
+                quality -= 30000;
+            }
         }
 
         // Pinfu tends to be undervalued by pure shape scoring; lift it slightly so
