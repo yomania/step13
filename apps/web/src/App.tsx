@@ -45,6 +45,11 @@ type SingleMode = 'menu' | 'mini' | 'ai';
 type AuthMode = 'login' | 'register';
 
 const REFRESH_TOKEN_STORAGE_KEY = 'step13-refresh-token';
+const ROOM_NAME_WORDS = [
+    'Aurora', 'Maple', 'Nimbus', 'Harbor', 'Cedar', 'Falcon', 'Breeze', 'Summit', 'Raven', 'Willow',
+    'Quartz', 'Comet', 'Meadow', 'Echo', 'Canyon', 'Glacier', 'Orchid', 'Atlas', 'Blossom', 'Nova',
+    'Ember', 'Coral', 'Spruce', 'Dawn', 'Pioneer', 'Sierra', 'Iris', 'Lagoon', 'Jasper', 'Zenith'
+];
 
 function getWinningWaits(hand: Tile[]): Tile[] {
     if (hand.length !== RULES.tiles.handSize) {
@@ -170,6 +175,29 @@ function clearStoredRefreshToken(): void {
     window.localStorage.removeItem(REFRESH_TOKEN_STORAGE_KEY);
 }
 
+function generateUniqueRoomName(existingNames: string[]): string {
+    const normalized = new Set(existingNames.map((name) => name.trim().toLowerCase()).filter(Boolean));
+    const maxAttempts = 60;
+    for (let i = 0; i < maxAttempts; i++) {
+        const index = Math.floor(Math.random() * ROOM_NAME_WORDS.length);
+        const candidate = ROOM_NAME_WORDS[index];
+        if (!normalized.has(candidate.toLowerCase())) {
+            return candidate;
+        }
+    }
+
+    let suffix = 1;
+    while (suffix <= 9999) {
+        const baseIndex = Math.floor(Math.random() * ROOM_NAME_WORDS.length);
+        const candidate = `${ROOM_NAME_WORDS[baseIndex]}-${suffix}`;
+        if (!normalized.has(candidate.toLowerCase())) {
+            return candidate;
+        }
+        suffix++;
+    }
+    return `Room-${Date.now()}`;
+}
+
 
 
 export default function App() {
@@ -199,6 +227,7 @@ export default function App() {
     const [statsLoading, setStatsLoading] = useState(false);
     const [roomCreating, setRoomCreating] = useState(false);
     const [roomCreateError, setRoomCreateError] = useState<string | null>(null);
+    const [showCreateRoomModal, setShowCreateRoomModal] = useState(false);
     const [roomNameInput, setRoomNameInput] = useState('');
     const [roomPasswordInput, setRoomPasswordInput] = useState('');
     const [onlineRooms, setOnlineRooms] = useState<RoomSummaryDTO[]>([]);
@@ -348,16 +377,32 @@ export default function App() {
         setRoomCreating(true);
         setRoomCreateError(null);
         try {
+            const typedRoomName = roomNameInput.trim();
+            let existingRooms = onlineRooms;
+            if (typedRoomName.length === 0) {
+                try {
+                    const latest = await withAccessTokenRetry((accessToken) => listRoomsApi(accessToken, apiBaseUrl));
+                    existingRooms = latest.rooms;
+                    setOnlineRooms(latest.rooms);
+                } catch {
+                    // Keep current room list if prefetch fails.
+                }
+            }
+            const resolvedRoomName = typedRoomName.length > 0
+                ? typedRoomName
+                : generateUniqueRoomName(existingRooms.map((room) => room.name));
+            const trimmedPassword = roomPasswordInput.trim();
             const createdRoom = await withAccessTokenRetry((accessToken) => createRoomApi(accessToken, {
-                name: roomNameInput.trim() || undefined,
-                password: roomPasswordInput.trim() || null
+                name: resolvedRoomName,
+                password: trimmedPassword || null
             }, apiBaseUrl));
             setActiveRoomId(createdRoom.roomId);
-            setActiveRoomPassword(roomPasswordInput.trim() || null);
+            setActiveRoomPassword(trimmedPassword || null);
             setRoomSelectionId(createdRoom.roomId);
             setRoomSelectionPasswordInput('');
             setRoomNameInput('');
             setRoomPasswordInput('');
+            setShowCreateRoomModal(false);
             setRoomSettingsNameInput(createdRoom.name);
             setRoomSettingsPasswordInput('');
             const latestRooms = await withAccessTokenRetry((accessToken) => listRoomsApi(accessToken, apiBaseUrl));
@@ -371,7 +416,7 @@ export default function App() {
         } finally {
             setRoomCreating(false);
         }
-    }, [apiBaseUrl, roomCreating, roomNameInput, roomPasswordInput, withAccessTokenRetry]);
+    }, [apiBaseUrl, onlineRooms, roomCreating, roomNameInput, roomPasswordInput, withAccessTokenRetry]);
 
     const refreshOnlineRooms = useCallback(async () => {
         setRoomsError(null);
@@ -1683,33 +1728,94 @@ export default function App() {
                                                 </div>
                                                 <div className="text-xs text-slate-400 mt-1">{resolvedRoomId}</div>
                                             </div>
-                                            <div className="surface-panel p-4 rounded-2xl space-y-2">
-                                                <div className="text-xs text-slate-400">새 룸 생성</div>
-                                                <input
-                                                    value={roomNameInput}
-                                                    onChange={(event) => setRoomNameInput(event.target.value)}
-                                                    placeholder="룸 이름 (선택)"
-                                                    className="w-full rounded-xl bg-slate-900/90 border border-slate-600 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-cyan-400"
-                                                />
-                                                <input
-                                                    type="password"
-                                                    value={roomPasswordInput}
-                                                    onChange={(event) => setRoomPasswordInput(event.target.value)}
-                                                    placeholder="룸 비밀번호 (선택)"
-                                                    className="w-full rounded-xl bg-slate-900/90 border border-slate-600 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-cyan-400"
-                                                />
-                                            </div>
                                             <button
-                                                onClick={handleCreateRoom}
-                                                disabled={roomCreating}
-                                                className={`w-full py-3 rounded-2xl font-bold text-lg shadow-lg ${roomCreating
-                                                    ? 'bg-slate-700 text-slate-300 cursor-not-allowed'
-                                                    : 'bg-violet-600 hover:bg-violet-500 text-white'
-                                                    }`}
+                                                type="button"
+                                                onClick={() => {
+                                                    setRoomCreateError(null);
+                                                    setRoomNameInput('');
+                                                    setRoomPasswordInput('');
+                                                    setShowCreateRoomModal(true);
+                                                }}
+                                                className="w-full py-3 rounded-2xl font-bold text-lg shadow-lg bg-violet-600 hover:bg-violet-500 text-white"
                                             >
-                                                {roomCreating ? '룸 생성 중...' : '새 룸 생성'}
+                                                새 룸 생성
                                             </button>
-                                            {roomCreateError && (
+                                            <AnimatePresence>
+                                                {showCreateRoomModal && (
+                                                    <motion.div
+                                                        initial={{ opacity: 0 }}
+                                                        animate={{ opacity: 1 }}
+                                                        exit={{ opacity: 0 }}
+                                                        className="fixed inset-0 z-[130] bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4"
+                                                    >
+                                                        <motion.form
+                                                            initial={{ opacity: 0, y: 12, scale: 0.98 }}
+                                                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                                                            exit={{ opacity: 0, y: 8, scale: 0.98 }}
+                                                            transition={{ duration: 0.16 }}
+                                                            onSubmit={(event) => {
+                                                                event.preventDefault();
+                                                                void handleCreateRoom();
+                                                            }}
+                                                            className="w-full max-w-md surface-panel rounded-2xl p-4 space-y-3"
+                                                        >
+                                                            <div>
+                                                                <div className="text-sm font-bold text-slate-100">새 룸 생성</div>
+                                                                <div className="text-xs text-slate-400 mt-1">이름/비밀번호는 모두 선택 사항입니다.</div>
+                                                            </div>
+                                                            <input
+                                                                value={roomNameInput}
+                                                                onChange={(event) => setRoomNameInput(event.target.value)}
+                                                                autoComplete="off"
+                                                                placeholder="룸 이름 (미입력 시 랜덤)"
+                                                                className="w-full rounded-xl bg-slate-900/90 border border-slate-600 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-cyan-400"
+                                                            />
+                                                            <input
+                                                                type="password"
+                                                                value={roomPasswordInput}
+                                                                onChange={(event) => setRoomPasswordInput(event.target.value)}
+                                                                autoComplete="new-password"
+                                                                placeholder="룸 비밀번호 (선택)"
+                                                                className="w-full rounded-xl bg-slate-900/90 border border-slate-600 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-cyan-400"
+                                                            />
+                                                            {roomCreateError && (
+                                                                <div className="text-xs text-rose-300 bg-rose-900/40 border border-rose-500/40 px-3 py-2 rounded-xl">
+                                                                    {roomCreateError}
+                                                                </div>
+                                                            )}
+                                                            <div className="flex gap-2">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        if (roomCreating) return;
+                                                                        setShowCreateRoomModal(false);
+                                                                        setRoomCreateError(null);
+                                                                    }}
+                                                                    className="flex-1 py-2 rounded-xl font-semibold bg-slate-700 hover:bg-slate-600 text-slate-100"
+                                                                >
+                                                                    취소
+                                                                </button>
+                                                                <button
+                                                                    type="submit"
+                                                                    disabled={roomCreating}
+                                                                    className={`flex-1 py-2 rounded-xl font-bold ${roomCreating
+                                                                        ? 'bg-slate-700 text-slate-300 cursor-not-allowed'
+                                                                        : 'bg-violet-600 hover:bg-violet-500 text-white'
+                                                                        }`}
+                                                                >
+                                                                    {roomCreating ? '생성 중...' : '생성'}
+                                                                </button>
+                                                            </div>
+                                                        </motion.form>
+                                                    </motion.div>
+                                                )}
+                                            </AnimatePresence>
+                                            {roomCreating && (
+                                                <div className="text-xs text-slate-400 bg-slate-900/40 border border-slate-700/70 px-3 py-2 rounded-xl">
+                                                    룸 생성 중...
+                                                </div>
+                                            )}
+                                            {!roomCreating && roomCreateError && !showCreateRoomModal && (
                                                 <div className="text-xs text-rose-300 bg-rose-900/40 border border-rose-500/40 px-3 py-2 rounded-xl">
                                                     {roomCreateError}
                                                 </div>
@@ -1761,6 +1867,7 @@ export default function App() {
                                                     type="password"
                                                     value={roomSelectionPasswordInput}
                                                     onChange={(event) => setRoomSelectionPasswordInput(event.target.value)}
+                                                    autoComplete="new-password"
                                                     placeholder="입장 비밀번호 (필요한 방만)"
                                                     className="w-full rounded-xl bg-slate-900/90 border border-slate-600 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-cyan-400"
                                                 />
@@ -1778,6 +1885,7 @@ export default function App() {
                                                     <input
                                                         value={roomSettingsNameInput}
                                                         onChange={(event) => setRoomSettingsNameInput(event.target.value)}
+                                                        autoComplete="off"
                                                         placeholder="룸 이름 수정"
                                                         className="w-full rounded-xl bg-slate-900/90 border border-slate-600 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-cyan-400"
                                                     />
@@ -1785,6 +1893,7 @@ export default function App() {
                                                         type="password"
                                                         value={roomSettingsPasswordInput}
                                                         onChange={(event) => setRoomSettingsPasswordInput(event.target.value)}
+                                                        autoComplete="new-password"
                                                         placeholder="룸 비밀번호 수정 (비우면 해제)"
                                                         className="w-full rounded-xl bg-slate-900/90 border border-slate-600 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-cyan-400"
                                                     />
