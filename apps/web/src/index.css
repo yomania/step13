@@ -116,8 +116,9 @@ button {
 
 @media (max-aspect-ratio: 9/16) {
     .game-shell {
-        padding-left: 12px;
-        padding-right: 12px;
+        padding-left: 4px;
+        padding-right: 4px;
+        overflow-y: visible !important;
     }
 
     .header-bar {
@@ -127,20 +128,22 @@ button {
     }
 
     .board-shell {
-        max-height: calc(100dvh - 120px);
+        max-height: none;
+        overflow-y: visible !important;
     }
 
     .board-scroll {
-        overflow-y: auto;
+        overflow-y: visible;
+        -webkit-overflow-scrolling: touch;
     }
 
     .opponent-panel {
-        margin-bottom: 12px;
-        padding: 12px;
+        margin-bottom: 4px;
+        padding: 4px;
     }
 
     .player-panel {
-        padding: 12px;
+        padding: 4px;
     }
 
     .action-stack {

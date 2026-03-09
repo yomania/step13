@@ -3,8 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "build": "prisma generate --schema prisma/schema.postgres.prisma && tsc",
+    "dev:prepare:sqlite": "prisma generate --schema prisma/schema.prisma && prisma db push --schema prisma/schema.prisma",
+    "dev": "pnpm run dev:prepare:sqlite && tsx watch src/index.ts",
+    "build": "DATABASE_URL=\"${DATABASE_URL:-postgresql://postgres:postgres@localhost:5432/step13?schema=public}\" prisma generate --schema prisma/schema.postgres.prisma && tsc",
     "db:push": "prisma db push --schema prisma/schema.postgres.prisma",
     "start": "node dist/index.js"
   },

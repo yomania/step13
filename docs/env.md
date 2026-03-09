@@ -18,7 +18,7 @@ Required in production:
   - Milliseconds between cleanup sweeps for idle rooms.
   - Set to `0` to disable cleanup.
 
-Common development defaults:
+Common development defaults (local SQLite):
 - `DATABASE_URL`
   - Example: `file:./dev.db`
 - `JWT_SECRET`
@@ -29,6 +29,10 @@ Common development defaults:
   - Example: `0`
 - `ROOM_CLEANUP_INTERVAL_MS`
   - Example: `0`
+
+Deployment defaults (PostgreSQL):
+- `DATABASE_URL`
+  - Example: `postgresql://<user>:<password>@<host>:5432/<db>?schema=public`
 
 ## apps/web
 

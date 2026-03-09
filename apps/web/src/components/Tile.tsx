@@ -107,9 +107,9 @@ export function Tile({ tile, onClick, selected, disabled, size = 'md' }: TilePro
     }, [currentSrc, assetAttempt]);
 
     const sizeClasses = {
-        sm: 'w-8 h-12 text-xs',
-        md: 'w-10 h-14 text-sm',
-        lg: 'w-12 h-16 text-base'
+        sm: 'w-6 h-9 sm:w-8 sm:h-12 text-[10px] sm:text-xs',
+        md: 'w-7 h-10 sm:w-10 sm:h-14 text-[11px] sm:text-sm',
+        lg: 'w-9 h-12 sm:w-12 sm:h-16 text-xs sm:text-base'
     };
 
     const suitColors = {
