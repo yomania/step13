@@ -753,6 +753,29 @@ async function testAnalysisQueryIsolation() {
     assert.equal('candidates' in shanten, false, 'SHANTEN should not include candidates');
 }
 
+// [시나리오 13] 페이지 전환(LEAVE) 이후 재JOIN 시 QUERY_PERSONAS 재호출 가능
+async function testPersonaQueryAfterLeaveAndRejoin() {
+    const room = new GameRoom('test-persona-after-rejoin');
+    const socket = new MockSocket();
+    const humanId = 'p1';
+
+    room.join(humanId, socket as any);
+    room.handleMessage(humanId, { type: 'LEAVE', playerId: humanId });
+    await tick(20);
+
+    const afterLeave = roomSnapshot(room);
+    assert.equal(afterLeave.context.players.includes(humanId), false, 'player should be removed from lobby on LEAVE');
+
+    room.join(humanId, socket as any);
+    room.handleMessage(humanId, { type: 'QUERY_PERSONAS', playerId: humanId });
+    await tick(20);
+
+    const personaResult = socket.messages.find((msg) => msg?.type === 'PERSONA_LIST_RESULT');
+    assert.ok(personaResult, 'persona query should succeed after rejoin');
+    assert.ok(Array.isArray(personaResult.personas), 'persona result should include personas');
+    assert.ok(personaResult.personas.length > 0, 'persona list should not be empty');
+}
+
 async function run() {
     // 사용자 요청 순서에 맞춘 체크리스트
     const tests: Array<[string, () => Promise<void>]> = [
@@ -767,7 +790,8 @@ async function run() {
         ['ROUND_END 확인 게이트(양측 확인)', testRoundEndConfirmGate],
         ['ROUND_END AI 자동 확인', testRoundEndAutoConfirmBot],
         ['같은 시드 난이도 비교 (EASY/MEDIUM/HARD)', testSameSeedDifficultyComparison],
-        ['분석 API(queryId) 격리 및 응답 필드 검증', testAnalysisQueryIsolation]
+        ['분석 API(queryId) 격리 및 응답 필드 검증', testAnalysisQueryIsolation],
+        ['LEAVE 후 재JOIN 시 QUERY_PERSONAS 정상 응답', testPersonaQueryAfterLeaveAndRejoin]
     ];
 
     for (const [name, test] of tests) {

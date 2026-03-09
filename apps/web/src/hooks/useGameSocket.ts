@@ -8,7 +8,9 @@ type UseGameSocketOptions = {
     accessToken?: string | null;
     apiBaseUrl?: string;
     roomId?: string | null;
+    roomPassword?: string | null;
     onAuthExpired?: () => void;
+    onRejectedEvent?: (reason: string) => void;
 };
 
 export function useGameSocket(
@@ -58,7 +60,9 @@ export function useGameSocket(
                 const separator = wsBaseUrl.includes('?') ? '&' : '?';
                 const roomId = options.roomId?.trim();
                 const roomParam = roomId ? `&roomId=${encodeURIComponent(roomId)}` : '';
-                const wsUrl = `${wsBaseUrl}${separator}ticket=${encodeURIComponent(ticket)}${roomParam}`;
+                const roomPassword = options.roomPassword?.trim();
+                const roomPasswordParam = roomPassword ? `&roomPassword=${encodeURIComponent(roomPassword)}` : '';
+                const wsUrl = `${wsBaseUrl}${separator}ticket=${encodeURIComponent(ticket)}${roomParam}${roomPasswordParam}`;
 
                 socket = new WebSocket(wsUrl);
                 socketRef.current = socket;
@@ -98,6 +102,9 @@ export function useGameSocket(
                         }
                         if (data.type === 'REJECTED_EVENT') {
                             console.warn('Server rejected event:', data.reason);
+                            if (typeof data.reason === 'string') {
+                                options.onRejectedEvent?.(data.reason);
+                            }
 
                             // Automatic recovery when server requires binding a JOIN first.
                             if (data.reason === 'JOIN required first' && joinPlayerIdRef.current && socket?.readyState === WebSocket.OPEN) {

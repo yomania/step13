@@ -18,6 +18,13 @@ type PlayerProfileSnapshot = {
     avatarKey: string;
 };
 
+type ConnectedParticipantSnapshot = {
+    playerId: PlayerId;
+    userId: string | null;
+    nickname: string;
+    avatarKey: string;
+};
+
 type GameRoomOptions = {
     onMatchEnded?: (summary: MatchSummaryInput) => Promise<void> | void;
     onPlayerLeft?: (userId: string) => Promise<void> | void;
@@ -100,6 +107,9 @@ export class GameRoom {
             if (hadClient || hadProfile) {
                 this.recordPlayerLeave(playerId);
             }
+            this.machine.send({ type: 'LEAVE', playerId });
+            this.markActivity();
+            return;
         }
 
         // Translation for Hidden Wall Tiles (Fog of War)
@@ -218,6 +228,20 @@ export class GameRoom {
 
     public getConnectedClientCount(): number {
         return this.clients.size;
+    }
+
+    public getConnectedParticipants(): ConnectedParticipantSnapshot[] {
+        const snapshots: ConnectedParticipantSnapshot[] = [];
+        this.clients.forEach((_socket, playerId) => {
+            const profile = this.playerProfiles.get(playerId);
+            snapshots.push({
+                playerId,
+                userId: profile?.userId ?? null,
+                nickname: profile?.nickname ?? playerId,
+                avatarKey: profile?.avatarKey ?? 'default'
+            });
+        });
+        return snapshots;
     }
 
     public getLastActivityAt(): number {

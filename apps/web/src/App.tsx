@@ -25,9 +25,12 @@ import {
     createRoomApi,
     getStatsSummaryApi,
     loginApi,
+    listRoomsApi,
     logoutApi,
+    RoomSummaryDTO,
     refreshApi,
     registerApi,
+    updateRoomApi,
     updateProfileApi
 } from './lib/authApi';
 
@@ -196,12 +199,26 @@ export default function App() {
     const [statsLoading, setStatsLoading] = useState(false);
     const [roomCreating, setRoomCreating] = useState(false);
     const [roomCreateError, setRoomCreateError] = useState<string | null>(null);
+    const [roomNameInput, setRoomNameInput] = useState('');
+    const [roomPasswordInput, setRoomPasswordInput] = useState('');
+    const [onlineRooms, setOnlineRooms] = useState<RoomSummaryDTO[]>([]);
+    const [roomsLoading, setRoomsLoading] = useState(false);
+    const [roomsError, setRoomsError] = useState<string | null>(null);
+    const [roomSelectionId, setRoomSelectionId] = useState<string>('lobby');
+    const [roomSelectionPasswordInput, setRoomSelectionPasswordInput] = useState('');
+    const [roomSelectionError, setRoomSelectionError] = useState<string | null>(null);
+    const [activeRoomPassword, setActiveRoomPassword] = useState<string | null>(null);
+    const [roomSettingsNameInput, setRoomSettingsNameInput] = useState('');
+    const [roomSettingsPasswordInput, setRoomSettingsPasswordInput] = useState('');
+    const [roomSettingsSaving, setRoomSettingsSaving] = useState(false);
+    const [roomSettingsError, setRoomSettingsError] = useState<string | null>(null);
     const apiBaseUrl = useMemo(() => resolveApiBaseUrl(), []);
-    const roomId = useMemo(() => {
+    const initialRoomId = useMemo(() => {
         if (typeof window === 'undefined') return null;
         const value = new URLSearchParams(window.location.search).get('roomId');
         return value && value.trim().length > 0 ? value.trim() : null;
     }, []);
+    const [activeRoomId, setActiveRoomId] = useState<string | null>(initialRoomId);
     const playerId = authSession?.profile.playerId ?? '__unauth__';
     const effectiveAccessToken = authSession && !authSession.user.mustChangePassword
         ? authSession.tokens.accessToken
@@ -250,12 +267,20 @@ export default function App() {
         })();
     }, [apiBaseUrl]);
 
+    const handleSocketRejectedEvent = useCallback((reason: string) => {
+        if (reason === 'invalid room password') {
+            setRoomSelectionError('비밀번호가 올바르지 않습니다.');
+        }
+    }, []);
+
     const socketOptions = useMemo(() => ({
         accessToken: effectiveAccessToken,
         apiBaseUrl,
-        roomId,
-        onAuthExpired: handleSocketAuthExpired
-    }), [apiBaseUrl, effectiveAccessToken, handleSocketAuthExpired, roomId]);
+        roomId: activeRoomId,
+        roomPassword: activeRoomPassword,
+        onAuthExpired: handleSocketAuthExpired,
+        onRejectedEvent: handleSocketRejectedEvent
+    }), [activeRoomId, activeRoomPassword, apiBaseUrl, effectiveAccessToken, handleSocketAuthExpired, handleSocketRejectedEvent]);
 
     const { sendEvent, queryAnalysis, queryPersonas } = useGameSocket(
         actor,
@@ -264,6 +289,39 @@ export default function App() {
         handlePersonaListResult,
         socketOptions
     );
+
+    const withAccessTokenRetry = useCallback(async <T,>(run: (accessToken: string) => Promise<T>): Promise<T> => {
+        const currentSession = authSession;
+        if (!currentSession) {
+            throw new ApiError('로그인이 필요합니다.', 401, 'AUTH_REQUIRED');
+        }
+
+        try {
+            return await run(currentSession.tokens.accessToken);
+        } catch (error) {
+            if (!(error instanceof ApiError) || (error.status !== 401 && error.status !== 403)) {
+                throw error;
+            }
+
+            const refreshToken = loadStoredRefreshToken();
+            if (!refreshToken) {
+                clearStoredRefreshToken();
+                setAuthSession(null);
+                throw error;
+            }
+
+            try {
+                const refreshed = await refreshApi(refreshToken, apiBaseUrl);
+                saveStoredRefreshToken(refreshed.tokens.refreshToken);
+                setAuthSession(refreshed);
+                return run(refreshed.tokens.accessToken);
+            } catch {
+                clearStoredRefreshToken();
+                setAuthSession(null);
+                throw error;
+            }
+        }
+    }, [authSession, apiBaseUrl]);
 
     const queryAnalysisWithPlayer = useCallback((query: any) => {
         queryAnalysis({ ...query, playerId });
@@ -290,12 +348,20 @@ export default function App() {
         setRoomCreating(true);
         setRoomCreateError(null);
         try {
-            const result = await createRoomApi(undefined, apiBaseUrl);
-            if (typeof window !== 'undefined') {
-                const nextUrl = new URL(window.location.href);
-                nextUrl.searchParams.set('roomId', result.roomId);
-                window.location.assign(nextUrl.toString());
-            }
+            const createdRoom = await withAccessTokenRetry((accessToken) => createRoomApi(accessToken, {
+                name: roomNameInput.trim() || undefined,
+                password: roomPasswordInput.trim() || null
+            }, apiBaseUrl));
+            setActiveRoomId(createdRoom.roomId);
+            setActiveRoomPassword(roomPasswordInput.trim() || null);
+            setRoomSelectionId(createdRoom.roomId);
+            setRoomSelectionPasswordInput('');
+            setRoomNameInput('');
+            setRoomPasswordInput('');
+            setRoomSettingsNameInput(createdRoom.name);
+            setRoomSettingsPasswordInput('');
+            const latestRooms = await withAccessTokenRetry((accessToken) => listRoomsApi(accessToken, apiBaseUrl));
+            setOnlineRooms(latestRooms.rooms);
         } catch (error) {
             if (error instanceof ApiError) {
                 setRoomCreateError(error.message);
@@ -305,7 +371,62 @@ export default function App() {
         } finally {
             setRoomCreating(false);
         }
-    }, [apiBaseUrl, roomCreating]);
+    }, [apiBaseUrl, roomCreating, roomNameInput, roomPasswordInput, withAccessTokenRetry]);
+
+    const refreshOnlineRooms = useCallback(async () => {
+        setRoomsError(null);
+        setRoomsLoading(true);
+        try {
+            const response = await withAccessTokenRetry((accessToken) => listRoomsApi(accessToken, apiBaseUrl));
+            setOnlineRooms(response.rooms);
+        } catch (error) {
+            if (error instanceof ApiError) {
+                setRoomsError(error.message);
+            } else {
+                setRoomsError('룸 목록을 불러오지 못했습니다.');
+            }
+        } finally {
+            setRoomsLoading(false);
+        }
+    }, [apiBaseUrl, withAccessTokenRetry]);
+
+    const handleEnterSelectedRoom = useCallback(() => {
+        const selectedRoom = onlineRooms.find((room) => room.roomId === roomSelectionId);
+        if (!selectedRoom) {
+            setRoomSelectionError('입장할 방을 선택해주세요.');
+            return;
+        }
+        if (selectedRoom.hasPassword && roomSelectionPasswordInput.trim().length === 0) {
+            setRoomSelectionError('비밀번호가 필요한 방입니다.');
+            return;
+        }
+        setRoomSelectionError(null);
+        setActiveRoomId(selectedRoom.roomId);
+        setActiveRoomPassword(roomSelectionPasswordInput.trim() || null);
+        sendEvent({ type: 'JOIN', playerId });
+    }, [onlineRooms, playerId, roomSelectionId, roomSelectionPasswordInput, sendEvent]);
+
+    const handleSaveRoomSettings = useCallback(async () => {
+        const targetRoomId = activeRoomId ?? 'lobby';
+        if (!targetRoomId || roomSettingsSaving) return;
+        setRoomSettingsSaving(true);
+        setRoomSettingsError(null);
+        try {
+            await withAccessTokenRetry((accessToken) => updateRoomApi(accessToken, targetRoomId, {
+                name: roomSettingsNameInput.trim(),
+                password: roomSettingsPasswordInput.trim() || null
+            }, apiBaseUrl));
+            await refreshOnlineRooms();
+        } catch (error) {
+            if (error instanceof ApiError) {
+                setRoomSettingsError(error.message);
+            } else {
+                setRoomSettingsError('룸 설정 저장에 실패했습니다.');
+            }
+        } finally {
+            setRoomSettingsSaving(false);
+        }
+    }, [activeRoomId, apiBaseUrl, refreshOnlineRooms, roomSettingsNameInput, roomSettingsPasswordInput, roomSettingsSaving, withAccessTokenRetry]);
 
     useEffect(() => {
         setIsConnected(Boolean(authSession && !authSession.user.mustChangePassword));
@@ -373,38 +494,76 @@ export default function App() {
         setProfileBioInput(authSession.profile.bio ?? '');
     }, [authSession]);
 
-    const withAccessTokenRetry = useCallback(async <T,>(run: (accessToken: string) => Promise<T>): Promise<T> => {
-        const currentSession = authSession;
-        if (!currentSession) {
-            throw new ApiError('로그인이 필요합니다.', 401, 'AUTH_REQUIRED');
+    useEffect(() => {
+        if (!authSession || entryMode !== 'online') {
+            return;
         }
-
-        try {
-            return await run(currentSession.tokens.accessToken);
-        } catch (error) {
-            if (!(error instanceof ApiError) || (error.status !== 401 && error.status !== 403)) {
-                throw error;
-            }
-
-            const refreshToken = loadStoredRefreshToken();
-            if (!refreshToken) {
-                clearStoredRefreshToken();
-                setAuthSession(null);
-                throw error;
-            }
-
+        let cancelled = false;
+        void (async () => {
+            setRoomsLoading(true);
+            setRoomsError(null);
             try {
-                const refreshed = await refreshApi(refreshToken, apiBaseUrl);
-                saveStoredRefreshToken(refreshed.tokens.refreshToken);
-                setAuthSession(refreshed);
-                return run(refreshed.tokens.accessToken);
-            } catch {
-                clearStoredRefreshToken();
-                setAuthSession(null);
-                throw error;
+                const response = await withAccessTokenRetry((accessToken) => listRoomsApi(accessToken, apiBaseUrl));
+                if (cancelled) return;
+                setOnlineRooms(response.rooms);
+            } catch (error) {
+                if (cancelled) return;
+                if (error instanceof ApiError) {
+                    setRoomsError(error.message);
+                } else {
+                    setRoomsError('룸 목록을 불러오지 못했습니다.');
+                }
+            } finally {
+                if (!cancelled) {
+                    setRoomsLoading(false);
+                }
             }
+        })();
+
+        const timer = setInterval(() => {
+            void (async () => {
+                try {
+                    const response = await withAccessTokenRetry((accessToken) => listRoomsApi(accessToken, apiBaseUrl));
+                    if (!cancelled) {
+                        setOnlineRooms(response.rooms);
+                    }
+                } catch {
+                    // keep previous list on polling failure
+                }
+            })();
+        }, 5000);
+
+        return () => {
+            cancelled = true;
+            clearInterval(timer);
+        };
+    }, [apiBaseUrl, authSession, entryMode, withAccessTokenRetry]);
+
+    useEffect(() => {
+        const activeKey = activeRoomId ?? 'lobby';
+        setRoomSelectionId(activeKey);
+    }, [activeRoomId]);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        const nextUrl = new URL(window.location.href);
+        const activeKey = activeRoomId?.trim();
+        if (activeKey && activeKey !== 'lobby') {
+            nextUrl.searchParams.set('roomId', activeKey);
+        } else {
+            nextUrl.searchParams.delete('roomId');
         }
-    }, [authSession, apiBaseUrl]);
+        window.history.replaceState(null, '', nextUrl.toString());
+    }, [activeRoomId]);
+
+    useEffect(() => {
+        const activeKey = activeRoomId ?? 'lobby';
+        const room = onlineRooms.find((item) => item.roomId === activeKey);
+        if (!room) {
+            return;
+        }
+        setRoomSettingsNameInput(room.name);
+    }, [activeRoomId, onlineRooms]);
 
     const refreshStats = useCallback(async () => {
         const summary = await withAccessTokenRetry((accessToken) => getStatsSummaryApi(accessToken, apiBaseUrl));
@@ -621,6 +780,16 @@ export default function App() {
     const isSingleMiniMode = entryMode === 'single' && singleMode === 'mini';
     const isSingleAiMode = entryMode === 'single' && singleMode === 'ai';
     const isOnlineMode = entryMode === 'online';
+    const resolvedRoomId = activeRoomId ?? 'lobby';
+    const activeRoomSummary = useMemo(() => {
+        return onlineRooms.find((room) => room.roomId === resolvedRoomId) ?? null;
+    }, [onlineRooms, resolvedRoomId]);
+    const isActiveRoomOwner = Boolean(
+        activeRoomSummary
+        && authSession
+        && activeRoomSummary.ownerUserId
+        && activeRoomSummary.ownerUserId === authSession.profile.userId
+    );
 
     const scoreDiff = useMemo(() => {
         const opponentId = context.players.find((p: PlayerId) => p !== playerId);
@@ -1510,8 +1679,25 @@ export default function App() {
                                             <div className="surface-panel p-4 rounded-2xl">
                                                 <div className="text-xs text-slate-400 mb-2">현재 룸</div>
                                                 <div className="text-sm font-semibold text-slate-200">
-                                                    {roomId ?? 'lobby'}
+                                                    {activeRoomSummary?.name ?? resolvedRoomId}
                                                 </div>
+                                                <div className="text-xs text-slate-400 mt-1">{resolvedRoomId}</div>
+                                            </div>
+                                            <div className="surface-panel p-4 rounded-2xl space-y-2">
+                                                <div className="text-xs text-slate-400">새 룸 생성</div>
+                                                <input
+                                                    value={roomNameInput}
+                                                    onChange={(event) => setRoomNameInput(event.target.value)}
+                                                    placeholder="룸 이름 (선택)"
+                                                    className="w-full rounded-xl bg-slate-900/90 border border-slate-600 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-cyan-400"
+                                                />
+                                                <input
+                                                    type="password"
+                                                    value={roomPasswordInput}
+                                                    onChange={(event) => setRoomPasswordInput(event.target.value)}
+                                                    placeholder="룸 비밀번호 (선택)"
+                                                    className="w-full rounded-xl bg-slate-900/90 border border-slate-600 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-cyan-400"
+                                                />
                                             </div>
                                             <button
                                                 onClick={handleCreateRoom}
@@ -1526,6 +1712,94 @@ export default function App() {
                                             {roomCreateError && (
                                                 <div className="text-xs text-rose-300 bg-rose-900/40 border border-rose-500/40 px-3 py-2 rounded-xl">
                                                     {roomCreateError}
+                                                </div>
+                                            )}
+                                            <div className="surface-panel p-4 rounded-2xl space-y-3">
+                                                <div className="flex items-center justify-between">
+                                                    <h3 className="text-sm font-bold text-slate-300">참여 가능 룸 목록</h3>
+                                                    <button
+                                                        onClick={() => { void refreshOnlineRooms(); }}
+                                                        className="text-xs px-2 py-1 rounded-lg bg-slate-700 hover:bg-slate-600"
+                                                        type="button"
+                                                    >
+                                                        새로고침
+                                                    </button>
+                                                </div>
+                                                {roomsLoading && <div className="text-xs text-slate-400">불러오는 중...</div>}
+                                                {roomsError && <div className="text-xs text-rose-300">{roomsError}</div>}
+                                                <div className="max-h-48 overflow-y-auto space-y-2">
+                                                    {onlineRooms.map((room) => (
+                                                        <button
+                                                            key={room.roomId}
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setRoomSelectionId(room.roomId);
+                                                                setRoomSelectionError(null);
+                                                                if (!room.hasPassword) {
+                                                                    setRoomSelectionPasswordInput('');
+                                                                }
+                                                            }}
+                                                            className={`w-full text-left p-2 rounded-xl border ${roomSelectionId === room.roomId
+                                                                ? 'border-cyan-400 bg-cyan-900/30'
+                                                                : 'border-slate-700 bg-slate-800/80 hover:bg-slate-700/80'
+                                                                }`}
+                                                        >
+                                                            <div className="flex items-center justify-between">
+                                                                <span className="text-sm font-semibold text-slate-100">{room.name}</span>
+                                                                <span className="text-xs text-slate-400">{room.connectedCount}명 {room.hasPassword ? '• 비밀번호' : ''}</span>
+                                                            </div>
+                                                            <div className="text-xs text-slate-500">{room.roomId}</div>
+                                                            <div className="text-xs text-slate-300 mt-1">
+                                                                {room.participants.length > 0
+                                                                    ? `참가자: ${room.participants.map((participant) => participant.nickname).join(', ')}`
+                                                                    : '참가자 없음'}
+                                                            </div>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                                <input
+                                                    type="password"
+                                                    value={roomSelectionPasswordInput}
+                                                    onChange={(event) => setRoomSelectionPasswordInput(event.target.value)}
+                                                    placeholder="입장 비밀번호 (필요한 방만)"
+                                                    className="w-full rounded-xl bg-slate-900/90 border border-slate-600 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-cyan-400"
+                                                />
+                                                <button
+                                                    onClick={handleEnterSelectedRoom}
+                                                    className="w-full py-2 rounded-xl font-bold bg-cyan-600 hover:bg-cyan-500"
+                                                >
+                                                    선택한 룸으로 입장
+                                                </button>
+                                                {roomSelectionError && <div className="text-xs text-rose-300">{roomSelectionError}</div>}
+                                            </div>
+                                            {isActiveRoomOwner && (
+                                                <div className="surface-panel p-4 rounded-2xl space-y-2">
+                                                    <div className="text-xs text-slate-400">방장 설정</div>
+                                                    <input
+                                                        value={roomSettingsNameInput}
+                                                        onChange={(event) => setRoomSettingsNameInput(event.target.value)}
+                                                        placeholder="룸 이름 수정"
+                                                        className="w-full rounded-xl bg-slate-900/90 border border-slate-600 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-cyan-400"
+                                                    />
+                                                    <input
+                                                        type="password"
+                                                        value={roomSettingsPasswordInput}
+                                                        onChange={(event) => setRoomSettingsPasswordInput(event.target.value)}
+                                                        placeholder="룸 비밀번호 수정 (비우면 해제)"
+                                                        className="w-full rounded-xl bg-slate-900/90 border border-slate-600 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-cyan-400"
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        disabled={roomSettingsSaving}
+                                                        onClick={() => { void handleSaveRoomSettings(); }}
+                                                        className={`w-full py-2 rounded-xl font-bold ${roomSettingsSaving
+                                                            ? 'bg-slate-700 text-slate-300'
+                                                            : 'bg-amber-600 hover:bg-amber-500 text-white'
+                                                            }`}
+                                                    >
+                                                        {roomSettingsSaving ? '저장 중...' : '방 설정 저장'}
+                                                    </button>
+                                                    {roomSettingsError && <div className="text-xs text-rose-300">{roomSettingsError}</div>}
                                                 </div>
                                             )}
                                             {!isPlayerInLobby ? (

@@ -15,6 +15,23 @@ export type MeResponseDTO = {
     profile: PublicProfileDTO;
 };
 
+export type RoomParticipantDTO = {
+    playerId: string;
+    userId: string | null;
+    nickname: string;
+    avatarKey: string;
+};
+
+export type RoomSummaryDTO = {
+    roomId: string;
+    name: string;
+    ownerUserId: string | null;
+    ownerNickname: string | null;
+    hasPassword: boolean;
+    connectedCount: number;
+    participants: RoomParticipantDTO[];
+};
+
 export class ApiError extends Error {
     public readonly status: number;
     public readonly code: string;
@@ -122,15 +139,42 @@ export async function getStatsSummaryApi(accessToken: string, apiBaseUrl?: strin
 }
 
 export async function createRoomApi(
-    payload?: { roomId?: string },
+    accessToken: string,
+    payload?: { roomId?: string; name?: string; password?: string | null },
     apiBaseUrl?: string
-): Promise<{ roomId: string }> {
-    return requestJson<{ roomId: string }>(`${resolveApiBase(apiBaseUrl)}/rooms`, {
+): Promise<RoomSummaryDTO> {
+    return requestJson<RoomSummaryDTO>(`${resolveApiBase(apiBaseUrl)}/rooms`, {
         method: 'POST',
         headers: {
+            Authorization: `Bearer ${accessToken}`,
             'Content-Type': 'application/json'
         },
         body: JSON.stringify(payload ?? {})
+    });
+}
+
+export async function listRoomsApi(accessToken: string, apiBaseUrl?: string): Promise<{ rooms: RoomSummaryDTO[] }> {
+    return requestJson<{ rooms: RoomSummaryDTO[] }>(`${resolveApiBase(apiBaseUrl)}/rooms`, {
+        method: 'GET',
+        headers: {
+            Authorization: `Bearer ${accessToken}`
+        }
+    });
+}
+
+export async function updateRoomApi(
+    accessToken: string,
+    roomId: string,
+    payload: { name?: string; password?: string | null },
+    apiBaseUrl?: string
+): Promise<RoomSummaryDTO> {
+    return requestJson<RoomSummaryDTO>(`${resolveApiBase(apiBaseUrl)}/rooms/${encodeURIComponent(roomId)}`, {
+        method: 'PATCH',
+        headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
     });
 }
 

@@ -289,17 +289,138 @@ const main = async () => {
     });
 
     fastify.post('/rooms', async (request, reply) => {
-        const body = request.body as Partial<{ roomId?: string }> | undefined;
-        const normalizedRoomId = normalizeRoomId(body?.roomId);
-        if (body?.roomId && !normalizedRoomId) {
-            return reply.status(400).send({ code: 'INVALID_ROOM_ID', message: 'roomId must be 1-64 chars of [A-Za-z0-9_-]' });
+        try {
+            const accessToken = extractBearerToken(request.headers.authorization);
+            if (!accessToken) {
+                return reply.status(401).send({ code: 'MISSING_ACCESS_TOKEN', message: 'Authorization Bearer token is required' });
+            }
+            const identity = await authService.authenticateAccessToken(accessToken);
+            const body = request.body as Partial<{ roomId?: string; name?: string; password?: string | null }> | undefined;
+            const normalizedRoomId = normalizeRoomId(body?.roomId);
+            if (body?.roomId && !normalizedRoomId) {
+                return reply.status(400).send({ code: 'INVALID_ROOM_ID', message: 'roomId must be 1-64 chars of [A-Za-z0-9_-]' });
+            }
+            const normalizedRoomName = normalizeRoomName(body?.name);
+            if (body?.name !== undefined && !normalizedRoomName) {
+                return reply.status(400).send({ code: 'INVALID_ROOM_NAME', message: 'name must be 1-40 non-empty characters' });
+            }
+            const normalizedRoomPassword = normalizeRoomPassword(body?.password);
+            if (body?.password !== undefined && body?.password !== null && !normalizedRoomPassword) {
+                return reply.status(400).send({ code: 'INVALID_ROOM_PASSWORD', message: 'password must be 1-64 non-empty characters' });
+            }
+
+            const roomId = normalizedRoomId ?? randomUUID();
+            if (roomRegistry.hasRoom(roomId)) {
+                return reply.status(409).send({ code: 'ROOM_ALREADY_EXISTS', message: 'roomId already exists' });
+            }
+            roomRegistry.createRoom(roomId, {
+                ownerUserId: identity.profile.userId,
+                ownerNickname: identity.profile.nickname,
+                name: normalizedRoomName ?? roomId,
+                password: normalizedRoomPassword
+            });
+            const created = roomRegistry.listRooms().find((room) => room.roomId === roomId);
+            return reply.status(201).send(created ?? {
+                roomId,
+                name: normalizedRoomName ?? roomId,
+                ownerUserId: identity.profile.userId,
+                ownerNickname: identity.profile.nickname,
+                hasPassword: Boolean(normalizedRoomPassword),
+                connectedCount: 0,
+                participants: []
+            });
+        } catch (error) {
+            return handleRouteError(reply, error);
         }
-        const roomId = normalizedRoomId ?? randomUUID();
-        if (roomRegistry.hasRoom(roomId)) {
-            return reply.status(409).send({ code: 'ROOM_ALREADY_EXISTS', message: 'roomId already exists' });
+    });
+
+    fastify.get('/rooms', async (request, reply) => {
+        try {
+            const accessToken = extractBearerToken(request.headers.authorization);
+            if (!accessToken) {
+                return reply.status(401).send({ code: 'MISSING_ACCESS_TOKEN', message: 'Authorization Bearer token is required' });
+            }
+            await authService.authenticateAccessToken(accessToken);
+            return reply.send({ rooms: roomRegistry.listRooms() });
+        } catch (error) {
+            return handleRouteError(reply, error);
         }
-        roomRegistry.createRoom(roomId);
-        return reply.status(201).send({ roomId });
+    });
+
+    fastify.patch('/rooms/:roomId', async (request, reply) => {
+        try {
+            const accessToken = extractBearerToken(request.headers.authorization);
+            if (!accessToken) {
+                return reply.status(401).send({ code: 'MISSING_ACCESS_TOKEN', message: 'Authorization Bearer token is required' });
+            }
+            const identity = await authService.authenticateAccessToken(accessToken);
+            const params = request.params as { roomId?: string } | undefined;
+            const normalizedRoomId = normalizeRoomId(params?.roomId);
+            if (!normalizedRoomId) {
+                return reply.status(400).send({ code: 'INVALID_ROOM_ID', message: 'roomId must be 1-64 chars of [A-Za-z0-9_-]' });
+            }
+            const roomMeta = roomRegistry.getRoomMeta(normalizedRoomId);
+            if (!roomMeta) {
+                return reply.status(404).send({ code: 'ROOM_NOT_FOUND', message: 'room not found' });
+            }
+            if (roomMeta.ownerUserId !== identity.profile.userId) {
+                return reply.status(403).send({ code: 'FORBIDDEN', message: 'only room owner can modify room settings' });
+            }
+
+            const body = request.body as Partial<{ name?: string; password?: string | null }> | undefined;
+            const hasName = body && Object.prototype.hasOwnProperty.call(body, 'name');
+            const hasPassword = body && Object.prototype.hasOwnProperty.call(body, 'password');
+            if (!hasName && !hasPassword) {
+                return reply.status(400).send({ code: 'INVALID_PAYLOAD', message: 'name or password patch is required' });
+            }
+
+            let nextName: string | undefined = undefined;
+            let nextPassword: string | null | undefined = undefined;
+
+            if (hasName) {
+                const normalizedRoomName = normalizeRoomName(body?.name);
+                if (!normalizedRoomName) {
+                    return reply.status(400).send({ code: 'INVALID_ROOM_NAME', message: 'name must be 1-40 non-empty characters' });
+                }
+                nextName = normalizedRoomName;
+            }
+
+            if (hasPassword) {
+                if (body?.password === null) {
+                    nextPassword = null;
+                } else if (typeof body?.password === 'string') {
+                    const trimmedPassword = body.password.trim();
+                    if (!trimmedPassword) {
+                        nextPassword = null;
+                    } else {
+                        const normalizedRoomPassword = normalizeRoomPassword(trimmedPassword);
+                        if (!normalizedRoomPassword) {
+                            return reply.status(400).send({ code: 'INVALID_ROOM_PASSWORD', message: 'password must be 1-64 non-empty characters' });
+                        }
+                        nextPassword = normalizedRoomPassword;
+                    }
+                } else {
+                    return reply.status(400).send({ code: 'INVALID_ROOM_PASSWORD', message: 'password must be string or null' });
+                }
+            }
+
+            roomRegistry.updateRoom(normalizedRoomId, {
+                name: nextName,
+                password: nextPassword
+            });
+            const updated = roomRegistry.listRooms().find((room) => room.roomId === normalizedRoomId);
+            return reply.send(updated ?? {
+                roomId: normalizedRoomId,
+                name: nextName ?? roomMeta.name,
+                ownerUserId: roomMeta.ownerUserId,
+                ownerNickname: roomMeta.ownerNickname,
+                hasPassword: nextPassword !== undefined ? Boolean(nextPassword) : false,
+                connectedCount: roomRegistry.getRoom(normalizedRoomId)?.getConnectedClientCount() ?? 0,
+                participants: roomRegistry.getRoom(normalizedRoomId)?.getConnectedParticipants() ?? []
+            });
+        } catch (error) {
+            return handleRouteError(reply, error);
+        }
     });
 
     fastify.get('/ws', { websocket: true }, (connection, request) => {
@@ -329,6 +450,13 @@ const main = async () => {
             return;
         }
 
+        const roomPassword = extractRoomPassword(rawUrl);
+        if (!roomRegistry.canJoin(roomId, roomPassword)) {
+            socket.send(JSON.stringify({ type: 'REJECTED_EVENT', reason: 'invalid room password' }));
+            socket.close();
+            return;
+        }
+
         let identity;
         try {
             identity = await authService.consumeWsTicket(ticket);
@@ -350,17 +478,12 @@ const main = async () => {
                 }
 
                 if (message.type === 'JOIN') {
-                    if (!joined) {
-                        joined = true;
-                        room.join(boundServerPlayerId, socket as any, {
-                            userId: identity.profile.userId,
-                            nickname: identity.profile.nickname,
-                            avatarKey: identity.profile.avatarKey
-                        });
-                        return;
-                    }
-
-                    room.handleMessage(boundServerPlayerId, { type: 'JOIN', playerId: boundServerPlayerId });
+                    joined = true;
+                    room.join(boundServerPlayerId, socket as any, {
+                        userId: identity.profile.userId,
+                        nickname: identity.profile.nickname,
+                        avatarKey: identity.profile.avatarKey
+                    });
                     return;
                 }
 
@@ -443,6 +566,16 @@ function extractTicket(rawUrl: string): string | null {
     return ticket && ticket.trim().length > 0 ? ticket.trim() : null;
 }
 
+function extractRoomPassword(rawUrl: string): string | null {
+    const url = new URL(rawUrl, 'http://localhost');
+    const password = url.searchParams.get('roomPassword');
+    if (!password) {
+        return null;
+    }
+    const trimmed = password.trim();
+    return trimmed.length > 0 ? trimmed : null;
+}
+
 function extractRoomId(rawUrl: string, fallback: string): string | null {
     const url = new URL(rawUrl, 'http://localhost');
     const raw = url.searchParams.get('roomId');
@@ -477,6 +610,31 @@ function normalizeRoomId(raw: unknown): string | null {
         return null;
     }
     if (!/^[A-Za-z0-9_-]+$/.test(value)) {
+        return null;
+    }
+    return value;
+}
+
+function normalizeRoomName(raw: unknown): string | null {
+    if (typeof raw !== 'string') {
+        return null;
+    }
+    const value = raw.trim();
+    if (!value || value.length > 40) {
+        return null;
+    }
+    return value;
+}
+
+function normalizeRoomPassword(raw: unknown): string | null {
+    if (raw === undefined || raw === null) {
+        return null;
+    }
+    if (typeof raw !== 'string') {
+        return null;
+    }
+    const value = raw.trim();
+    if (!value || value.length > 64) {
         return null;
     }
     return value;
