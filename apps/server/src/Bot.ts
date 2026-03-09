@@ -428,8 +428,23 @@ export class Bot {
     }
 
     private discard() {
-        const pool = this.state.context.pools[this.id];
+        let pool = this.state.context.pools[this.id];
         if (!pool || pool.length === 0) return;
+
+        // --- Furiten Prevention ---
+        // 현 핸드가 완성(13장)되어 있다면 내 대기패를 구해서 pool에서 버리지 않도록 필터링
+        const myHand = this.state.context.hands[this.id];
+        if (myHand && myHand.length === 13) {
+            const myWaits = this.findWinningTiles(myHand);
+            const safePool = pool.filter((pt: Tile) =>
+                !myWaits.some(mw => mw.suit === pt.suit && mw.rank === pt.rank)
+            );
+
+            // 만약 pool 전체가 대기패로만 이루어진 극단적인 구조라면 어쩔 수 없이 원본 사용
+            if (safePool.length > 0) {
+                pool = safePool;
+            }
+        }
 
         const preference = this.persona.discard;
         let tile: Tile | null = null;
@@ -453,7 +468,6 @@ export class Bot {
             this.actor.send({ type: 'DISCARD', playerId: this.id, tileId: tile.id });
         }
     }
-
     private pickBetaoriTile(pool: Tile[]): Tile | null {
         if (pool.length === 0) return null;
 

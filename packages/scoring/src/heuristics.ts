@@ -161,7 +161,11 @@ export function evaluateHandQuality(
     // 6. Mangan+ Potential Boost (17-bo specialization)
     // Encourage hands that are likely to reach 4+ han
     if (yakuScore > 1000) {
-        score += 5000; // Bonus for any solid yaku candidate
+        if (difficulty === 'HARD') {
+            score += 15000; // 고타점 역 지향성을 대폭 강화
+        } else {
+            score += 5000; // Bonus for any solid yaku candidate
+        }
     }
 
     return score;

@@ -617,6 +617,12 @@ export class BotLogic {
         const waitFlexibilityWeight = difficulty === 'HARD' ? 1000 : (difficulty === 'MEDIUM' ? 700 : 300);
         quality += waits.length * waitFlexibilityWeight;
 
+        if (difficulty === 'HARD') {
+            quality += (bestPoints * 1.5) + (bestHan * 5000); // 고타점 스노우볼링 강화
+        } else if (difficulty === 'MEDIUM') {
+            quality += (bestPoints * 0.5) + (bestHan * 1000);
+        }
+
         // Pinfu tends to be undervalued by pure shape scoring; lift it slightly so
         // practical ryanmen-based hands are retained in top candidates.
         if (bestYaku.includes('Pinfu')) {
@@ -635,7 +641,7 @@ export class BotLogic {
         });
 
         if (waitIsFuriten) {
-            quality -= 5000; // Deduct from search quality but don't ruin actual points
+            quality -= 50000; // Deduct severely from search quality to avoid making furiten hand
         }
 
         return {
