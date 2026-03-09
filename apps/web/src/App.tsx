@@ -2290,7 +2290,11 @@ export default function App() {
                                                 disabled={myRoundEndConfirmed}
                                                 className={`px-6 py-2 rounded font-bold ${myRoundEndConfirmed ? 'bg-slate-600 text-slate-300 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-500 text-white'}`}
                                             >
-                                                {myRoundEndConfirmed ? '확인 완료' : '결과 확인'}
+                                                {myRoundEndConfirmed
+                                                    ? '확인 완료'
+                                                    : context.round < RULES.match.handsPerMatch
+                                                        ? '계속하기'
+                                                        : '게임 종료'}
                                             </button>
                                         </div>
                                     </div>

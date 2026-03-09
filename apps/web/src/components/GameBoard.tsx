@@ -77,7 +77,7 @@ export function GameBoard({ context, myPlayerId, children }: GameBoardProps) {
                 <h1 className="text-lg sm:text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-500 to-yellow-200 drop-shadow-sm tracking-tight text-stroke-sm">17보 마작 실전</h1>
                 <div className="flex flex-wrap gap-1 sm:gap-2 items-center text-xs sm:text-base">
                     <div className="surface-panel px-2 sm:px-3 py-1 rounded-lg border border-slate-700/50 shadow-inner">
-                        Round: <span className="text-yellow-500 font-bold">{context.round}</span>
+                        Round: <span className="text-yellow-500 font-bold">{context.round}/{RULES.match.handsPerMatch}</span>
                     </div>
                     <div className="surface-panel px-2 sm:px-3 py-1 rounded-lg border border-slate-700/50 shadow-inner">
                         My Bank: <span className="text-emerald-400 font-mono font-bold">{formatBank(myTimeBankMs)}</span>
