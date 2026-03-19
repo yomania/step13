@@ -560,3 +560,58 @@ describe('gameMachine full cycle and edge cases', () => {
         expect(afterDeclare.context.winner).toBeNull();
     });
 });
+
+describe('ten_attack_defense ruleset', () => {
+    it('transitions to Stage B guess after valid declaration', { timeout: 20000 }, async () => {
+        vi.useFakeTimers();
+        const actor = createActor(createGameMachine({ ruleset: 'ten_attack_defense' }));
+        actor.start();
+        actor.send({ type: 'JOIN', playerId: 'p1' });
+        actor.send({ type: 'JOIN', playerId: 'p2' });
+        actor.send({ type: 'START_MATCH', seed: 42 });
+        await reachTurnWithAutoSubmit(actor as any);
+
+        const current = actor.getSnapshot().context.currentTurn!;
+        actor.getSnapshot().context.hands[current] = makeTenpaiHandForFiveMan('atk');
+        actor.send({ type: 'DECLARE_TENPAI', playerId: current, withRiichi: true });
+
+        const snapshot = actor.getSnapshot();
+        expect(snapshot.context.attackDefense.stage).toBe('B_GUESS');
+        expect(snapshot.context.attackDefense.attacker).toBe(current);
+        expect(snapshot.context.attackDefense.guessesRemaining).toBe(2);
+    });
+
+    it('easy mode rejects riichi declaration flag', { timeout: 20000 }, async () => {
+        vi.useFakeTimers();
+        const actor = createActor(createGameMachine({ ruleset: 'ten_attack_defense_easy' }));
+        actor.start();
+        actor.send({ type: 'JOIN', playerId: 'p1' });
+        actor.send({ type: 'JOIN', playerId: 'p2' });
+        actor.send({ type: 'START_MATCH', seed: 55 });
+        await reachTurnWithAutoSubmit(actor as any);
+
+        const current = actor.getSnapshot().context.currentTurn!;
+        actor.getSnapshot().context.hands[current] = makeTenpaiHandForFiveMan('easy');
+        actor.send({ type: 'DECLARE_TENPAI', playerId: current, withRiichi: true });
+        expect(actor.getSnapshot().context.attackDefense.stage).toBe('A');
+    });
+
+    it('defender wins on correct guess', { timeout: 20000 }, async () => {
+        vi.useFakeTimers();
+        const actor = createActor(createGameMachine({ ruleset: 'ten_attack_defense' }));
+        actor.start();
+        actor.send({ type: 'JOIN', playerId: 'p1' });
+        actor.send({ type: 'JOIN', playerId: 'p2' });
+        actor.send({ type: 'START_MATCH', seed: 90 });
+        await reachTurnWithAutoSubmit(actor as any);
+
+        const attacker = actor.getSnapshot().context.currentTurn!;
+        actor.getSnapshot().context.hands[attacker] = makeTenpaiHandForFiveMan('g');
+        actor.send({ type: 'DECLARE_TENPAI', playerId: attacker });
+        const defender = actor.getSnapshot().context.attackDefense.defender!;
+        actor.send({ type: 'DEFENDER_GUESS', playerId: defender, tileKey: 'man-5' });
+        expect(actor.getSnapshot().value).toBe('roundEnd');
+        expect(actor.getSnapshot().context.winner).toBe(defender);
+        expect(actor.getSnapshot().context.winResult).toBeNull();
+    });
+});

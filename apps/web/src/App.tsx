@@ -6,6 +6,7 @@ import { HandBuilder } from './components/HandBuilder';
 import { HandDisplay } from './components/HandDisplay';
 import { Tile as TileView, TileSkinProvider, type TileSkin } from './components/Tile';
 import { GameBoard } from './components/GameBoard';
+import { AttackDefensePanels } from './components/AttackDefensePanels';
 import { ReplayViewer } from './components/ReplayViewer';
 import { SingleMiniGame } from './components/SingleMiniGame';
 import { YakuInfoLayer } from './components/YakuInfoLayer';
@@ -1004,6 +1005,21 @@ export default function App() {
     const onConfirmRoundEnd = () => {
         if (myRoundEndConfirmed) return;
         sendEvent({ type: 'CONFIRM_ROUND_END', playerId });
+    };
+    const onDeclareTenpai = (withRiichi: boolean) => {
+        sendEvent({ type: 'DECLARE_TENPAI', playerId, withRiichi });
+    };
+    const onPassDeclaration = () => {
+        sendEvent({ type: 'PASS_DECLARATION', playerId });
+    };
+    const onDefenderGuess = (tileKey: string) => {
+        sendEvent({ type: 'DEFENDER_GUESS', playerId, tileKey });
+    };
+    const onAttackerKan = () => {
+        sendEvent({ type: 'ATTACKER_KAN', playerId });
+    };
+    const onAttackerKanPass = () => {
+        sendEvent({ type: 'ATTACKER_KAN_PASS', playerId });
     };
 
     const onRestart = () => {
@@ -2084,6 +2100,15 @@ export default function App() {
                 ) : (
                     // Game Loop & Match End using GameBoard
                     <GameBoard context={context} myPlayerId={playerId}>
+                        <AttackDefensePanels
+                            context={context}
+                            playerId={playerId}
+                            onDeclareTenpai={onDeclareTenpai}
+                            onPass={onPassDeclaration}
+                            onGuess={onDefenderGuess}
+                            onKan={onAttackerKan}
+                            onKanPass={onAttackerKanPass}
+                        />
                         {/* Interactive Elements passed as children */}
                         <div className="w-full">
                             <HandDisplay

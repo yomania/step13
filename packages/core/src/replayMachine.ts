@@ -1,7 +1,7 @@
 
 import { setup, assign, createActor, fromCallback } from 'xstate';
 import { GameContext, GameEvents } from './messages';
-import { gameMachine } from './machine';
+import { createGameMachine } from './machine';
 
 export type ReplayContext = {
     snapshots: GameContext[];
@@ -89,7 +89,9 @@ export const replayMachine = setup({
             const snapshots: GameContext[] = [];
             const events = event.events;
             const replayClock = createReplayClock();
-            const actor = createActor(gameMachine, { clock: replayClock.clock as any });
+            const startMatch = events.find((entry) => entry.type === 'START_MATCH') as Extract<GameEvents, { type: 'START_MATCH' }> | undefined;
+            const replayRuleset = startMatch?.ruleset ?? 'classic';
+            const actor = createActor(createGameMachine({ ruleset: replayRuleset }), { clock: replayClock.clock as any });
             actor.start();
 
             // Initial state

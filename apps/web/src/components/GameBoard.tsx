@@ -68,6 +68,18 @@ export function GameBoard({ context, myPlayerId, children }: GameBoardProps) {
 
     const turnTimeRemainingSec = Math.max(0, Math.ceil(turnTimeRemainingMs / 1000));
     const isLowTurnTime = turnTimeRemainingSec <= 3;
+    const myRole = context.attackDefense?.attacker === myPlayerId
+        ? 'ATTACKER'
+        : context.attackDefense?.defender === myPlayerId
+            ? 'DEFENDER'
+            : null;
+    const otherRole = otherPlayerId
+        ? context.attackDefense?.attacker === otherPlayerId
+            ? 'ATTACKER'
+            : context.attackDefense?.defender === otherPlayerId
+                ? 'DEFENDER'
+                : null
+        : null;
 
     return (
         <div className="game-shell relative flex flex-col min-h-[100dvh] text-white sm:px-5 overflow-x-hidden sm:overflow-hidden">
@@ -102,6 +114,9 @@ export function GameBoard({ context, myPlayerId, children }: GameBoardProps) {
                                     {otherPlayerId.slice(0, 1).toUpperCase()}
                                 </div>
                                 <span className="text-lg font-bold text-red-200">{otherPlayerId} (Opponent)</span>
+                                {otherRole && (
+                                    <span className="px-2 py-0.5 rounded bg-rose-700 text-[10px] font-bold">{otherRole}</span>
+                                )}
                                 <span className="font-mono text-yellow-400 bg-black/30 px-2 py-0.5 rounded-lg">
                                     {context.scores[otherPlayerId] || 0} pts
                                 </span>
@@ -167,6 +182,9 @@ export function GameBoard({ context, myPlayerId, children }: GameBoardProps) {
                                     <div className="flex flex-col items-start hidden sm:flex">
                                         <span className="text-lg font-bold text-slate-200 flex items-center gap-2">
                                             {myPlayerId}
+                                            {myRole && (
+                                                <span className="px-2 py-0.5 rounded bg-cyan-700 text-[10px] font-bold">{myRole}</span>
+                                            )}
                                             {context.dealer === myPlayerId && (
                                                 <span className="px-2 py-0.5 bg-gradient-to-b from-yellow-400 to-amber-600 text-black text-[10px] font-black rounded uppercase tracking-wider shadow-sm border border-yellow-300/50">Deal</span>
                                             )}

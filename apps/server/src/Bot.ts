@@ -23,6 +23,7 @@ export class Bot {
     private difficulty: Difficulty;
     private persona: BotPersonaProfile;
     private subscription: { unsubscribe: () => void } | null = null;
+    private lastGuessSignature: string | null = null;
 
     constructor(
         id: PlayerId,
@@ -184,6 +185,43 @@ export class Bot {
         }
 
         if (phase === 'gameLoop') {
+            const attackDefense = context.attackDefense;
+            if (attackDefense && context.ruleset !== 'classic') {
+                if (attackDefense.stage === 'A' && myTurn && attackDefense.ownTurns?.[this.id] < 18) {
+                    const myHand = context.hands[this.id];
+                    if (myHand && this.logic.getWinningTiles(myHand).length > 0 && !this.processing) {
+                        this.processing = true;
+                        setTimeout(() => {
+                            this.actor.send({
+                                type: 'DECLARE_TENPAI',
+                                playerId: this.id,
+                                withRiichi: context.ruleset === 'ten_attack_defense'
+                            });
+                            this.processing = false;
+                        }, 500 + Math.random() * 600);
+                        return;
+                    }
+                }
+                if (attackDefense.stage === 'B_GUESS' && attackDefense.defender === this.id && !this.processing) {
+                    const signature = `${attackDefense.guessesRemaining}-${attackDefense.lastGuessTileKey ?? ''}`;
+                    if (signature !== this.lastGuessSignature) {
+                        this.lastGuessSignature = signature;
+                        this.processing = true;
+                        setTimeout(() => {
+                            const guesses = this.logic.getWinningTiles(context.hands[this.id] ?? []);
+                            const tile = guesses[Math.floor(Math.random() * Math.max(1, guesses.length))] ?? { suit: 'man', rank: 5, isRed: false };
+                            this.actor.send({ type: 'DEFENDER_GUESS', playerId: this.id, tileKey: `${tile.suit}-${tile.rank}` });
+                            this.processing = false;
+                        }, 600 + Math.random() * 700);
+                    }
+                    return;
+                }
+                if (attackDefense.stage === 'B_ASSAULT' && attackDefense.attacker === this.id && attackDefense.kanOption?.pending) {
+                    this.actor.send({ type: 'ATTACKER_KAN_PASS', playerId: this.id });
+                    return;
+                }
+            }
+
             if (context.lastDiscard && context.lastDiscard.playerId !== this.id) {
                 const myHand = context.hands[this.id];
                 if (!myHand) return;
