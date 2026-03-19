@@ -184,4 +184,22 @@ describe('replayMachine', () => {
         expect(lastSnapshot.doraIndicators.length).toBe(1);
         expect(lastSnapshot.phase).toBe('ROUND_START');
     }, 10000);
+
+    it('replays ten_attack_defense declaration and guess deterministically', () => {
+        const actor = createActor(gameMachine);
+        actor.start();
+        const events: GameEvents[] = [
+            { type: 'JOIN', playerId: 'p1' },
+            { type: 'JOIN', playerId: 'p2' },
+            { type: 'START_MATCH', seed: 99, ruleset: 'ten_attack_defense' },
+            { type: 'DECLARE_TENPAI', playerId: 'p1' } as any,
+            { type: 'DEFENDER_GUESS', playerId: 'p2', tileKey: 'man-5' } as any
+        ];
+        const replayActor = createActor(replayMachine);
+        replayActor.start();
+        replayActor.send({ type: 'LOAD_LOG', events });
+        const ctx = replayActor.getSnapshot().context;
+        expect(ctx.totalEvents.length).toBe(events.length);
+        expect(ctx.snapshots.length).toBe(events.length + 1);
+    });
 });

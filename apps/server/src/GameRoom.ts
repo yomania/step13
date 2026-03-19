@@ -393,6 +393,18 @@ export class GameRoom {
         if (context.deterministicSeed !== undefined) {
             context.deterministicSeed = null;
         }
+        if (context.attackDefense) {
+            const attackerId = context.attackDefense.attacker;
+            const defenderId = context.attackDefense.defender;
+            const isAttackerView = attackerId === playerId;
+            const isDefenderView = defenderId === playerId;
+            if (!isAttackerView) {
+                context.attackDefense.lockedWaitTileKeys = [];
+            }
+            if (!isAttackerView && !isDefenderView) {
+                context.attackDefense.lastGuessTileKey = null;
+            }
+        }
 
         return {
             value: snapshot.value,

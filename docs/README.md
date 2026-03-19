@@ -53,3 +53,19 @@
 - 아키텍처/룰/계약이 바뀌는 변경은 코드보다 문서 갱신을 먼저 수행
 - 코드 변경 후에는 영향 문서를 다시 검토하여 최종 동기화 확인
 - 자세한 절차는 `docs/ai-doc-first-workflow.md`를 따름
+
+## 신규 룰 모드 통합 메모 (2026-03-19)
+
+- 신규 룰셋: `ten_attack_defense`, `ten_attack_defense_easy`
+- 룰 확장 포인트:
+  - 상태머신: `packages/core/src/machine.ts`
+  - 이벤트 계약: `packages/core/src/messages.ts`
+  - 룰셋 등록: `packages/core/src/engine/rulesets.ts`
+  - AI 대응: `apps/server/src/Bot.ts`
+  - UI 패널: `apps/web/src/components/AttackDefensePanels.tsx`
+- 서버는 기존 room/sync/replay 파이프라인을 그대로 사용하고, 상태(`context.attackDefense`) 및 이벤트 로그 확장만 반영합니다.
+- easy 모드는 `DECLARE_TENPAI`의 `withRiichi`를 거부하며, UI에서 리치 CTA를 렌더링하지 않습니다.
+- 정산은 카이지 17보 점수 계산을 재사용하지 않고, Ten Battle 전용 고정 증감(+/-12000)으로 처리합니다.
+- 숨김 정보 정책:
+  - 수비자는 공격자 실제 대기패를 볼 수 없음
+  - 공격자는 실제 대기패와 수비자의 최근 추측 타일을 볼 수 있음
