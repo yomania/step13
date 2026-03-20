@@ -8,6 +8,7 @@ import {
 } from '@step13/core';
 import { calculateScore } from '@step13/scoring';
 import { GameRoom } from '../apps/server/src/GameRoom';
+import { RoomRegistry } from '../apps/server/src/RoomRegistry';
 import { getBotPersonaProfile, listBotPersonaProfiles } from '@step13/bot';
 
 // 공통 점수 옵션(실서비스 기본 옵션)
@@ -776,6 +777,36 @@ async function testPersonaQueryAfterLeaveAndRejoin() {
     assert.ok(personaResult.personas.length > 0, 'persona list should not be empty');
 }
 
+// [시나리오 14] 룸 목록 메타데이터에 ruleset이 포함되고 생성/수정 후에도 유지되는지
+async function testRoomRegistryRulesetMetadata() {
+    const registry = new RoomRegistry({
+        defaultRoomId: 'lobby',
+        ruleset: 'ten_attack_defense_easy',
+        idleTtlMs: 0,
+        cleanupIntervalMs: 0
+    });
+
+    const created = registry.createRoom('ten-easy-room', {
+        name: 'Ten Easy Room',
+        password: 'pw'
+    });
+    assert.ok(created, 'room should be created');
+
+    const beforeUpdate = registry.listRooms().find((room) => room.roomId === 'ten-easy-room');
+    assert.ok(beforeUpdate, 'created room should appear in list');
+    assert.equal(beforeUpdate.ruleset, 'ten_attack_defense_easy', 'room list should expose registry ruleset');
+
+    const updatedMeta = registry.updateRoom('ten-easy-room', {
+        name: 'Updated Ten Easy Room'
+    });
+    assert.ok(updatedMeta, 'room meta should be updated');
+    assert.equal(updatedMeta.ruleset, 'ten_attack_defense_easy', 'updated room meta should keep ruleset');
+
+    const roomMeta = registry.getRoomMeta('ten-easy-room');
+    assert.ok(roomMeta, 'room meta should be retrievable');
+    assert.equal(roomMeta.ruleset, 'ten_attack_defense_easy', 'room meta should expose ruleset');
+}
+
 async function run() {
     // 사용자 요청 순서에 맞춘 체크리스트
     const tests: Array<[string, () => Promise<void>]> = [
@@ -791,7 +822,8 @@ async function run() {
         ['ROUND_END AI 자동 확인', testRoundEndAutoConfirmBot],
         ['같은 시드 난이도 비교 (EASY/MEDIUM/HARD)', testSameSeedDifficultyComparison],
         ['분석 API(queryId) 격리 및 응답 필드 검증', testAnalysisQueryIsolation],
-        ['LEAVE 후 재JOIN 시 QUERY_PERSONAS 정상 응답', testPersonaQueryAfterLeaveAndRejoin]
+        ['LEAVE 후 재JOIN 시 QUERY_PERSONAS 정상 응답', testPersonaQueryAfterLeaveAndRejoin],
+        ['룸 메타데이터 ruleset 유지', testRoomRegistryRulesetMetadata]
     ];
 
     for (const [name, test] of tests) {

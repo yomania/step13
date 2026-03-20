@@ -222,6 +222,12 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                     context.attackDefense.guessesRemaining > 0
                 );
             },
+            isCorrectDefenderGuess: ({ context, event }) => {
+                if (event.type !== 'DEFENDER_GUESS') {
+                    return false;
+                }
+                return context.attackDefense.lockedWaitTileKeys.includes(event.tileKey);
+            },
             canResolveKanDecision: ({ context, event }) => {
                 if (event.type !== 'ATTACKER_KAN' && event.type !== 'ATTACKER_KAN_PASS') {
                     return false;
@@ -986,11 +992,17 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                     PASS_DECLARATION: {
                         actions: 'passDeclaration'
                     },
-                    DEFENDER_GUESS: {
-                        guard: 'canDefenderGuess',
-                        actions: 'applyDefenderGuess',
-                        target: 'checkRon'
-                    },
+                    DEFENDER_GUESS: [
+                        {
+                            guard: 'isCorrectDefenderGuess',
+                            actions: 'applyDefenderGuess',
+                            target: '#mahjong-17-step.roundEnd'
+                        },
+                        {
+                            guard: 'canDefenderGuess',
+                            actions: 'applyDefenderGuess'
+                        }
+                    ],
                     ATTACKER_KAN: {
                         guard: 'canResolveKanDecision',
                         actions: 'resolveKanDecision'

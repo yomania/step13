@@ -21,6 +21,8 @@ Required in production:
 Common development defaults (local SQLite):
 - `DATABASE_URL`
   - Example: `file:./dev.db`
+- `RULESET`
+  - Server deployment ruleset. Example: `classic`, `ten_attack_defense`, `ten_attack_defense_easy`
 - `JWT_SECRET`
   - Example: `dev-local-please-change`
 - `CORS_ORIGINS`
@@ -37,10 +39,22 @@ Deployment defaults (PostgreSQL):
 ## apps/web
 
 - `VITE_API_URL`
-  - Base URL for the server API.
+  - Classic ruleset fallback API URL.
   - Local Example: `http://localhost:3001`
   - Production Example: `https://step13-production.up.railway.app`
 - `VITE_WS_URL`
-  - Full WebSocket endpoint URL for authenticated game connections.
+  - Classic ruleset fallback WebSocket endpoint URL.
   - Local Example: `ws://localhost:3001/ws`
   - Production Example: `wss://step13-production.up.railway.app/ws`
+- `VITE_CLASSIC_API_URL`
+  - Explicit classic ruleset API URL. If omitted, `VITE_API_URL` is used.
+- `VITE_CLASSIC_WS_URL`
+  - Explicit classic ruleset WS URL. If omitted, `VITE_WS_URL` is used.
+- `VITE_TEN_API_URL`
+  - `ten_attack_defense` API URL.
+- `VITE_TEN_WS_URL`
+  - `ten_attack_defense` WS URL.
+- `VITE_TEN_EASY_API_URL`
+  - `ten_attack_defense_easy` API URL. If omitted, `VITE_TEN_API_URL` is reused.
+- `VITE_TEN_EASY_WS_URL`
+  - `ten_attack_defense_easy` WS URL. If omitted, `VITE_TEN_WS_URL` is reused.

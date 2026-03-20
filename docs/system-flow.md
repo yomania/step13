@@ -1,6 +1,6 @@
 # Step13 시스템 흐름 (System Flow)
 
-기준일: `2026-02-24`
+기준일: `2026-03-20`
 
 ## 1. 매치 수명주기
 
@@ -25,14 +25,15 @@ stateDiagram-v2
 sequenceDiagram
     participant C as Client(Web)
     participant A as Auth API
-    participant S as GameRoom
+    participant S as Ruleset Server
     participant M as core machine
 
     C->>A: POST /auth/login
     A-->>C: access+refresh
     C->>A: POST /auth/ws-ticket
     A-->>C: ws ticket(30s, one-time)
-    C->>S: WS connect ?ticket=...
+    C->>C: ruleset 선택 (classic / ten / easy)
+    C->>S: WS connect ?ticket=...&roomId=... on selected ruleset endpoint
     C->>S: JOIN (playerId 없음, roomId는 ws 쿼리로 선택)
     C->>S: START_MATCH
     S->>M: START_MATCH
@@ -181,3 +182,5 @@ sequenceDiagram
 
 - 룸 생성: `POST /rooms` -> `roomId` 반환
 - 룸 접속: `ws://.../ws?ticket=...&roomId=...` (비기본 룸은 사전 생성 필요)
+- 웹은 `ruleset` URL 쿼리와 selected endpoint를 함께 유지하며, 현재 선택된 ruleset 서버의 룸만 조회한다
+- 룸 목록 응답에는 `ruleset`이 포함되며, 웹은 이를 배지/현재 룸 정보에 그대로 사용한다

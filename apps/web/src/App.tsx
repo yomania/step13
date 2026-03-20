@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useMachine } from '@xstate/react';
-import { gameMachine, RULES } from '@step13/core';
+import { gameMachine, RULES, RulesetName } from '@step13/core';
 import { useGameSocket } from './hooks/useGameSocket';
 import { HandBuilder } from './components/HandBuilder';
 import { HandDisplay } from './components/HandDisplay';
@@ -18,7 +18,16 @@ import {
 } from '@step13/proto';
 import { calculateScore, calculateShanten, type ScoreResult } from '@step13/scoring';
 import { preloadRealTileAssets } from './lib/tileAssets';
-import { resolveApiBaseUrl } from './lib/networkConfig';
+import { resolveApiBaseUrl, resolveWsBaseUrl } from './lib/networkConfig';
+import {
+    deriveRuleset,
+    deriveRulesetSelection,
+    getRulesetPresentation,
+    isRulesetConfigured,
+    normalizeRuleset,
+    type PublicRuleset,
+    type TenMode
+} from './lib/rulesetConfig';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
     ApiError,
@@ -242,17 +251,35 @@ export default function App() {
     const [roomSettingsPasswordInput, setRoomSettingsPasswordInput] = useState('');
     const [roomSettingsSaving, setRoomSettingsSaving] = useState(false);
     const [roomSettingsError, setRoomSettingsError] = useState<string | null>(null);
-    const apiBaseUrl = useMemo(() => resolveApiBaseUrl(), []);
+    const authApiBaseUrl = useMemo(() => resolveApiBaseUrl(undefined, 'classic'), []);
+    const initialRuleset = useMemo<RulesetName>(() => {
+        if (typeof window === 'undefined') return 'classic';
+        const value = new URLSearchParams(window.location.search).get('ruleset');
+        return normalizeRuleset(value);
+    }, []);
+    const initialRulesetSelection = useMemo(() => deriveRulesetSelection(initialRuleset), [initialRuleset]);
     const initialRoomId = useMemo(() => {
         if (typeof window === 'undefined') return null;
         const value = new URLSearchParams(window.location.search).get('roomId');
         return value && value.trim().length > 0 ? value.trim() : null;
     }, []);
+    const [publicRuleset, setPublicRuleset] = useState<PublicRuleset>(initialRulesetSelection.publicRuleset);
+    const [tenMode, setTenMode] = useState<TenMode>(initialRulesetSelection.tenMode);
     const [activeRoomId, setActiveRoomId] = useState<string | null>(initialRoomId);
+    const [entryMode, setEntryMode] = useState<EntryMode>('home');
+    const [singleMode, setSingleMode] = useState<SingleMode>('menu');
+    const [botPersonaId, setBotPersonaId] = useState<string>('');
+    const activeRuleset = useMemo(() => deriveRuleset(publicRuleset, tenMode), [publicRuleset, tenMode]);
+    const isActiveRulesetConfigured = isRulesetConfigured(activeRuleset);
+    const activeRulesetPresentation = useMemo(() => getRulesetPresentation(activeRuleset), [activeRuleset]);
+    const socketRuleset = entryMode === 'online' ? activeRuleset : 'classic';
+    const activeGameApiBaseUrl = useMemo(() => resolveApiBaseUrl(undefined, socketRuleset), [socketRuleset]);
+    const activeGameWsBaseUrl = useMemo(() => resolveWsBaseUrl(socketRuleset), [socketRuleset]);
     const playerId = authSession?.profile.playerId ?? '__unauth__';
     const effectiveAccessToken = authSession && !authSession.user.mustChangePassword
         ? authSession.tokens.accessToken
         : null;
+    const hasAppliedRulesetSwitchRef = useRef(false);
 
     // Pass the actor and a callback to update serverState
     const handleServerStateUpdate = useCallback((newState: any, incomingProfiles?: Record<string, { nickname: string; avatarKey: string }>) => {
@@ -286,7 +313,7 @@ export default function App() {
             }
 
             try {
-                const session = await refreshApi(refreshToken, apiBaseUrl);
+                const session = await refreshApi(refreshToken, authApiBaseUrl);
                 saveStoredRefreshToken(session.tokens.refreshToken);
                 setAuthSession(session);
                 setAuthError(null);
@@ -295,7 +322,7 @@ export default function App() {
                 setAuthSession(null);
             }
         })();
-    }, [apiBaseUrl]);
+    }, [authApiBaseUrl]);
 
     const handleSocketRejectedEvent = useCallback((reason: string) => {
         if (reason === 'invalid room password') {
@@ -305,12 +332,13 @@ export default function App() {
 
     const socketOptions = useMemo(() => ({
         accessToken: effectiveAccessToken,
-        apiBaseUrl,
+        apiBaseUrl: activeGameApiBaseUrl,
+        wsBaseUrl: activeGameWsBaseUrl,
         roomId: activeRoomId,
         roomPassword: activeRoomPassword,
         onAuthExpired: handleSocketAuthExpired,
         onRejectedEvent: handleSocketRejectedEvent
-    }), [activeRoomId, activeRoomPassword, apiBaseUrl, effectiveAccessToken, handleSocketAuthExpired, handleSocketRejectedEvent]);
+    }), [activeGameApiBaseUrl, activeGameWsBaseUrl, activeRoomId, activeRoomPassword, effectiveAccessToken, handleSocketAuthExpired, handleSocketRejectedEvent]);
 
     const { sendEvent, queryAnalysis, queryPersonas } = useGameSocket(
         actor,
@@ -341,7 +369,7 @@ export default function App() {
             }
 
             try {
-                const refreshed = await refreshApi(refreshToken, apiBaseUrl);
+                const refreshed = await refreshApi(refreshToken, authApiBaseUrl);
                 saveStoredRefreshToken(refreshed.tokens.refreshToken);
                 setAuthSession(refreshed);
                 return run(refreshed.tokens.accessToken);
@@ -351,7 +379,7 @@ export default function App() {
                 throw error;
             }
         }
-    }, [authSession, apiBaseUrl]);
+    }, [authSession, authApiBaseUrl]);
 
     const queryAnalysisWithPlayer = useCallback((query: any) => {
         queryAnalysis({ ...query, playerId });
@@ -369,12 +397,13 @@ export default function App() {
         return saved === 'real' ? 'real' : 'classic';
     });
     const [showOptions, setShowOptions] = useState(false);
-    const [entryMode, setEntryMode] = useState<EntryMode>('home');
-    const [singleMode, setSingleMode] = useState<SingleMode>('menu');
-    const [botPersonaId, setBotPersonaId] = useState<string>('');
 
     const handleCreateRoom = useCallback(async () => {
         if (roomCreating) return;
+        if (!isActiveRulesetConfigured) {
+            setRoomCreateError('선택한 ruleset 서버가 설정되지 않았습니다.');
+            return;
+        }
         setRoomCreating(true);
         setRoomCreateError(null);
         try {
@@ -382,7 +411,7 @@ export default function App() {
             let existingRooms = onlineRooms;
             if (typedRoomName.length === 0) {
                 try {
-                    const latest = await withAccessTokenRetry((accessToken) => listRoomsApi(accessToken, apiBaseUrl));
+                    const latest = await withAccessTokenRetry((accessToken) => listRoomsApi(accessToken, activeGameApiBaseUrl));
                     existingRooms = latest.rooms;
                     setOnlineRooms(latest.rooms);
                 } catch {
@@ -396,7 +425,7 @@ export default function App() {
             const createdRoom = await withAccessTokenRetry((accessToken) => createRoomApi(accessToken, {
                 name: resolvedRoomName,
                 password: trimmedPassword || null
-            }, apiBaseUrl));
+            }, activeGameApiBaseUrl));
             setActiveRoomId(createdRoom.roomId);
             setActiveRoomPassword(trimmedPassword || null);
             setRoomSelectionId(createdRoom.roomId);
@@ -406,7 +435,7 @@ export default function App() {
             setShowCreateRoomModal(false);
             setRoomSettingsNameInput(createdRoom.name);
             setRoomSettingsPasswordInput('');
-            const latestRooms = await withAccessTokenRetry((accessToken) => listRoomsApi(accessToken, apiBaseUrl));
+            const latestRooms = await withAccessTokenRetry((accessToken) => listRoomsApi(accessToken, activeGameApiBaseUrl));
             setOnlineRooms(latestRooms.rooms);
         } catch (error) {
             if (error instanceof ApiError) {
@@ -417,13 +446,18 @@ export default function App() {
         } finally {
             setRoomCreating(false);
         }
-    }, [apiBaseUrl, onlineRooms, roomCreating, roomNameInput, roomPasswordInput, withAccessTokenRetry]);
+    }, [activeGameApiBaseUrl, isActiveRulesetConfigured, onlineRooms, roomCreating, roomNameInput, roomPasswordInput, withAccessTokenRetry]);
 
     const refreshOnlineRooms = useCallback(async () => {
+        if (!isActiveRulesetConfigured) {
+            setOnlineRooms([]);
+            setRoomsError('선택한 ruleset 서버가 설정되지 않았습니다.');
+            return;
+        }
         setRoomsError(null);
         setRoomsLoading(true);
         try {
-            const response = await withAccessTokenRetry((accessToken) => listRoomsApi(accessToken, apiBaseUrl));
+            const response = await withAccessTokenRetry((accessToken) => listRoomsApi(accessToken, activeGameApiBaseUrl));
             setOnlineRooms(response.rooms);
         } catch (error) {
             if (error instanceof ApiError) {
@@ -434,9 +468,13 @@ export default function App() {
         } finally {
             setRoomsLoading(false);
         }
-    }, [apiBaseUrl, withAccessTokenRetry]);
+    }, [activeGameApiBaseUrl, isActiveRulesetConfigured, withAccessTokenRetry]);
 
     const handleEnterSelectedRoom = useCallback(() => {
+        if (!isActiveRulesetConfigured) {
+            setRoomSelectionError('선택한 ruleset 서버가 설정되지 않았습니다.');
+            return;
+        }
         const selectedRoom = onlineRooms.find((room) => room.roomId === roomSelectionId);
         if (!selectedRoom) {
             setRoomSelectionError('입장할 방을 선택해주세요.');
@@ -450,7 +488,7 @@ export default function App() {
         setActiveRoomId(selectedRoom.roomId);
         setActiveRoomPassword(roomSelectionPasswordInput.trim() || null);
         sendEvent({ type: 'JOIN', playerId });
-    }, [onlineRooms, playerId, roomSelectionId, roomSelectionPasswordInput, sendEvent]);
+    }, [isActiveRulesetConfigured, onlineRooms, playerId, roomSelectionId, roomSelectionPasswordInput, sendEvent]);
 
     const handleSaveRoomSettings = useCallback(async () => {
         const targetRoomId = activeRoomId ?? 'lobby';
@@ -461,7 +499,7 @@ export default function App() {
             await withAccessTokenRetry((accessToken) => updateRoomApi(accessToken, targetRoomId, {
                 name: roomSettingsNameInput.trim(),
                 password: roomSettingsPasswordInput.trim() || null
-            }, apiBaseUrl));
+            }, activeGameApiBaseUrl));
             await refreshOnlineRooms();
         } catch (error) {
             if (error instanceof ApiError) {
@@ -472,7 +510,7 @@ export default function App() {
         } finally {
             setRoomSettingsSaving(false);
         }
-    }, [activeRoomId, apiBaseUrl, refreshOnlineRooms, roomSettingsNameInput, roomSettingsPasswordInput, roomSettingsSaving, withAccessTokenRetry]);
+    }, [activeRoomId, activeGameApiBaseUrl, refreshOnlineRooms, roomSettingsNameInput, roomSettingsPasswordInput, roomSettingsSaving, withAccessTokenRetry]);
 
     useEffect(() => {
         setIsConnected(Boolean(authSession && !authSession.user.mustChangePassword));
@@ -508,7 +546,7 @@ export default function App() {
             }
 
             try {
-                const session = await refreshApi(storedRefreshToken, apiBaseUrl);
+                const session = await refreshApi(storedRefreshToken, authApiBaseUrl);
                 if (cancelled) return;
                 saveStoredRefreshToken(session.tokens.refreshToken);
                 setAuthSession(session);
@@ -528,7 +566,7 @@ export default function App() {
         return () => {
             cancelled = true;
         };
-    }, [apiBaseUrl]);
+    }, [authApiBaseUrl]);
 
     useEffect(() => {
         if (!authSession) {
@@ -544,12 +582,18 @@ export default function App() {
         if (!authSession || entryMode !== 'online') {
             return;
         }
+        if (!isActiveRulesetConfigured) {
+            setOnlineRooms([]);
+            setRoomsLoading(false);
+            setRoomsError('선택한 ruleset 서버가 설정되지 않았습니다.');
+            return;
+        }
         let cancelled = false;
         void (async () => {
             setRoomsLoading(true);
             setRoomsError(null);
             try {
-                const response = await withAccessTokenRetry((accessToken) => listRoomsApi(accessToken, apiBaseUrl));
+                const response = await withAccessTokenRetry((accessToken) => listRoomsApi(accessToken, activeGameApiBaseUrl));
                 if (cancelled) return;
                 setOnlineRooms(response.rooms);
             } catch (error) {
@@ -569,7 +613,7 @@ export default function App() {
         const timer = setInterval(() => {
             void (async () => {
                 try {
-                    const response = await withAccessTokenRetry((accessToken) => listRoomsApi(accessToken, apiBaseUrl));
+                    const response = await withAccessTokenRetry((accessToken) => listRoomsApi(accessToken, activeGameApiBaseUrl));
                     if (!cancelled) {
                         setOnlineRooms(response.rooms);
                     }
@@ -583,7 +627,21 @@ export default function App() {
             cancelled = true;
             clearInterval(timer);
         };
-    }, [apiBaseUrl, authSession, entryMode, withAccessTokenRetry]);
+    }, [activeGameApiBaseUrl, activeRuleset, authSession, entryMode, isActiveRulesetConfigured, withAccessTokenRetry]);
+
+    useEffect(() => {
+        if (!hasAppliedRulesetSwitchRef.current) {
+            hasAppliedRulesetSwitchRef.current = true;
+            return;
+        }
+        setOnlineRooms([]);
+        setRoomsError(null);
+        setRoomSelectionId('lobby');
+        setRoomSelectionPasswordInput('');
+        setRoomSelectionError(null);
+        setActiveRoomId(null);
+        setActiveRoomPassword(null);
+    }, [activeRuleset]);
 
     useEffect(() => {
         const activeKey = activeRoomId ?? 'lobby';
@@ -593,6 +651,7 @@ export default function App() {
     useEffect(() => {
         if (typeof window === 'undefined') return;
         const nextUrl = new URL(window.location.href);
+        nextUrl.searchParams.set('ruleset', activeRuleset);
         const activeKey = activeRoomId?.trim();
         if (activeKey && activeKey !== 'lobby') {
             nextUrl.searchParams.set('roomId', activeKey);
@@ -600,7 +659,7 @@ export default function App() {
             nextUrl.searchParams.delete('roomId');
         }
         window.history.replaceState(null, '', nextUrl.toString());
-    }, [activeRoomId]);
+    }, [activeRoomId, activeRuleset]);
 
     useEffect(() => {
         const activeKey = activeRoomId ?? 'lobby';
@@ -612,9 +671,9 @@ export default function App() {
     }, [activeRoomId, onlineRooms]);
 
     const refreshStats = useCallback(async () => {
-        const summary = await withAccessTokenRetry((accessToken) => getStatsSummaryApi(accessToken, apiBaseUrl));
+        const summary = await withAccessTokenRetry((accessToken) => getStatsSummaryApi(accessToken, authApiBaseUrl));
         setStatsSummary(summary);
-    }, [apiBaseUrl, withAccessTokenRetry]);
+    }, [authApiBaseUrl, withAccessTokenRetry]);
 
     useEffect(() => {
         if (!showProfilePanel || !authSession) {
@@ -655,8 +714,8 @@ export default function App() {
         setAuthError(null);
         try {
             const session = authMode === 'login'
-                ? await loginApi({ email: authEmailInput, password: authPasswordInput }, apiBaseUrl)
-                : await registerApi({ email: authEmailInput, password: authPasswordInput, nickname: authNicknameInput }, apiBaseUrl);
+                ? await loginApi({ email: authEmailInput, password: authPasswordInput }, authApiBaseUrl)
+                : await registerApi({ email: authEmailInput, password: authPasswordInput, nickname: authNicknameInput }, authApiBaseUrl);
 
             saveStoredRefreshToken(session.tokens.refreshToken);
             setAuthSession(session);
@@ -672,7 +731,7 @@ export default function App() {
         } finally {
             setAuthSubmitting(false);
         }
-    }, [apiBaseUrl, authEmailInput, authMode, authNicknameInput, authPasswordInput]);
+    }, [authApiBaseUrl, authEmailInput, authMode, authNicknameInput, authPasswordInput]);
 
     const submitPasswordChange = useCallback(async () => {
         if (!authSession) return;
@@ -691,7 +750,7 @@ export default function App() {
         try {
             const session = await changePasswordApi(authSession.tokens.accessToken, {
                 newPassword: passwordChangeInput
-            }, apiBaseUrl);
+            }, authApiBaseUrl);
             saveStoredRefreshToken(session.tokens.refreshToken);
             setAuthSession(session);
             setPasswordChangeInput('');
@@ -705,7 +764,7 @@ export default function App() {
         } finally {
             setPasswordChangeSubmitting(false);
         }
-    }, [apiBaseUrl, authSession, passwordChangeConfirmInput, passwordChangeInput]);
+    }, [authApiBaseUrl, authSession, passwordChangeConfirmInput, passwordChangeInput]);
 
     const submitProfileUpdate = useCallback(async () => {
         if (!authSession) return;
@@ -716,7 +775,7 @@ export default function App() {
             const response = await withAccessTokenRetry((accessToken) => updateProfileApi(accessToken, {
                 nickname: profileNicknameInput,
                 bio: profileBioInput || null
-            }, apiBaseUrl));
+            }, authApiBaseUrl));
             setAuthSession((prev) => {
                 if (!prev) return prev;
                 return {
@@ -734,12 +793,12 @@ export default function App() {
         } finally {
             setProfileSaving(false);
         }
-    }, [apiBaseUrl, authSession, profileBioInput, profileNicknameInput, refreshStats, withAccessTokenRetry]);
+    }, [authApiBaseUrl, authSession, profileBioInput, profileNicknameInput, refreshStats, withAccessTokenRetry]);
 
     const handleLogout = useCallback(async () => {
         const refreshToken = loadStoredRefreshToken();
         try {
-            await logoutApi(refreshToken, apiBaseUrl);
+            await logoutApi(refreshToken, authApiBaseUrl);
         } catch {
             // No-op: logout should clear local session regardless of server response.
         }
@@ -751,7 +810,7 @@ export default function App() {
         setShowProfilePanel(false);
         setStatsSummary(null);
         setAuthError(null);
-    }, [apiBaseUrl]);
+    }, [authApiBaseUrl]);
 
     const getPlayerName = useCallback((pid: PlayerId) => {
         if (pid === playerId) {
@@ -826,6 +885,10 @@ export default function App() {
     const isSingleMiniMode = entryMode === 'single' && singleMode === 'mini';
     const isSingleAiMode = entryMode === 'single' && singleMode === 'ai';
     const isOnlineMode = entryMode === 'online';
+    const displayRuleset = isOnlineMode
+        ? ((serverState?.context?.ruleset as RulesetName | undefined) ?? activeRuleset)
+        : 'classic';
+    const displayRulesetPresentation = getRulesetPresentation(displayRuleset);
     const resolvedRoomId = activeRoomId ?? 'lobby';
     const activeRoomSummary = useMemo(() => {
         return onlineRooms.find((room) => room.roomId === resolvedRoomId) ?? null;
@@ -908,6 +971,10 @@ export default function App() {
     }, [isDoraSelect, selectedDoraId, doraRevealDeadlineMs, doraNowMs]);
 
     const handleJoin = () => {
+        if (!isActiveRulesetConfigured) {
+            setRoomSelectionError('선택한 ruleset 서버가 설정되지 않았습니다.');
+            return;
+        }
         sendEvent({ type: 'JOIN', playerId });
     };
 
@@ -948,6 +1015,20 @@ export default function App() {
         setAiRematchStep('none');
         setEntryMode('online');
         setSingleMode('menu');
+    };
+
+    const handleSelectPublicRuleset = (nextRuleset: PublicRuleset) => {
+        if (!isIdle) return;
+        setPublicRuleset(nextRuleset);
+        if (nextRuleset === 'classic') {
+            setTenMode('normal');
+        }
+    };
+
+    const handleSelectTenMode = (nextMode: TenMode) => {
+        if (!isIdle) return;
+        setPublicRuleset('ten');
+        setTenMode(nextMode);
     };
 
     const handleOpenMiniGame = () => {
@@ -1209,7 +1290,7 @@ export default function App() {
                 <div className="app-noise min-h-screen flex items-center justify-center px-4 py-8 text-white">
                     <div className="w-full max-w-md glass-panel rounded-3xl p-6 shadow-2xl">
                         <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-sky-200 to-emerald-300">
-                            17보 마작
+                            Step13 Mahjong
                         </h1>
                         <p className="mt-2 text-sm text-slate-300">
                             온라인 플레이를 위해 로그인하세요.
@@ -1381,7 +1462,7 @@ export default function App() {
                         analysisResult={analysisResult}
                         debugMode={debugMode}
                     />
-                    <YakuInfoLayer open={showYakuInfo} onClose={() => setShowYakuInfo(false)} />
+                    <YakuInfoLayer ruleset="classic" open={showYakuInfo} onClose={() => setShowYakuInfo(false)} />
                 </div>
             </TileSkinProvider>
         );
@@ -1398,7 +1479,7 @@ export default function App() {
                             onClick={() => setShowYakuInfo(true)}
                             className="px-4 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-yellow-500 font-bold shadow-[0_4px_10px_rgba(0,0,0,0.5)] border border-yellow-500/30 transition-all hover:scale-105"
                         >
-                            17보 역정보
+                            {displayRulesetPresentation.guideTitle}
                         </button>
                     </div>
                 )}
@@ -1526,7 +1607,7 @@ export default function App() {
                         </div>
                     </div>
                 )}
-                <YakuInfoLayer open={showYakuInfo} onClose={() => setShowYakuInfo(false)} />
+                <YakuInfoLayer ruleset={displayRuleset} open={showYakuInfo} onClose={() => setShowYakuInfo(false)} />
                 {/* Lobby / Match Start / Hand Build Phases - Keep as overlays or separate views */}
                 {/* If gameLoop or matchEnd, we can use GameBoard as base? 
                  Actually, matchEnd is an overlay ON TOP of GameBoard usually.
@@ -1539,7 +1620,19 @@ export default function App() {
                     <div className="w-full h-full min-h-screen sm:min-h-0 sm:h-auto sm:max-w-5xl glass-panel rounded-none sm:rounded-3xl p-4 sm:p-6 flex flex-col relative m-0 sm:m-4 z-10 overflow-y-auto thin-scrollbar">
                         <header className="mb-4 text-center w-full flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-end border-b border-slate-700/80 pb-4">
                             <div>
-                                <h1 className="text-3xl sm:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-500 via-amber-300 to-yellow-600 drop-shadow-sm tracking-tight text-stroke-sm">17보 마작</h1>
+                                <div className="flex items-center gap-2 justify-center sm:justify-start">
+                                    <h1 className="text-3xl sm:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-500 via-amber-300 to-yellow-600 drop-shadow-sm tracking-tight text-stroke-sm">
+                                        {displayRulesetPresentation.title}
+                                    </h1>
+                                    {displayRulesetPresentation.isTenAttackDefense && (
+                                        <span className={`px-2 py-1 rounded-full text-[11px] font-black tracking-[0.2em] border ${displayRulesetPresentation.isEasy
+                                            ? 'border-cyan-300/60 bg-cyan-500/15 text-cyan-200'
+                                            : 'border-amber-300/60 bg-amber-500/15 text-amber-200'
+                                            }`}>
+                                            {displayRulesetPresentation.onlineBadge}
+                                        </span>
+                                    )}
+                                </div>
                                 <div className="text-xs text-gray-400 mt-1 space-x-2">
                                     <span>닉네임: <span className="text-white font-semibold">{authSession.profile.nickname}</span></span>
                                     <span>•</span>
@@ -1734,13 +1827,99 @@ export default function App() {
                                     <>
                                         <div className="text-center space-y-2">
                                             <h2 className="text-3xl font-bold text-white">온라인 대기실</h2>
-                                            <p className="text-gray-400">대기실 입장 후 상대를 기다리거나 매치를 시작하세요.</p>
+                                            <p className="text-gray-400">즐길 룰셋을 고르고, 같은 ruleset 서버의 룸에서 상대를 기다리거나 매치를 시작하세요.</p>
                                         </div>
                                         <div className="flex flex-col gap-4 w-full max-w-md">
+                                            <div className="surface-panel p-4 rounded-2xl space-y-3">
+                                                <div>
+                                                    <div className="text-xs text-slate-400 mb-2">룰셋 선택</div>
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleSelectPublicRuleset('classic')}
+                                                            disabled={!isIdle}
+                                                            className={`rounded-2xl border p-3 text-left transition ${publicRuleset === 'classic'
+                                                                ? 'border-yellow-400 bg-yellow-500/10'
+                                                                : 'border-slate-700 bg-slate-800/70 hover:bg-slate-700/70'
+                                                                } ${!isIdle ? 'opacity-60 cursor-not-allowed' : ''}`}
+                                                        >
+                                                            <div className="text-sm font-black text-yellow-200">17보</div>
+                                                            <div className="mt-1 text-xs text-slate-300">기존 classic 룰셋</div>
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleSelectPublicRuleset('ten')}
+                                                            disabled={!isIdle}
+                                                            className={`rounded-2xl border p-3 text-left transition ${publicRuleset === 'ten'
+                                                                ? 'border-cyan-400 bg-cyan-500/10'
+                                                                : 'border-slate-700 bg-slate-800/70 hover:bg-slate-700/70'
+                                                                } ${!isIdle ? 'opacity-60 cursor-not-allowed' : ''}`}
+                                                        >
+                                                            <div className="text-sm font-black text-cyan-100">텐 공방전</div>
+                                                            <div className="mt-1 text-xs text-slate-300">공격/수비 단계가 있는 2인전</div>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                {publicRuleset === 'ten' && (
+                                                    <div>
+                                                        <div className="text-xs text-slate-400 mb-2">텐 공방전 모드</div>
+                                                        <div className="grid grid-cols-2 gap-2">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleSelectTenMode('normal')}
+                                                                disabled={!isIdle}
+                                                                className={`rounded-xl border px-3 py-2 text-sm font-semibold ${tenMode === 'normal'
+                                                                    ? 'border-amber-300 bg-amber-500/10 text-amber-100'
+                                                                    : 'border-slate-700 bg-slate-800/70 text-slate-300'
+                                                                    } ${!isIdle ? 'opacity-60 cursor-not-allowed' : ''}`}
+                                                            >
+                                                                표준
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleSelectTenMode('easy')}
+                                                                disabled={!isIdle}
+                                                                className={`rounded-xl border px-3 py-2 text-sm font-semibold ${tenMode === 'easy'
+                                                                    ? 'border-cyan-300 bg-cyan-500/10 text-cyan-100'
+                                                                    : 'border-slate-700 bg-slate-800/70 text-slate-300'
+                                                                    } ${!isIdle ? 'opacity-60 cursor-not-allowed' : ''}`}
+                                                            >
+                                                                Easy
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-3">
+                                                    <div className="flex items-center justify-between gap-3">
+                                                        <div>
+                                                            <div className="text-sm font-bold text-white">{activeRulesetPresentation.title}</div>
+                                                            <div className="text-xs text-slate-400 mt-1">{activeRulesetPresentation.description}</div>
+                                                        </div>
+                                                        <span className={`px-2 py-1 rounded-full text-[11px] font-black tracking-[0.2em] border ${activeRulesetPresentation.isEasy
+                                                            ? 'border-cyan-300/60 bg-cyan-500/15 text-cyan-200'
+                                                            : activeRulesetPresentation.isTenAttackDefense
+                                                                ? 'border-amber-300/60 bg-amber-500/15 text-amber-200'
+                                                                : 'border-yellow-300/60 bg-yellow-500/15 text-yellow-200'
+                                                            }`}>
+                                                            {activeRulesetPresentation.onlineBadge}
+                                                        </span>
+                                                    </div>
+                                                    {!isActiveRulesetConfigured && (
+                                                        <div className="mt-2 rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+                                                            이 ruleset 서버 endpoint가 설정되지 않았습니다.
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
                                             <div className="surface-panel p-4 rounded-2xl">
                                                 <div className="text-xs text-slate-400 mb-2">현재 룸</div>
-                                                <div className="text-sm font-semibold text-slate-200">
-                                                    {activeRoomSummary?.name ?? resolvedRoomId}
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <div className="text-sm font-semibold text-slate-200">
+                                                        {activeRoomSummary?.name ?? resolvedRoomId}
+                                                    </div>
+                                                    <span className="px-2 py-1 rounded-full border border-slate-600 bg-slate-900/80 text-[11px] font-bold text-slate-200">
+                                                        {getRulesetPresentation(activeRoomSummary?.ruleset ?? activeRuleset).onlineBadge}
+                                                    </span>
                                                 </div>
                                                 <div className="text-xs text-slate-400 mt-1">{resolvedRoomId}</div>
                                             </div>
@@ -1752,7 +1931,11 @@ export default function App() {
                                                     setRoomPasswordInput('');
                                                     setShowCreateRoomModal(true);
                                                 }}
-                                                className="w-full py-3 rounded-2xl font-bold text-lg shadow-lg bg-violet-600 hover:bg-violet-500 text-white"
+                                                disabled={!isActiveRulesetConfigured}
+                                                className={`w-full py-3 rounded-2xl font-bold text-lg shadow-lg ${isActiveRulesetConfigured
+                                                    ? 'bg-violet-600 hover:bg-violet-500 text-white'
+                                                    : 'bg-slate-700 text-slate-300 cursor-not-allowed'
+                                                    }`}
                                             >
                                                 새 룸 생성
                                             </button>
@@ -1838,9 +2021,13 @@ export default function App() {
                                             )}
                                             <div className="surface-panel p-4 rounded-2xl space-y-3">
                                                 <div className="flex items-center justify-between">
-                                                    <h3 className="text-sm font-bold text-slate-300">참여 가능 룸 목록</h3>
+                                                    <div>
+                                                        <h3 className="text-sm font-bold text-slate-300">참여 가능 룸 목록</h3>
+                                                        <div className="text-[11px] text-slate-500 mt-1">{activeRulesetPresentation.title} 서버의 룸만 표시됩니다.</div>
+                                                    </div>
                                                     <button
                                                         onClick={() => { void refreshOnlineRooms(); }}
+                                                        disabled={!isActiveRulesetConfigured}
                                                         className="text-xs px-2 py-1 rounded-lg bg-slate-700 hover:bg-slate-600"
                                                         type="button"
                                                     >
@@ -1849,6 +2036,9 @@ export default function App() {
                                                 </div>
                                                 {roomsLoading && <div className="text-xs text-slate-400">불러오는 중...</div>}
                                                 {roomsError && <div className="text-xs text-rose-300">{roomsError}</div>}
+                                                {!roomsLoading && !roomsError && onlineRooms.length === 0 && (
+                                                    <div className="text-xs text-slate-500">현재 선택한 ruleset 서버에 열린 룸이 없습니다.</div>
+                                                )}
                                                 <div className="max-h-48 overflow-y-auto space-y-2">
                                                     {onlineRooms.map((room) => (
                                                         <button
@@ -1867,13 +2057,18 @@ export default function App() {
                                                                 }`}
                                                         >
                                                             <div className="flex items-center justify-between">
-                                                                <span className="text-sm font-semibold text-slate-100">{room.name}</span>
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="text-sm font-semibold text-slate-100">{room.name}</span>
+                                                                    <span className="px-2 py-0.5 rounded-full border border-slate-600 bg-slate-900/80 text-[10px] font-bold text-slate-300">
+                                                                        {getRulesetPresentation(room.ruleset).onlineBadge}
+                                                                    </span>
+                                                                </div>
                                                                 <span className="text-xs text-slate-400">{room.connectedCount}명 {room.hasPassword ? '• 비밀번호' : ''}</span>
                                                             </div>
                                                             <div className="text-xs text-slate-500">{room.roomId}</div>
                                                             <div className="text-xs text-slate-300 mt-1">
                                                                 {room.participants.length > 0
-                                                                    ? `참가자: ${room.participants.map((participant) => participant.nickname).join(', ')}`
+                                                                    ? `참가자: ${room.participants.map((participant: RoomSummaryDTO['participants'][number]) => participant.nickname).join(', ')}`
                                                                     : '참가자 없음'}
                                                             </div>
                                                         </button>
@@ -1889,7 +2084,11 @@ export default function App() {
                                                 />
                                                 <button
                                                     onClick={handleEnterSelectedRoom}
-                                                    className="w-full py-2 rounded-xl font-bold bg-cyan-600 hover:bg-cyan-500"
+                                                    disabled={!isActiveRulesetConfigured}
+                                                    className={`w-full py-2 rounded-xl font-bold ${isActiveRulesetConfigured
+                                                        ? 'bg-cyan-600 hover:bg-cyan-500'
+                                                        : 'bg-slate-700 text-slate-300 cursor-not-allowed'
+                                                        }`}
                                                 >
                                                     선택한 룸으로 입장
                                                 </button>
@@ -1928,8 +2127,15 @@ export default function App() {
                                                 </div>
                                             )}
                                             {!isPlayerInLobby ? (
-                                                <button onClick={handleJoin} className="w-full py-3 bg-cyan-600 hover:bg-cyan-500 rounded-2xl font-bold text-lg shadow-lg">
-                                                    대기실 입장
+                                                <button
+                                                    onClick={handleJoin}
+                                                    disabled={!isActiveRulesetConfigured}
+                                                    className={`w-full py-3 rounded-2xl font-bold text-lg shadow-lg ${isActiveRulesetConfigured
+                                                        ? 'bg-cyan-600 hover:bg-cyan-500'
+                                                        : 'bg-slate-700 text-slate-300 cursor-not-allowed'
+                                                        }`}
+                                                >
+                                                    {activeRulesetPresentation.title} 대기실 입장
                                                 </button>
                                             ) : (
                                                 <div className="text-green-300 bg-green-900/30 py-2 px-4 rounded-xl text-center border border-green-500/50">
@@ -1958,7 +2164,7 @@ export default function App() {
                                             )}
                                             {isPlayerInLobby && context.players.length === 2 && (
                                                 <button onClick={handleStartMatch} className="w-full py-4 bg-gradient-to-b from-yellow-500 to-yellow-700 hover:from-yellow-400 hover:to-yellow-600 text-black border border-yellow-400 rounded-2xl font-black text-xl shadow-[inset_0_1px_0_rgba(255,255,255,0.4),_0_4px_15px_rgba(0,0,0,0.5)] animate-pulse">
-                                                    온라인 매치 시작
+                                                    {activeRulesetPresentation.title} 매치 시작
                                                 </button>
                                             )}
                                             <button

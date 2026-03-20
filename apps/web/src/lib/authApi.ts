@@ -30,6 +30,7 @@ export type RoomSummaryDTO = {
     hasPassword: boolean;
     connectedCount: number;
     participants: RoomParticipantDTO[];
+    ruleset: 'classic' | 'ten_attack_defense' | 'ten_attack_defense_easy';
 };
 
 export class ApiError extends Error {
@@ -179,7 +180,7 @@ export async function updateRoomApi(
 }
 
 function resolveApiBase(apiBaseUrl?: string): string {
-    return resolveApiBaseUrl(apiBaseUrl);
+    return resolveApiBaseUrl(apiBaseUrl, 'classic');
 }
 
 async function requestJson<T = unknown>(url: string, init: RequestInit): Promise<T> {

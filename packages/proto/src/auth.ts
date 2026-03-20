@@ -40,6 +40,24 @@ export type WsAuthTicketDTO = {
     expiresAt: string;
 };
 
+export type RoomParticipantDTO = {
+    playerId: string;
+    userId: string | null;
+    nickname: string;
+    avatarKey: string;
+};
+
+export type RoomSummaryDTO = {
+    roomId: string;
+    name: string;
+    ownerUserId: string | null;
+    ownerNickname: string | null;
+    hasPassword: boolean;
+    connectedCount: number;
+    participants: RoomParticipantDTO[];
+    ruleset: 'classic' | 'ten_attack_defense' | 'ten_attack_defense_easy';
+};
+
 export type UpdateProfileInputDTO = {
     nickname?: string;
     avatarKey?: string;

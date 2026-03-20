@@ -7,6 +7,7 @@ type PlayerProfileMap = Record<string, { nickname: string; avatarKey: string }>;
 type UseGameSocketOptions = {
     accessToken?: string | null;
     apiBaseUrl?: string;
+    wsBaseUrl?: string;
     roomId?: string | null;
     roomPassword?: string | null;
     onAuthExpired?: () => void;
@@ -56,7 +57,7 @@ export function useGameSocket(
                 const ticket = await requestWsTicket(accessToken, options.apiBaseUrl, abort.signal);
                 if (cancelled) return;
 
-                const wsBaseUrl = resolveWsBaseUrl();
+                const wsBaseUrl = options.wsBaseUrl ?? resolveWsBaseUrl();
                 const separator = wsBaseUrl.includes('?') ? '&' : '?';
                 const roomId = options.roomId?.trim();
                 const roomParam = roomId ? `&roomId=${encodeURIComponent(roomId)}` : '';

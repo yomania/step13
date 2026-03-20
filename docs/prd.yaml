@@ -1,6 +1,6 @@
 meta:
-  version: "2026-02-24-auth-password-reset-service"
-  last_synced: "2026-02-24"
+  version: "2026-03-20-ruleset-online-switching"
+  last_synced: "2026-03-20"
   source_of_truth:
     rules: "packages/core/src/rules.ts"
     machine: "packages/core/src/machine.ts"
@@ -8,7 +8,7 @@ meta:
     room: "apps/server/src/GameRoom.ts"
 
 product:
-  name: "17보 마작"
+  name: "Step13 Mahjong"
   genre: "2인 리치 마작 변형"
   runtime:
     transport: "WebSocket"
@@ -31,6 +31,17 @@ product:
 
 ruleset:
   active_ruleset: "classic"
+  available_rulesets:
+    - "classic"
+    - "ten_attack_defense"
+    - "ten_attack_defense_easy"
+  online_selector:
+    public_options:
+      - "classic"
+      - "ten_attack_defense"
+    ten_attack_defense_sub_options:
+      - "normal"
+      - "easy"
   match:
     players_per_room: 2
     hands_per_match: 4
@@ -104,6 +115,8 @@ api_contract:
     - "GET /me/stats/summary"
   http_rooms:
     - "POST /rooms"
+    - "GET /rooms"
+    - "PATCH /rooms/:roomId"
   client_to_server:
     - "JOIN (no payload playerId; server binds by authenticated user)"
     - "START_MATCH"
@@ -134,6 +147,14 @@ api_contract:
     stale_response_should_be_ignored_by_client: true
   ws_room:
     query_param: "roomId (optional, defaults to lobby; non-default rooms must be created first)"
+  room_summary:
+    includes:
+      - "roomId"
+      - "name"
+      - "hasPassword"
+      - "connectedCount"
+      - "participants"
+      - "ruleset"
 
 security_visibility:
   auth:

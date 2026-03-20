@@ -80,13 +80,27 @@ export function GameBoard({ context, myPlayerId, children }: GameBoardProps) {
                 ? 'DEFENDER'
                 : null
         : null;
+    const isTenAttackDefense = context.ruleset !== 'classic';
+    const title = isTenAttackDefense ? '2인 공방전' : '17보 마작 실전';
 
     return (
         <div className="game-shell relative flex flex-col min-h-[100dvh] text-white sm:px-5 overflow-x-hidden sm:overflow-hidden">
             <div className="pointer-events-none absolute -top-40 -left-40 w-96 h-96 rounded-full bg-slate-800/20 blur-[100px]" />
             <div className="pointer-events-none absolute -bottom-40 -right-40 w-96 h-96 rounded-full bg-slate-800/20 blur-[100px]" />
             <header className="header-bar z-10 p-2 sm:p-4 surface-panel sm:glass-panel rounded-none sm:rounded-2xl flex flex-col gap-2 sm:flex-row sm:justify-between sm:items-center mb-2 sm:mb-4 border-b sm:border border-slate-700/50 shadow-md">
-                <h1 className="text-lg sm:text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-500 to-yellow-200 drop-shadow-sm tracking-tight text-stroke-sm">17보 마작 실전</h1>
+                <div className="flex items-center gap-2">
+                    <h1 className="text-lg sm:text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-500 to-yellow-200 drop-shadow-sm tracking-tight text-stroke-sm">
+                        {title}
+                    </h1>
+                    {isTenAttackDefense && (
+                        <span className={`px-2 py-1 rounded-full text-[10px] font-black tracking-[0.2em] border ${context.ruleset === 'ten_attack_defense_easy'
+                            ? 'border-cyan-300/70 bg-cyan-500/10 text-cyan-200'
+                            : 'border-amber-300/70 bg-amber-500/10 text-amber-200'
+                            }`}>
+                            {context.ruleset === 'ten_attack_defense_easy' ? 'EASY' : 'TEN'}
+                        </span>
+                    )}
+                </div>
                 <div className="flex flex-wrap gap-1 sm:gap-2 items-center text-xs sm:text-base">
                     <div className="surface-panel px-2 sm:px-3 py-1 rounded-lg border border-slate-700/50 shadow-inner">
                         Round: <span className="text-yellow-500 font-bold">{context.round}/{RULES.match.handsPerMatch}</span>

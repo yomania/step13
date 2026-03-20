@@ -1,3 +1,5 @@
+import { RulesetName } from '@step13/core';
+
 type YakuInfo = {
     key: string;
     name: string;
@@ -31,20 +33,47 @@ const YAKU_INFOS: YakuInfo[] = [
 ];
 
 interface YakuInfoLayerProps {
+    ruleset: RulesetName;
     open: boolean;
     onClose: () => void;
 }
 
-export function YakuInfoLayer({ open, onClose }: YakuInfoLayerProps) {
+const TEN_GUIDE_INFOS = [
+    {
+        key: 'stage-a',
+        title: 'Stage A: 선언',
+        body: '내 턴에 텐파이를 선언하고, 표준 모드에서는 리치를 걸어 공격권을 강화할 수 있습니다. Easy에서는 리치 선택지가 없습니다.'
+    },
+    {
+        key: 'stage-b-guess',
+        title: 'Stage B: 수비 추측',
+        body: '수비자는 남은 추측 횟수 안에 공격자의 대기패를 맞혀야 합니다. 맞히면 즉시 수비자 승리입니다.'
+    },
+    {
+        key: 'stage-b-assault',
+        title: 'Stage B: 공격',
+        body: '수비가 실패하면 공격자가 제한된 공격 기회 안에 대기패를 뽑아야 합니다. 성공 시 공격자 승리, 실패 시 유국입니다.'
+    },
+    {
+        key: 'riichi',
+        title: '표준 vs Easy',
+        body: '표준 텐 공방전은 리치와 깡 선택지를 보여주고, Easy는 이를 제거해 선언/추측 흐름에 집중합니다.'
+    }
+];
+
+export function YakuInfoLayer({ ruleset, open, onClose }: YakuInfoLayerProps) {
     if (!open) return null;
+    const isTenAttackDefense = ruleset !== 'classic';
 
     return (
         <div className="fixed inset-0 z-[90] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
             <div className="w-full max-w-4xl max-h-[90vh] rounded-3xl glass-panel shadow-2xl overflow-hidden">
                 <div className="flex items-center justify-between border-b border-slate-700 px-5 py-4">
                     <div>
-                        <h2 className="text-xl font-extrabold text-cyan-300">17보 역정보</h2>
-                        <p className="text-xs text-slate-400 mt-1">로비/조패 단계에서 참고하는 핵심 역 요약</p>
+                        <h2 className="text-xl font-extrabold text-cyan-300">{isTenAttackDefense ? '텐 공방전 가이드' : '17보 역정보'}</h2>
+                        <p className="text-xs text-slate-400 mt-1">
+                            {isTenAttackDefense ? '선언, 추측, 공격 단계의 흐름과 표준/Easy 차이를 요약합니다.' : '로비/조패 단계에서 참고하는 핵심 역 요약'}
+                        </p>
                     </div>
                     <button
                         onClick={onClose}
@@ -54,21 +83,39 @@ export function YakuInfoLayer({ open, onClose }: YakuInfoLayerProps) {
                     </button>
                 </div>
                 <div className="overflow-y-auto thin-scrollbar max-h-[calc(90vh-88px)] p-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {YAKU_INFOS.map((yaku) => (
-                            <div key={yaku.key} className="rounded-lg border border-slate-700 bg-slate-800/80 p-3">
-                                <div className="flex items-center justify-between">
-                                    <div className="text-base font-bold text-white">{yaku.name}</div>
-                                    <div className="text-xs font-bold text-yellow-300">{yaku.han}</div>
-                                </div>
-                                <div className="mt-2 text-xs text-slate-300">조건: {yaku.condition}</div>
-                                <div className="mt-1 text-xs text-cyan-300">팁: {yaku.tip}</div>
+                    {isTenAttackDefense ? (
+                        <>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                {TEN_GUIDE_INFOS.map((item) => (
+                                    <div key={item.key} className="rounded-lg border border-slate-700 bg-slate-800/80 p-4">
+                                        <div className="text-base font-bold text-white">{item.title}</div>
+                                        <div className="mt-2 text-sm leading-6 text-slate-300">{item.body}</div>
+                                    </div>
+                                ))}
                             </div>
-                        ))}
-                    </div>
-                    <div className="mt-4 rounded-lg border border-amber-700/50 bg-amber-900/20 p-3 text-xs text-amber-200">
-                        참고: 도라는 보너스 판수이며 단독 역으로는 성립하지 않습니다.
-                    </div>
+                            <div className="mt-4 rounded-lg border border-cyan-700/50 bg-cyan-900/20 p-3 text-xs text-cyan-200">
+                                참고: 실제 HUD 배치는 공방전 전용 화면 흐름에 맞춰 선언 패널, 추측 트레이, 성공/실패 오버레이를 사용합니다.
+                            </div>
+                        </>
+                    ) : (
+                        <>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                {YAKU_INFOS.map((yaku) => (
+                                    <div key={yaku.key} className="rounded-lg border border-slate-700 bg-slate-800/80 p-3">
+                                        <div className="flex items-center justify-between">
+                                            <div className="text-base font-bold text-white">{yaku.name}</div>
+                                            <div className="text-xs font-bold text-yellow-300">{yaku.han}</div>
+                                        </div>
+                                        <div className="mt-2 text-xs text-slate-300">조건: {yaku.condition}</div>
+                                        <div className="mt-1 text-xs text-cyan-300">팁: {yaku.tip}</div>
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="mt-4 rounded-lg border border-amber-700/50 bg-amber-900/20 p-3 text-xs text-amber-200">
+                                참고: 도라는 보너스 판수이며 단독 역으로는 성립하지 않습니다.
+                            </div>
+                        </>
+                    )}
                 </div>
             </div>
         </div>

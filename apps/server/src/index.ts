@@ -327,7 +327,8 @@ const main = async () => {
                 ownerNickname: identity.profile.nickname,
                 hasPassword: Boolean(normalizedRoomPassword),
                 connectedCount: 0,
-                participants: []
+                participants: [],
+                ruleset
             });
         } catch (error) {
             return handleRouteError(reply, error);
@@ -416,7 +417,8 @@ const main = async () => {
                 ownerNickname: roomMeta.ownerNickname,
                 hasPassword: nextPassword !== undefined ? Boolean(nextPassword) : false,
                 connectedCount: roomRegistry.getRoom(normalizedRoomId)?.getConnectedClientCount() ?? 0,
-                participants: roomRegistry.getRoom(normalizedRoomId)?.getConnectedParticipants() ?? []
+                participants: roomRegistry.getRoom(normalizedRoomId)?.getConnectedParticipants() ?? [],
+                ruleset
             });
         } catch (error) {
             return handleRouteError(reply, error);

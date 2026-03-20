@@ -30,6 +30,7 @@ type RoomMeta = {
     name: string;
     password: string | null;
     createdAt: number;
+    ruleset: RulesetName;
 };
 
 export type RoomListItem = {
@@ -45,6 +46,7 @@ export type RoomListItem = {
         nickname: string;
         avatarKey: string;
     }>;
+    ruleset: RulesetName;
 };
 
 export class RoomRegistry {
@@ -93,7 +95,8 @@ export class RoomRegistry {
             ownerUserId: meta.ownerUserId,
             ownerNickname: meta.ownerNickname,
             name: meta.name,
-            createdAt: meta.createdAt
+            createdAt: meta.createdAt,
+            ruleset: meta.ruleset
         };
     }
 
@@ -125,7 +128,8 @@ export class RoomRegistry {
             ownerNickname: input.ownerNickname ?? null,
             name: input.name?.trim() || roomId,
             password: input.password?.trim() || null,
-            createdAt: Date.now()
+            createdAt: Date.now(),
+            ruleset: this.ruleset
         });
         return room;
     }
@@ -147,7 +151,8 @@ export class RoomRegistry {
             ownerUserId: meta.ownerUserId,
             ownerNickname: meta.ownerNickname,
             name: meta.name,
-            createdAt: meta.createdAt
+            createdAt: meta.createdAt,
+            ruleset: meta.ruleset
         };
     }
 
@@ -175,7 +180,8 @@ export class RoomRegistry {
                     userId: participant.userId,
                     nickname: participant.nickname,
                     avatarKey: participant.avatarKey
-                }))
+                })),
+                ruleset: meta?.ruleset ?? this.ruleset
             });
         });
         return items.sort((a, b) => {

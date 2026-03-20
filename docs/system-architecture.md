@@ -1,6 +1,6 @@
 # Step13 시스템 아키텍처 (System Architecture)
 
-기준일: `2026-02-24`
+기준일: `2026-03-20`
 
 ## 1. 모노레포 구성
 
@@ -18,16 +18,18 @@
 
 ```mermaid
 flowchart LR
-    UI[apps/web\nReact/Vite] -->|register/login/refresh| AUTH[apps/server\nAuthService]
-    UI -->|ws-ticket 발급| AUTH
-    UI -->|JOIN, START_MATCH, QUERY_*| WS[apps/server\nGameRoom]
-    WS -->|GameEvents| CORE[packages/core\ncreateGameMachine]
-    CORE -->|snapshot| WS
-    WS -->|UPDATE/ANALYSIS_RESULT| UI
-    WS --- BOT[Server Bot Actor\napps/server/src/Bot.ts]
-    BOT --> CORE
-    AUTH --- STORE[(InMemoryAuthStore\nPrisma schema 준비)]
-    WS -->|MATCH_END 요약 기록| AUTH
+    UI[apps/web\nReact/Vite] -->|register/login/refresh| AUTH[shared auth on ruleset server]
+    UI -->|ruleset별 ws-ticket 발급| AUTH
+    UI -->|JOIN, START_MATCH, QUERY_*| WS17[server classic]
+    UI -->|JOIN, START_MATCH, QUERY_*| WSTEN[server ten_attack_defense]
+    UI -->|JOIN, START_MATCH, QUERY_*| WSEASY[server ten_attack_defense_easy]
+    WS17 -->|GameEvents| CORE[packages/core\ncreateGameMachine]
+    WSTEN -->|GameEvents| CORE
+    WSEASY -->|GameEvents| CORE
+    CORE -->|snapshot| WS17
+    CORE -->|snapshot| WSTEN
+    CORE -->|snapshot| WSEASY
+    AUTH --- STORE[(Shared DB / JWT)]
 ```
 
 핵심 원칙:
@@ -35,6 +37,7 @@ flowchart LR
 - 서버 권위(Server Authoritative): 상태 전이는 `packages/core` 머신이 결정
 - 클라이언트는 서버 스냅샷(`UPDATE`)을 렌더링
 - `QUERY_ANALYSIS`는 룸에서 처리 후 `ANALYSIS_RESULT` 단방향 응답
+- 웹은 exact ruleset 선택에 따라 서로 다른 서버 endpoint로 전환하되, 인증 세션은 공유 설정을 사용한다
 
 ## 3. Core 레이어
 
@@ -45,7 +48,7 @@ flowchart LR
 - 규칙 실행: `packages/core/src/engine/defaultEngine.ts`
   - 딜/선결정, 도라 선택, 조패 검증, 타패 적용, 론/유국 판정
 - 룰셋 팩토리: `packages/core/src/engine/rulesets.ts`
-  - 현재 `classic` 1종
+  - `classic`, `ten_attack_defense`, `ten_attack_defense_easy`
 
 ### 3.2 권위 상태(`GameContext`) 소유권
 
@@ -73,7 +76,7 @@ flowchart LR
 - 비밀번호 초기화 서비스 (`AuthService.adminResetPassword`)
   - 현재는 엔드포인트 미구현 (차후 어드민에서 연결 예정)
 - 룸 관리 API
-  - `POST /rooms` (room 생성)
+  - `POST /rooms`, `GET /rooms`, `PATCH /rooms/:roomId`
 - WS 핸드셰이크 전 티켓 검증(1회용, 짧은 TTL)
 - 인증 사용자 -> 게임 `playerId(user:{userId})` 서버 강제 바인딩
 - 소켓 바인딩 플레이어 검증(`JOIN` 선행, playerId 고정)
@@ -81,6 +84,7 @@ flowchart LR
 - `QUERY_ANALYSIS`, `QUERY_PERSONAS` 처리
 - 봇 생명주기(`ADD_BOT`) 및 페르소나 정규화
 - 인메모리 룸 레지스트리 관리(기본 룸 유지, 기본값은 유휴 룸 정리 비활성)
+- 각 server 배포는 고정 `RULESET`으로 실행되고, 룸 응답에 `ruleset` 메타데이터를 포함
 - 상태 브로드캐스트 시 포그오브워 마스킹 적용
 - `MATCH_END` 시 매치 요약 전적 저장
 - WS 접속 시 `roomId` 쿼리 파라미터를 통해 멀티룸 선택 지원 (미지정 시 기본 룸, 비기본 룸은 사전 생성 필요)
@@ -101,6 +105,7 @@ flowchart LR
 - 로그인/회원가입/토큰 갱신 게이트
 - 프로필 편집(닉네임/소개) 및 전적 요약 UI
 - 소켓 연결 전 `POST /auth/ws-ticket` 수행
+- 온라인 로비에서 `classic` / `ten_attack_defense` / `ten_attack_defense_easy` exact ruleset을 선택하고, 선택한 ruleset 서버의 방만 조회
 - 메인 모드: 매치 모드 / 싱글 미니게임 모드
 - `useGameSocket`에서 reconnect 시 `JOIN` 재바인딩 + pending 이벤트 재전송
 - 분석 응답은 `queryId` 상관관계로 소비(오래된 응답 무시)
