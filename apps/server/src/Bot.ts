@@ -142,11 +142,11 @@ export class Bot {
     private decide() {
         if (!this.state || this.processing) return;
 
-        const { value, context } = this.state;
-        const phase = typeof value === 'string' ? value : Object.keys(value)[0];
+        const { context } = this.state;
+        const step = context.step;
         const myTurn = context.currentTurn === this.id;
 
-        if (phase === 'handBuild') {
+        if (step === 'classic_hand_build') {
             if (!context.hands[this.id]) {
                 if (this.preparedHand && this.preparedPool) {
                     this.actor.send({
@@ -168,33 +168,30 @@ export class Bot {
             }
         }
 
-        if (phase === 'doraSelect') {
+        if (step === 'classic_dora_select') {
             const isDealer = context.dealer === this.id;
             const alreadySelected = (context.doraIndicators?.length ?? 0) > 0;
             if (isDealer && !alreadySelected && !this.processing) {
-                this.processing = true;
-                setTimeout(() => {
-                    const wall = context.wall ?? [];
-                    const pick = wall[Math.floor(Math.random() * Math.max(1, wall.length))];
-                    if (pick?.id) {
-                        this.actor.send({ type: 'SELECT_DORA', playerId: this.id, tileId: pick.id });
-                    }
-                    this.processing = false;
-                }, 500 + Math.random() * 700);
+                const wall = context.wall ?? [];
+                const pick = wall[Math.floor(Math.random() * Math.max(1, wall.length))];
+                if (pick?.id) {
+                    this.actor.send({ type: 'SELECT_DORA', playerId: this.id, tileId: pick.id });
+                }
             }
         }
 
-        if (phase === 'gameLoop') {
+        if (step === 'ten_a_turn' || step === 'ten_b_guess' || step === 'ten_b_assault') {
             const attackDefense = context.attackDefense;
             if (attackDefense && context.ruleset !== 'classic') {
-                if (attackDefense.stage === 'A' && myTurn && attackDefense.ownTurns?.[this.id] < 18) {
-                    const myHand = context.hands[this.id];
-                    if (myHand && this.logic.getWinningTiles(myHand).length > 0 && !this.processing) {
+                if (attackDefense.stage === 'A' && myTurn && attackDefense.pendingDrawTile && !this.processing) {
+                    const declarationTileId = this.chooseTenpaiDeclarationTile(context.hands[this.id] ?? [], attackDefense.pendingDrawTile, context.doraIndicators ?? [], context.ruleset === 'ten_attack_defense');
+                    if (declarationTileId) {
                         this.processing = true;
                         setTimeout(() => {
                             this.actor.send({
                                 type: 'DECLARE_TENPAI',
                                 playerId: this.id,
+                                tileId: declarationTileId,
                                 withRiichi: context.ruleset === 'ten_attack_defense'
                             });
                             this.processing = false;
@@ -221,7 +218,9 @@ export class Bot {
                     return;
                 }
             }
+        }
 
+        if (step === 'classic_turn') {
             if (context.lastDiscard && context.lastDiscard.playerId !== this.id) {
                 const myHand = context.hands[this.id];
                 if (!myHand) return;
@@ -241,6 +240,14 @@ export class Bot {
                     }, 1000 + Math.random() * 1000);
                 }
             }
+        }
+
+        if ((step === 'ten_a_turn' || step === 'ten_b_assault') && myTurn && !this.processing) {
+            this.processing = true;
+            setTimeout(() => {
+                this.discard();
+                this.processing = false;
+            }, 1000 + Math.random() * 1000);
         }
     }
 
@@ -465,14 +472,44 @@ export class Bot {
         return waits;
     }
 
+    private chooseTenpaiDeclarationTile(hand: Tile[], pendingDrawTile: Tile | null, doraIndicators: Tile[], withRiichi: boolean): string | null {
+        if (!pendingDrawTile) return null;
+        const turnTiles = [...hand, pendingDrawTile];
+        for (const tile of turnTiles) {
+            const remaining = turnTiles.filter((entry) => entry.id !== tile.id);
+            if (remaining.length !== 13) continue;
+            const waits = this.findWinningTiles(remaining);
+            if (waits.length === 0) continue;
+            const hasScoringWait = waits.some((wait) => {
+                const score = calculateScore(remaining, wait, false, doraIndicators, {
+                    ...SCORE_OPTIONS,
+                    autoRiichiFallback: withRiichi
+                });
+                return score.points > 0 && score.yaku.length > 0;
+            });
+            if (hasScoringWait) {
+                return tile.id ?? null;
+            }
+        }
+        return null;
+    }
+
     private discard() {
-        let pool = this.state.context.pools[this.id];
+        const context = this.state.context;
+        let pool = context.pools[this.id];
+        if (context.ruleset !== 'classic') {
+            if (context.attackDefense.stage === 'A') {
+                pool = [...(context.hands[this.id] ?? []), ...(context.attackDefense.pendingDrawTile ? [context.attackDefense.pendingDrawTile] : [])];
+            } else if (context.attackDefense.stage === 'B_ASSAULT') {
+                pool = context.attackDefense.pendingDrawTile ? [context.attackDefense.pendingDrawTile] : [];
+            }
+        }
         if (!pool || pool.length === 0) return;
 
         // --- Furiten Prevention ---
         // 현 핸드가 완성(13장)되어 있다면 내 대기패를 구해서 pool에서 버리지 않도록 필터링
-        const myHand = this.state.context.hands[this.id];
-        if (myHand && myHand.length === 13) {
+        const myHand = context.hands[this.id];
+        if (context.ruleset === 'classic' && myHand && myHand.length === 13) {
             const myWaits = this.findWinningTiles(myHand);
             const safePool = pool.filter((pt: Tile) =>
                 !myWaits.some(mw => mw.suit === pt.suit && mw.rank === pt.rank)
@@ -674,6 +711,7 @@ export class Bot {
         allDiscards.forEach((discards) => addVisible(discards));
         addVisible(context.hands?.[this.id] ?? []);
         addVisible(context.pools?.[this.id] ?? []);
+        addVisible(context.attackDefense?.pendingDrawTile ? [context.attackDefense.pendingDrawTile] : []);
         return visible;
     }
 

@@ -25,6 +25,7 @@ export function useGameSocket(
     const joinPlayerIdRef = useRef<string | null>(null);
     const pendingEventsRef = useRef<any[]>([]);
     const lastNonJoinEventRef = useRef<any | null>(null);
+    const joinRetryTimeoutRef = useRef<number | null>(null);
 
     const accessToken = options.accessToken ?? null;
 
@@ -36,6 +37,13 @@ export function useGameSocket(
         socket.send(JSON.stringify(event));
     };
 
+    const clearJoinRetryTimer = () => {
+        if (joinRetryTimeoutRef.current !== null) {
+            window.clearTimeout(joinRetryTimeoutRef.current);
+            joinRetryTimeoutRef.current = null;
+        }
+    };
+
     useEffect(() => {
         if (!accessToken) {
             if (socketRef.current) {
@@ -45,12 +53,35 @@ export function useGameSocket(
             joinPlayerIdRef.current = null;
             pendingEventsRef.current = [];
             lastNonJoinEventRef.current = null;
+            clearJoinRetryTimer();
             return;
         }
 
         const abort = new AbortController();
         let socket: WebSocket | null = null;
         let cancelled = false;
+        let receivedInitialServerSignal = false;
+
+        const scheduleJoinRetry = () => {
+            clearJoinRetryTimer();
+            if (!joinPlayerIdRef.current || !socket) {
+                return;
+            }
+            const activeSocket = socket;
+            joinRetryTimeoutRef.current = window.setTimeout(() => {
+                if (
+                    cancelled ||
+                    receivedInitialServerSignal ||
+                    !joinPlayerIdRef.current ||
+                    socketRef.current !== activeSocket ||
+                    activeSocket.readyState !== WebSocket.OPEN
+                ) {
+                    return;
+                }
+                console.warn('No initial server response after JOIN, retrying JOIN once');
+                sendRaw(activeSocket, { type: 'JOIN' });
+            }, 500);
+        };
 
         const connect = async () => {
             try {
@@ -73,6 +104,7 @@ export function useGameSocket(
 
                     if (joinPlayerIdRef.current) {
                         sendRaw(socket!, { type: 'JOIN' });
+                        scheduleJoinRetry();
                     }
 
                     if (pendingEventsRef.current.length > 0) {
@@ -93,6 +125,8 @@ export function useGameSocket(
                         console.log('Received from Server:', data);
 
                         if (data.type === 'SYNC' || data.type === 'UPDATE') {
+                            receivedInitialServerSignal = true;
+                            clearJoinRetryTimer();
                             onStateChange?.(data.state, data.playerProfiles);
                         }
                         if (data.type === 'ANALYSIS_RESULT') {
@@ -102,6 +136,8 @@ export function useGameSocket(
                             onPersonaListResult?.(data);
                         }
                         if (data.type === 'REJECTED_EVENT') {
+                            receivedInitialServerSignal = true;
+                            clearJoinRetryTimer();
                             console.warn('Server rejected event:', data.reason);
                             if (typeof data.reason === 'string') {
                                 options.onRejectedEvent?.(data.reason);
@@ -122,6 +158,7 @@ export function useGameSocket(
 
                 socket.onclose = () => {
                     console.log('Disconnected from Game Server');
+                    clearJoinRetryTimer();
                     if (socketRef.current === socket) {
                         socketRef.current = null;
                     }
@@ -140,6 +177,7 @@ export function useGameSocket(
         return () => {
             cancelled = true;
             abort.abort();
+            clearJoinRetryTimer();
             if (socket) {
                 socket.close();
             }

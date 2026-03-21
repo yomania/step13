@@ -6,50 +6,54 @@ import { RULES } from './rules';
 import { createEngineForRuleset, RulesetName } from './engine/rulesets';
 import { GameEngine } from './engine/types';
 
-const initialContext: GameContext = {
-    players: [],
-    scores: {},
-    currentTurn: null,
-    round: 0,
-    dealtTiles: {},
-    hands: {},
-    pools: {},
-    wall: [],
-    doraIndicators: [],
-    dealerDice: {},
-    discards: {},
-    phase: 'IDLE',
-    winner: null,
-    dealer: '',
-    winResult: null,
-    lastDiscard: null,
-    eventLog: [],
-    matchHandIndex: 0,
-    seatMap: {},
-    deterministicSeed: null,
-    timeBankRemainingMs: {},
-    roundEndConfirmedBy: {},
-    ruleset: 'classic',
-    attackDefense: {
-        stage: 'A',
-        attacker: null,
-        defender: null,
-        declaredBy: null,
-        declaredWithRiichi: false,
-        declarationType: null,
-        ownTurns: {},
-        guessesRemaining: 0,
-        failedGuesses: 0,
-        assaultRemaining: 0,
-        lockedWaitTileKeys: [],
-        lastGuessTileKey: null,
-        lastGuessResult: 'idle',
-        kanOption: {
-            pending: false,
-            tileKey: null
+function createInitialContext(ruleset: RulesetName = 'classic'): GameContext {
+    return {
+        players: [],
+        scores: {},
+        currentTurn: null,
+        round: 0,
+        dealtTiles: {},
+        hands: {},
+        pools: {},
+        wall: [],
+        doraIndicators: [],
+        dealerDice: {},
+        discards: {},
+        phase: 'IDLE',
+        step: 'idle',
+        winner: null,
+        dealer: '',
+        winResult: null,
+        lastDiscard: null,
+        eventLog: [],
+        matchHandIndex: 0,
+        seatMap: {},
+        deterministicSeed: null,
+        timeBankRemainingMs: {},
+        roundEndConfirmedBy: {},
+        ruleset,
+        attackDefense: {
+            stage: 'A',
+            attacker: null,
+            defender: null,
+            declaredBy: null,
+            declaredWithRiichi: false,
+            declarationType: null,
+            ownTurns: {},
+            guessesRemaining: 0,
+            failedGuesses: 0,
+            assaultRemaining: 0,
+            lockedWaitTileKeys: [],
+            lastGuessTileKey: null,
+            lastGuessResult: 'idle',
+            pendingDrawTile: null,
+            kanOption: {
+                pending: false,
+                tileKey: null
+            }
         }
-    }
-};
+    };
+}
 
 export type GameMachineOptions = {
     ruleset?: RulesetName;
@@ -93,22 +97,112 @@ function resolveTenBattleScores(context: GameContext, winner: string | null): Re
     return next;
 }
 
-function findKanTileKey(pool: Tile[]): string | null {
-    const counts = new Map<string, number>();
-    pool.forEach((tile) => {
-        const key = toTileKey(tile);
-        counts.set(key, (counts.get(key) ?? 0) + 1);
+function createOwnTurns(players: string[]): Record<string, number> {
+    const ownTurns: Record<string, number> = {};
+    players.forEach((playerId) => {
+        ownTurns[playerId] = 0;
     });
-    for (const [key, count] of counts.entries()) {
-        if (count >= 4) {
-            return key;
+    return ownTurns;
+}
+
+function createTimeBank(players: string[]): Record<string, number> {
+    const timeBank: Record<string, number> = {};
+    players.forEach((playerId) => {
+        timeBank[playerId] = RULES.timers.timeBankMs;
+    });
+    return timeBank;
+}
+
+function createAttackDefenseState(players: string[]): GameContext['attackDefense'] {
+    return {
+        stage: 'A',
+        attacker: null,
+        defender: null,
+        declaredBy: null,
+        declaredWithRiichi: false,
+        declarationType: null,
+        ownTurns: createOwnTurns(players),
+        guessesRemaining: 0,
+        failedGuesses: 0,
+        assaultRemaining: 0,
+        lockedWaitTileKeys: [],
+        lastGuessTileKey: null,
+        lastGuessResult: 'idle',
+        pendingDrawTile: null,
+        kanOption: {
+            pending: false,
+            tileKey: null
         }
+    };
+}
+
+function prepareTenHands(players: string[], dealtTiles: Record<string, Tile[]>) {
+    const hands: Record<string, Tile[]> = {};
+    players.forEach((playerId) => {
+        hands[playerId] = dealtTiles[playerId] ?? [];
+    });
+    return { hands, pools: {} as Record<string, Tile[]> };
+}
+
+function getTenTurnTiles(context: GameContext, playerId: string): Tile[] {
+    const tiles = [...(context.hands[playerId] ?? [])];
+    if (context.attackDefense.pendingDrawTile) {
+        tiles.push(context.attackDefense.pendingDrawTile);
     }
-    return null;
+    return tiles;
+}
+
+function extractTileById(tiles: Tile[], tileId: string): { removed: Tile | null; remaining: Tile[] } {
+    let removed: Tile | null = null;
+    const remaining = tiles.filter((tile) => {
+        if (!removed && tile.id === tileId) {
+            removed = tile;
+            return false;
+        }
+        return true;
+    });
+    return { removed, remaining };
+}
+
+function applyTenStageADiscard(context: GameContext, playerId: string, tileId: string): GameContext {
+    const { removed, remaining } = extractTileById(getTenTurnTiles(context, playerId), tileId);
+    if (!removed || remaining.length !== RULES.ten.initialHandSize) {
+        return context;
+    }
+    const currentDiscards = context.discards[playerId] ?? [];
+    const nextTurn = context.players.find((id) => id !== playerId) ?? null;
+    const discardEvent: GameEvents = { type: 'DISCARD', playerId, tileId };
+    return {
+        ...context,
+        hands: {
+            ...context.hands,
+            [playerId]: remaining
+        },
+        discards: {
+            ...context.discards,
+            [playerId]: [...currentDiscards, removed]
+        },
+        currentTurn: nextTurn,
+        lastDiscard: { playerId, tile: removed },
+        eventLog: [...context.eventLog, discardEvent],
+        attackDefense: {
+            ...context.attackDefense,
+            pendingDrawTile: null
+        }
+    };
+}
+
+function buildDeclaredTenpaiHand(context: GameContext, playerId: string, tileId: string): { hand: Tile[]; discard: Tile | null } {
+    const { removed, remaining } = extractTileById(getTenTurnTiles(context, playerId), tileId);
+    if (!removed || remaining.length !== RULES.ten.initialHandSize) {
+        return { hand: [], discard: null };
+    }
+    return { hand: remaining, discard: removed };
 }
 
 export function createGameMachine(options: GameMachineOptions = {}) {
-    const engine = options.engine ?? createEngineForRuleset(options.ruleset ?? 'classic');
+    const configuredRuleset = options.ruleset ?? 'classic';
+    const engine = options.engine ?? createEngineForRuleset(configuredRuleset);
 
     return setup({
         types: {
@@ -117,6 +211,8 @@ export function createGameMachine(options: GameMachineOptions = {}) {
         },
         guards: {
             canStartMatch: ({ context }) => context.players.length === 2,
+            isClassicRuleset: ({ context }) => context.ruleset === 'classic',
+            isTenRuleset: ({ context }) => context.ruleset !== 'classic',
             isValidHandSubmit: ({ context, event }) => {
                 if (event.type !== 'SUBMIT_HAND') {
                     return false;
@@ -181,15 +277,14 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                 if (context.currentTurn !== event.playerId) {
                     return false;
                 }
-                const ownTurns = context.attackDefense.ownTurns[event.playerId] ?? 0;
-                if (ownTurns >= 18) {
+                if (!context.attackDefense.pendingDrawTile) {
                     return false;
                 }
                 if (context.ruleset === 'ten_attack_defense_easy' && event.withRiichi) {
                     return false;
                 }
-                const hand = context.hands[event.playerId];
-                if (!hand) {
+                const { hand } = buildDeclaredTenpaiHand(context, event.playerId, event.tileId);
+                if (hand.length !== RULES.ten.initialHandSize) {
                     return false;
                 }
                 const waits = getWinningWaitKeys(hand);
@@ -220,6 +315,18 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                     context.attackDefense.stage === 'B_GUESS' &&
                     context.attackDefense.defender === event.playerId &&
                     context.attackDefense.guessesRemaining > 0
+                );
+            },
+            willEnterTenAssault: ({ context, event }) => {
+                if (event.type !== 'DEFENDER_GUESS') {
+                    return false;
+                }
+                return (
+                    context.ruleset !== 'classic' &&
+                    context.attackDefense.stage === 'B_GUESS' &&
+                    context.attackDefense.defender === event.playerId &&
+                    context.attackDefense.guessesRemaining === 1 &&
+                    !context.attackDefense.lockedWaitTileKeys.includes(event.tileKey)
                 );
             },
             isCorrectDefenderGuess: ({ context, event }) => {
@@ -256,18 +363,19 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                     ? { dealt: event.dealtTiles, wall: generatedDeal.wall }
                     : generatedDeal;
                 const scores: Record<string, number> = {};
-                const timeBank: Record<string, number> = {};
                 context.players.forEach((playerId) => {
                     scores[playerId] = RULES.match.startingPoints;
-                    timeBank[playerId] = RULES.timers.timeBankMs;
                 });
-                const ownTurns: Record<string, number> = {};
-                context.players.forEach((playerId) => {
-                    ownTurns[playerId] = 0;
-                });
+                const doraIndicators = configuredRuleset === 'classic' || dealResult.wall.length === 0
+                    ? []
+                    : [dealResult.wall[0]];
+                const tenRoundSetup = configuredRuleset === 'classic'
+                    ? { hands: {}, pools: {} }
+                    : prepareTenHands(context.players, dealResult.dealt);
 
                 return {
                     phase: 'MATCH_START',
+                    step: configuredRuleset === 'classic' ? 'classic_match_start' : 'ten_match_start',
                     round: 1,
                     matchHandIndex: 1,
                     seatMap: dealerSelection.seatMap,
@@ -275,39 +383,21 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                     dealerDice: dealerSelection.dealerDice,
                     scores,
                     dealtTiles: dealResult.dealt,
-                    hands: {},
-                    pools: {},
+                    hands: tenRoundSetup.hands,
+                    pools: tenRoundSetup.pools,
                     wall: dealResult.wall,
-                    doraIndicators: [],
+                    doraIndicators,
                     discards: {},
                     winner: null,
                     winResult: null,
                     currentTurn: dealerSelection.dealer,
                     lastDiscard: null,
                     deterministicSeed: seed,
-                    timeBankRemainingMs: timeBank,
+                    timeBankRemainingMs: createTimeBank(context.players),
                     roundEndConfirmedBy: {},
-                    ruleset: options.ruleset ?? 'classic',
-                    attackDefense: {
-                        stage: 'A',
-                        attacker: null,
-                        defender: null,
-                        declaredBy: null,
-                        declaredWithRiichi: false,
-                        declarationType: null,
-                        ownTurns,
-                        guessesRemaining: 0,
-                        failedGuesses: 0,
-                        assaultRemaining: 0,
-                        lockedWaitTileKeys: [],
-                        lastGuessTileKey: null,
-                        lastGuessResult: 'idle',
-                        kanOption: {
-                            pending: false,
-                            tileKey: null
-                        }
-                    },
-                    eventLog: [...context.eventLog, { type: 'START_MATCH', seed, dealtTiles: dealResult.dealt, ruleset: options.ruleset ?? 'classic' }]
+                    ruleset: configuredRuleset,
+                    attackDefense: createAttackDefenseState(context.players),
+                    eventLog: [...context.eventLog, { type: 'START_MATCH', seed, dealtTiles: dealResult.dealt, ruleset: configuredRuleset }]
                 };
             }),
             startNextHand: assign(({ context }) => {
@@ -315,50 +405,31 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                 const roundSeed = (context.deterministicSeed ?? 0) + nextHandIndex;
                 const dealResult = engine.buildDealResult(context.players, roundSeed);
                 const dealer = engine.getEastPlayer(context.seatMap);
-                const timeBank: Record<string, number> = {};
-                context.players.forEach((playerId) => {
-                    timeBank[playerId] = RULES.timers.timeBankMs;
-                });
-                const ownTurns: Record<string, number> = {};
-                context.players.forEach((playerId) => {
-                    ownTurns[playerId] = 0;
-                });
+                const doraIndicators = configuredRuleset === 'classic' || dealResult.wall.length === 0
+                    ? []
+                    : [dealResult.wall[0]];
+                const tenRoundSetup = configuredRuleset === 'classic'
+                    ? { hands: {}, pools: {} }
+                    : prepareTenHands(context.players, dealResult.dealt);
 
                 return {
                     phase: 'MATCH_START',
+                    step: configuredRuleset === 'classic' ? 'classic_match_start' : 'ten_match_start',
                     round: nextHandIndex,
                     matchHandIndex: nextHandIndex,
                     dealtTiles: dealResult.dealt,
-                    hands: {},
-                    pools: {},
+                    hands: tenRoundSetup.hands,
+                    pools: tenRoundSetup.pools,
                     wall: dealResult.wall,
-                    doraIndicators: [],
+                    doraIndicators,
                     discards: {},
                     winner: null,
                     winResult: null,
                     currentTurn: dealer,
                     lastDiscard: null,
-                    timeBankRemainingMs: timeBank,
+                    timeBankRemainingMs: createTimeBank(context.players),
                     roundEndConfirmedBy: {},
-                    attackDefense: {
-                        stage: 'A',
-                        attacker: null,
-                        defender: null,
-                        declaredBy: null,
-                        declaredWithRiichi: false,
-                        declarationType: null,
-                        ownTurns,
-                        guessesRemaining: 0,
-                        failedGuesses: 0,
-                        assaultRemaining: 0,
-                        lockedWaitTileKeys: [],
-                        lastGuessTileKey: null,
-                        lastGuessResult: 'idle',
-                        kanOption: {
-                            pending: false,
-                            tileKey: null
-                        }
-                    }
+                    attackDefense: createAttackDefenseState(context.players)
                 };
             }),
             selectDoraIndicator: assign(({ context, event }) => {
@@ -411,7 +482,68 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                 };
             }),
             setTurnPhase: assign({
-                phase: () => 'TURN'
+                phase: () => 'TURN',
+                step: () => 'classic_turn'
+            }),
+            setTenDeclarationPhase: assign({
+                phase: () => 'TURN',
+                step: () => 'ten_a_turn'
+            }),
+            drawPendingTenTile: assign(({ context }) => {
+                if (context.ruleset === 'classic' || !context.currentTurn || context.attackDefense.pendingDrawTile) {
+                    return {};
+                }
+                const wallTile = context.wall[0];
+                if (!wallTile) {
+                    return {
+                        phase: 'ROUND_END',
+                        step: 'ten_round_end',
+                        winner: null,
+                        winResult: null,
+                        scores: context.scores,
+                        currentTurn: null,
+                        eventLog: [...context.eventLog, { type: 'ROUND_END', reason: 'DRAW' }]
+                    };
+                }
+
+                if (context.attackDefense.stage === 'B_ASSAULT') {
+                    const drawnKey = toTileKey(wallTile);
+                    if (context.attackDefense.lockedWaitTileKeys.includes(drawnKey)) {
+                        return {
+                            phase: 'ROUND_END',
+                            step: 'ten_round_end',
+                            winner: context.currentTurn,
+                            winResult: null,
+                            scores: resolveTenBattleScores(context, context.currentTurn),
+                            wall: context.wall.slice(1),
+                            currentTurn: null,
+                            eventLog: [...context.eventLog, { type: 'ROUND_END', reason: 'RON' }]
+                        };
+                    }
+                    return {
+                        wall: context.wall.slice(1),
+                        attackDefense: {
+                            ...context.attackDefense,
+                            pendingDrawTile: wallTile
+                        }
+                    };
+                }
+
+                if (context.attackDefense.stage !== 'A') {
+                    return {};
+                }
+
+                return {
+                    wall: context.wall.slice(1),
+                    attackDefense: {
+                        ...context.attackDefense,
+                        ownTurns: {
+                            ...context.attackDefense.ownTurns,
+                            [context.currentTurn]: (context.attackDefense.ownTurns[context.currentTurn] ?? 0) + 1
+                        },
+                        pendingDrawTile: wallTile
+                    }
+                };
             }),
             consumeTurnTimeBank: assign(({ context }) => {
                 if (!context.currentTurn) {
@@ -433,85 +565,57 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                 if (event.type !== 'DISCARD' && event.type !== 'AUTO_DISCARD') {
                     return {};
                 }
+                if (context.ruleset !== 'classic' && context.attackDefense.stage === 'A') {
+                    return applyTenStageADiscard(context, event.playerId, event.tileId);
+                }
                 if (context.ruleset !== 'classic' && context.attackDefense.stage === 'B_ASSAULT') {
                     const attacker = context.attackDefense.attacker;
                     if (!attacker || attacker !== event.playerId) {
                         return {};
                     }
-                    const wallTile = context.wall[0];
-                    if (!wallTile) {
-                        return {
-                            phase: 'ROUND_END',
-                            winner: null,
-                            winResult: null,
-                            scores: context.scores,
-                            eventLog: [...context.eventLog, event, { type: 'ROUND_END', reason: 'DRAW' }]
-                        };
+                    const drawnTile = context.attackDefense.pendingDrawTile;
+                    if (!drawnTile || drawnTile.id !== event.tileId) {
+                        return {};
                     }
-                    const drawnKey = toTileKey(wallTile);
-                    if (context.attackDefense.lockedWaitTileKeys.includes(drawnKey)) {
-                        return {
-                            phase: 'ROUND_END',
-                            winner: attacker,
-                            winResult: null,
-                            scores: resolveTenBattleScores(context, attacker),
-                            wall: context.wall.slice(1),
-                            eventLog: [...context.eventLog, event, { type: 'ROUND_END', reason: 'RON' }]
-                        };
-                    }
-                    const withDrawn = {
-                        ...context,
-                        wall: context.wall.slice(1),
-                        pools: {
-                            ...context.pools,
-                            [attacker]: [...(context.pools[attacker] ?? []), wallTile]
-                        }
-                    };
-                    const canOfferKan = Boolean(context.attackDefense.declaredWithRiichi) &&
-                        context.ruleset === 'ten_attack_defense' &&
-                        !context.attackDefense.kanOption.pending;
-                    if (canOfferKan) {
-                        const kanTileKey = findKanTileKey(withDrawn.pools[attacker] ?? []);
-                        if (kanTileKey) {
-                            return {
-                                ...withDrawn,
-                                attackDefense: {
-                                    ...withDrawn.attackDefense,
-                                    kanOption: {
-                                        pending: true,
-                                        tileKey: kanTileKey
-                                    }
-                                }
-                            };
-                        }
-                    }
-                    const appliedAssault = engine.applyDiscard(withDrawn, event.playerId, event.tileId);
                     const nextAssault = Math.max(0, context.attackDefense.assaultRemaining - 1);
+                    const discardEvent: GameEvents = { type: 'DISCARD', playerId: event.playerId, tileId: event.tileId };
+                    const discardContext = {
+                        ...context,
+                        discards: {
+                            ...context.discards,
+                            [event.playerId]: [...(context.discards[event.playerId] ?? []), drawnTile]
+                        },
+                        lastDiscard: { playerId: event.playerId, tile: drawnTile },
+                        eventLog: [...context.eventLog, discardEvent]
+                    };
                     if (nextAssault === 0) {
                         return {
-                            ...appliedAssault,
+                            ...discardContext,
                             phase: 'ROUND_END',
+                            step: 'ten_round_end',
                             winner: null,
                             winResult: null,
                             scores: context.scores,
                             currentTurn: null,
                             attackDefense: {
-                                ...appliedAssault.attackDefense,
+                                ...context.attackDefense,
                                 assaultRemaining: 0,
+                                pendingDrawTile: null,
                                 kanOption: {
                                     pending: false,
                                     tileKey: null
                                 }
                             },
-                            eventLog: [...appliedAssault.eventLog, { type: 'ROUND_END', reason: 'DRAW' }]
+                            eventLog: [...discardContext.eventLog, { type: 'ROUND_END', reason: 'DRAW' }]
                         };
                     }
                     return {
-                        ...appliedAssault,
+                        ...discardContext,
                         currentTurn: attacker,
                         attackDefense: {
-                            ...appliedAssault.attackDefense,
+                            ...context.attackDefense,
                             assaultRemaining: nextAssault,
+                            pendingDrawTile: null,
                             kanOption: {
                                 pending: false,
                                 tileKey: null
@@ -523,16 +627,7 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                 if (context.ruleset === 'classic') {
                     return applied;
                 }
-                return {
-                    ...applied,
-                    attackDefense: {
-                        ...applied.attackDefense,
-                        ownTurns: {
-                            ...applied.attackDefense.ownTurns,
-                            [event.playerId]: (applied.attackDefense.ownTurns[event.playerId] ?? 0) + 1
-                        }
-                    }
-                };
+                return applied;
             }),
             declareTenpai: assign(({ context, event }) => {
                 if (event.type !== 'DECLARE_TENPAI') {
@@ -540,8 +635,20 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                 }
                 const attacker = event.playerId;
                 const defender = context.players.find((id) => id !== attacker) ?? null;
-                const hand = context.hands[attacker] ?? [];
+                const { hand, discard } = buildDeclaredTenpaiHand(context, attacker, event.tileId);
+                if (!discard || hand.length !== RULES.ten.initialHandSize) {
+                    return {};
+                }
                 return {
+                    hands: {
+                        ...context.hands,
+                        [attacker]: hand
+                    },
+                    discards: {
+                        ...context.discards,
+                        [attacker]: [...(context.discards[attacker] ?? []), discard]
+                    },
+                    lastDiscard: { playerId: attacker, tile: discard },
                     attackDefense: {
                         ...context.attackDefense,
                         stage: 'B_GUESS',
@@ -550,18 +657,20 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                         declaredBy: attacker,
                         declaredWithRiichi: Boolean(event.withRiichi),
                         declarationType: event.withRiichi ? 'RIICHI' : 'TENPAI',
-                        guessesRemaining: 2,
+                        guessesRemaining: RULES.ten.guessCount,
                         failedGuesses: 0,
                         assaultRemaining: 0,
                         lockedWaitTileKeys: getWinningWaitKeys(hand),
                         lastGuessTileKey: null,
                         lastGuessResult: 'pending',
+                        pendingDrawTile: null,
                         kanOption: {
                             pending: false,
                             tileKey: null
                         }
                     },
                     currentTurn: defender,
+                    step: 'ten_b_guess',
                     eventLog: [...context.eventLog, event]
                 };
             }),
@@ -582,6 +691,7 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                 if (hit) {
                     return {
                         phase: 'ROUND_END',
+                        step: 'ten_round_end',
                         winner: event.playerId,
                         winResult: null,
                         scores: resolveTenBattleScores(context, event.playerId),
@@ -596,20 +706,23 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                 }
                 if (guessesRemaining === 0) {
                     return {
-                            attackDefense: {
-                                ...context.attackDefense,
-                                stage: 'B_ASSAULT',
-                                guessesRemaining,
-                                failedGuesses: context.attackDefense.failedGuesses + 1,
-                                assaultRemaining: 5,
-                                lastGuessTileKey: event.tileKey,
-                                lastGuessResult: 'failed',
-                                kanOption: {
-                                    pending: false,
-                                    tileKey: null
-                                }
-                            },
+                        attackDefense: {
+                            ...context.attackDefense,
+                            stage: 'B_ASSAULT',
+                            guessesRemaining,
+                            failedGuesses: context.attackDefense.failedGuesses + 1,
+                            assaultRemaining: RULES.ten.assaultTurns,
+                            lastGuessTileKey: event.tileKey,
+                            lastGuessResult: 'failed',
+                            pendingDrawTile: null,
+                            kanOption: {
+                                pending: false,
+                                tileKey: null
+                            }
+                        },
                         currentTurn: context.attackDefense.attacker,
+                        phase: 'TURN',
+                        step: 'ten_b_assault',
                         eventLog: [...context.eventLog, event]
                     };
                 }
@@ -683,6 +796,71 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                     return {};
                 }
                 const playerId = context.currentTurn;
+                if (context.ruleset !== 'classic') {
+                    const pendingTile = context.attackDefense.pendingDrawTile;
+                    if (!pendingTile?.id) {
+                        const timeoutEvent: GameEvents = { type: 'TIMEOUT', playerId, phase: 'TURN' };
+                        return {
+                            eventLog: [...context.eventLog, timeoutEvent]
+                        };
+                    }
+
+                    const timeoutEvent: GameEvents = { type: 'TIMEOUT', playerId, phase: 'TURN' };
+                    const timedOutContext = {
+                        ...context,
+                        eventLog: [...context.eventLog, timeoutEvent]
+                    };
+                    if (context.attackDefense.stage === 'A') {
+                        return applyTenStageADiscard(timedOutContext, playerId, pendingTile.id);
+                    }
+                    if (context.attackDefense.stage === 'B_ASSAULT') {
+                        const nextAssault = Math.max(0, context.attackDefense.assaultRemaining - 1);
+                        const discardEvent: GameEvents = { type: 'DISCARD', playerId, tileId: pendingTile.id };
+                        const discardContext = {
+                            ...timedOutContext,
+                            discards: {
+                                ...timedOutContext.discards,
+                                [playerId]: [...(timedOutContext.discards[playerId] ?? []), pendingTile]
+                            },
+                            lastDiscard: { playerId, tile: pendingTile },
+                            eventLog: [...timedOutContext.eventLog, discardEvent]
+                        };
+                        if (nextAssault === 0) {
+                            return {
+                                ...discardContext,
+                                phase: 'ROUND_END',
+                                step: 'ten_round_end',
+                                winner: null,
+                                winResult: null,
+                                scores: context.scores,
+                                currentTurn: null,
+                                attackDefense: {
+                                    ...context.attackDefense,
+                                    assaultRemaining: 0,
+                                    pendingDrawTile: null,
+                                    kanOption: {
+                                        pending: false,
+                                        tileKey: null
+                                    }
+                                },
+                                eventLog: [...discardContext.eventLog, { type: 'ROUND_END', reason: 'DRAW' }]
+                            };
+                        }
+                        return {
+                            ...discardContext,
+                            currentTurn: playerId,
+                            attackDefense: {
+                                ...context.attackDefense,
+                                assaultRemaining: nextAssault,
+                                pendingDrawTile: null,
+                                kanOption: {
+                                    pending: false,
+                                    tileKey: null
+                                }
+                            }
+                        };
+                    }
+                }
                 const pool = context.pools[playerId] ?? [];
                 const tile = pool[0];
                 if (!tile?.id) {
@@ -723,6 +901,7 @@ export function createGameMachine(options: GameMachineOptions = {}) {
 
                 return {
                     phase: 'ROUND_END',
+                    step: 'classic_round_end',
                     winner: resolved.winner,
                     winResult: resolved.winResult,
                     scores: resolved.scores,
@@ -741,6 +920,7 @@ export function createGameMachine(options: GameMachineOptions = {}) {
 
                 return {
                     phase: 'ROUND_END',
+                    step: 'classic_round_end',
                     winner: resolved.winner,
                     winResult: resolved.winResult,
                     scores: resolved.scores,
@@ -751,6 +931,7 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                 const resolved = engine.resolveDraw(context);
                 return {
                     phase: 'ROUND_END',
+                    step: context.ruleset === 'classic' ? 'classic_round_end' : 'ten_round_end',
                     winner: resolved.winner,
                     winResult: resolved.winResult,
                     scores: resolved.scores,
@@ -761,6 +942,7 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                 const [leader] = [...context.players].sort((a, b) => (context.scores[b] ?? 0) - (context.scores[a] ?? 0));
                 return {
                     phase: 'MATCH_END',
+                    step: 'match_end',
                     winner: leader ?? null,
                     eventLog: [...context.eventLog, { type: 'MATCH_END', winner: leader ?? null }]
                 };
@@ -786,7 +968,7 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                     eventLog: [...context.eventLog, event]
                 };
             }),
-            resetGame: assign(() => initialContext),
+            resetGame: assign(() => createInitialContext(configuredRuleset)),
             markRoundEndConfirmed: assign(({ context, event }) => {
                 if (event.type !== 'CONFIRM_ROUND_END') {
                     return {};
@@ -821,6 +1003,7 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                 const winner = remaining.length === 1 ? remaining[0] : null;
                 return {
                     phase: 'MATCH_END',
+                    step: 'match_end',
                     winner,
                     winResult: null,
                     eventLog: [...context.eventLog, event, { type: 'MATCH_END', winner }]
@@ -830,7 +1013,7 @@ export function createGameMachine(options: GameMachineOptions = {}) {
     }).createMachine({
         id: 'mahjong-17-step',
         initial: 'idle',
-        context: initialContext,
+        context: createInitialContext(configuredRuleset),
         states: {
             idle: {
                 on: {
@@ -852,11 +1035,18 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                     LEAVE: {
                         actions: 'removePlayerFromLobby'
                     },
-                    START_MATCH: {
-                        target: 'matchStart',
-                        guard: 'canStartMatch',
-                        actions: 'initializeMatch'
-                    }
+                    START_MATCH: [
+                        {
+                            target: 'matchStart',
+                            guard: ({ context }) => context.players.length === 2 && context.ruleset === 'classic',
+                            actions: 'initializeMatch'
+                        },
+                        {
+                            target: 'tenMatchStart',
+                            guard: ({ context }) => context.players.length === 2 && context.ruleset !== 'classic',
+                            actions: 'initializeMatch'
+                        }
+                    ]
                 }
             },
             matchStart: {
@@ -866,9 +1056,18 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                     }
                 }
             },
+            tenMatchStart: {
+                after: {
+                    1000: {
+                        target: 'tenDeclaration',
+                        actions: 'setTenDeclarationPhase'
+                    }
+                }
+            },
             doraSelect: {
                 entry: assign({
-                    phase: () => 'ROUND_START'
+                    phase: () => 'ROUND_START',
+                    step: () => 'classic_dora_select'
                 }),
                 after: {
                     [RULES.timers.doraRevealTimeMs]: {
@@ -891,7 +1090,8 @@ export function createGameMachine(options: GameMachineOptions = {}) {
             },
             handBuild: {
                 entry: assign({
-                    phase: () => 'ROUND_START'
+                    phase: () => 'ROUND_START',
+                    step: () => 'classic_hand_build'
                 }),
                 after: {
                     [RULES.timers.buildTimeMs]: {
@@ -1013,10 +1213,199 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                     }
                 }
             },
+            tenDeclaration: {
+                entry: 'setTenDeclarationPhase',
+                initial: 'turn',
+                states: {
+                    turn: {
+                        entry: 'drawPendingTenTile',
+                        always: {
+                            guard: ({ context }) => context.phase === 'ROUND_END',
+                            target: '#mahjong-17-step.roundEnd'
+                        },
+                        after: {
+                            [RULES.timers.turnTimeMs]: [
+                                {
+                                    guard: 'hasTurnTimeBank',
+                                    actions: 'consumeTurnTimeBank',
+                                    target: 'turnOvertime'
+                                },
+                                {
+                                    actions: 'forceDiscardOnTimeout',
+                                    target: 'checkProgress'
+                                }
+                            ]
+                        },
+                        on: {
+                            DISCARD: {
+                                target: 'checkProgress',
+                                guard: 'canApplyDiscard',
+                                actions: 'applyDiscard'
+                            },
+                            AUTO_DISCARD: {
+                                target: 'checkProgress',
+                                guard: 'canApplyDiscard',
+                                actions: 'applyDiscard'
+                            }
+                        }
+                    },
+                    turnOvertime: {
+                        after: {
+                            [RULES.timers.timeBankMs]: {
+                                actions: 'forceDiscardOnTimeout',
+                                target: 'checkProgress'
+                            }
+                        },
+                        on: {
+                            DISCARD: {
+                                target: 'checkProgress',
+                                guard: 'canApplyDiscard',
+                                actions: 'applyDiscard'
+                            },
+                            AUTO_DISCARD: {
+                                target: 'checkProgress',
+                                guard: 'canApplyDiscard',
+                                actions: 'applyDiscard'
+                            }
+                        }
+                    },
+                    checkProgress: {
+                        always: [
+                            {
+                                guard: 'shouldEndAsDraw',
+                                target: '#mahjong-17-step.roundEnd',
+                                actions: 'applyDrawResult'
+                            },
+                            {
+                                actions: 'refreshTurnTimeBankForCurrent',
+                                target: 'turn'
+                            }
+                        ]
+                    }
+                },
+                on: {
+                    DECLARE_TENPAI: {
+                        guard: 'canDeclareTenpai',
+                        actions: 'declareTenpai',
+                        target: 'tenDefenseGuess'
+                    },
+                    PASS_DECLARATION: {
+                        actions: 'passDeclaration'
+                    }
+                }
+            },
+            tenDefenseGuess: {
+                entry: assign({
+                    phase: () => 'TURN',
+                    step: () => 'ten_b_guess'
+                }),
+                on: {
+                    DEFENDER_GUESS: [
+                        {
+                            guard: 'isCorrectDefenderGuess',
+                            actions: 'applyDefenderGuess',
+                            target: 'roundEnd'
+                        },
+                        {
+                            guard: 'willEnterTenAssault',
+                            actions: 'applyDefenderGuess',
+                            target: 'tenAssault'
+                        },
+                        {
+                            guard: 'canDefenderGuess',
+                            actions: 'applyDefenderGuess'
+                        }
+                    ]
+                }
+            },
+            tenAssault: {
+                entry: assign({
+                    phase: () => 'TURN',
+                    step: () => 'ten_b_assault'
+                }),
+                initial: 'turn',
+                states: {
+                    turn: {
+                        entry: 'drawPendingTenTile',
+                        always: {
+                            guard: ({ context }) => context.phase === 'ROUND_END',
+                            target: '#mahjong-17-step.roundEnd'
+                        },
+                        after: {
+                            [RULES.timers.turnTimeMs]: [
+                                {
+                                    guard: 'hasTurnTimeBank',
+                                    actions: 'consumeTurnTimeBank',
+                                    target: 'turnOvertime'
+                                },
+                                {
+                                    actions: 'forceDiscardOnTimeout',
+                                    target: 'checkProgress'
+                                }
+                            ]
+                        },
+                        on: {
+                            DISCARD: {
+                                target: 'checkProgress',
+                                guard: 'canApplyDiscard',
+                                actions: 'applyDiscard'
+                            },
+                            AUTO_DISCARD: {
+                                target: 'checkProgress',
+                                guard: 'canApplyDiscard',
+                                actions: 'applyDiscard'
+                            }
+                        }
+                    },
+                    turnOvertime: {
+                        after: {
+                            [RULES.timers.timeBankMs]: {
+                                actions: 'forceDiscardOnTimeout',
+                                target: 'checkProgress'
+                            }
+                        },
+                        on: {
+                            DISCARD: {
+                                target: 'checkProgress',
+                                guard: 'canApplyDiscard',
+                                actions: 'applyDiscard'
+                            },
+                            AUTO_DISCARD: {
+                                target: 'checkProgress',
+                                guard: 'canApplyDiscard',
+                                actions: 'applyDiscard'
+                            }
+                        }
+                    },
+                    checkProgress: {
+                        always: [
+                            {
+                                guard: ({ context }) => context.phase === 'ROUND_END',
+                                target: '#mahjong-17-step.roundEnd'
+                            },
+                            {
+                                actions: 'refreshTurnTimeBankForCurrent',
+                                target: 'turn'
+                            }
+                        ]
+                    }
+                },
+                on: {
+                    ATTACKER_KAN: {
+                        guard: 'canResolveKanDecision',
+                        actions: 'resolveKanDecision'
+                    },
+                    ATTACKER_KAN_PASS: {
+                        guard: 'canResolveKanDecision',
+                        actions: 'resolveKanDecision'
+                    }
+                }
+            },
             roundEnd: {
                 entry: [
                     assign({
-                        phase: () => 'ROUND_END'
+                        phase: () => 'ROUND_END',
+                        step: ({ context }) => context.ruleset === 'classic' ? 'classic_round_end' : 'ten_round_end'
                     }),
                     'autoConfirmBotsInRoundEnd'
                 ],
@@ -1031,8 +1420,17 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                     {
                         guard: ({ context }) =>
                             context.players.every((playerId) => Boolean(context.roundEndConfirmedBy[playerId])) &&
-                            context.matchHandIndex < RULES.match.handsPerMatch,
+                            context.matchHandIndex < RULES.match.handsPerMatch &&
+                            context.ruleset === 'classic',
                         target: 'matchStart',
+                        actions: 'startNextHand'
+                    },
+                    {
+                        guard: ({ context }) =>
+                            context.players.every((playerId) => Boolean(context.roundEndConfirmedBy[playerId])) &&
+                            context.matchHandIndex < RULES.match.handsPerMatch &&
+                            context.ruleset !== 'classic',
+                        target: 'tenMatchStart',
                         actions: 'startNextHand'
                     },
                     {
@@ -1051,7 +1449,8 @@ export function createGameMachine(options: GameMachineOptions = {}) {
             },
             matchEnd: {
                 entry: assign({
-                    phase: () => 'MATCH_END'
+                    phase: () => 'MATCH_END',
+                    step: () => 'match_end'
                 })
             }
         },

@@ -15,6 +15,11 @@ export function createEngineForRuleset(ruleset: RulesetName = 'classic'): GameEn
     switch (ruleset) {
         case 'ten_attack_defense':
         case 'ten_attack_defense_easy':
+            return createDefaultEngine({
+                scoreOptions: CLASSIC_SCORE_OPTIONS,
+                dealTilesPerPlayer: 13,
+                validateDeal: false
+            });
         case 'classic':
         default:
             return createDefaultEngine({ scoreOptions: CLASSIC_SCORE_OPTIONS });

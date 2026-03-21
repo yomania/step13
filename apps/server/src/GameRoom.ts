@@ -30,6 +30,9 @@ type GameRoomOptions = {
     onPlayerLeft?: (userId: string) => Promise<void> | void;
 };
 
+const CLASSIC_ONLY_EVENTS = new Set(['SELECT_DORA', 'SUBMIT_HAND', 'DECLARE_WIN']);
+const TEN_ONLY_EVENTS = new Set(['DECLARE_TENPAI', 'PASS_DECLARATION', 'DEFENDER_GUESS', 'ATTACKER_KAN', 'ATTACKER_KAN_PASS']);
+
 export class GameRoom {
     private machineLogic: MachineLogic;
     private machine;
@@ -95,6 +98,14 @@ export class GameRoom {
     }
 
     public handleMessage(playerId: PlayerId, event: any) {
+        if (this.ruleset === 'classic' && TEN_ONLY_EVENTS.has(event.type)) {
+            console.warn(`Rejected ten-only event ${event.type} for classic ruleset`);
+            return;
+        }
+        if (this.ruleset !== 'classic' && CLASSIC_ONLY_EVENTS.has(event.type)) {
+            console.warn(`Rejected classic-only event ${event.type} for ten ruleset`);
+            return;
+        }
         if (event.type === 'ADD_BOT') {
             this.addBot(this.normalizePersonaId(event?.personaId));
             return;
@@ -334,9 +345,17 @@ export class GameRoom {
                 }
             });
         }
+        if (context.attackDefense?.pendingDrawTile && context.currentTurn !== playerId && !isRoundEnd) {
+            context.attackDefense.pendingDrawTile = {
+                ...HIDDEN_TILE,
+                id: 'hidden-pending-draw'
+            };
+        }
 
         // 3. Mask Opponent Dealt Tiles (Hand Building Phase)
-        if (context.dealtTiles) {
+        if (context.ruleset !== 'classic') {
+            context.dealtTiles = {};
+        } else if (context.dealtTiles) {
             Object.keys(context.dealtTiles).forEach((pid) => {
                 if (pid !== playerId) {
                     // Just show count/hidden tiles
@@ -361,7 +380,9 @@ export class GameRoom {
                     }
 
                     // Mask dealtTiles
-                    if (sanitizedEvent.dealtTiles) {
+                    if (context.ruleset !== 'classic') {
+                        delete sanitizedEvent.dealtTiles;
+                    } else if (sanitizedEvent.dealtTiles) {
                         const sanitizedDealt = { ...sanitizedEvent.dealtTiles };
                         Object.keys(sanitizedDealt).forEach((pid) => {
                             if (pid !== playerId) {

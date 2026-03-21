@@ -58,3 +58,22 @@ Deployment defaults (PostgreSQL):
   - `ten_attack_defense_easy` API URL. If omitted, `VITE_TEN_API_URL` is reused.
 - `VITE_TEN_EASY_WS_URL`
   - `ten_attack_defense_easy` WS URL. If omitted, `VITE_TEN_WS_URL` is reused.
+
+## Local `dev:all` defaults
+
+- `pnpm dev:all` starts three processes by default:
+  - classic server: `http://localhost:3001`
+  - ten server: `http://localhost:3002`
+  - web: `http://localhost:3000`
+- The web dev process injects local ruleset endpoints automatically unless they are already set in the shell:
+  - `VITE_CLASSIC_API_URL=http://localhost:3001`
+  - `VITE_CLASSIC_WS_URL=ws://localhost:3001/ws`
+  - `VITE_TEN_API_URL=http://localhost:3002`
+  - `VITE_TEN_WS_URL=ws://localhost:3002/ws`
+  - `VITE_TEN_EASY_API_URL=http://localhost:3002`
+  - `VITE_TEN_EASY_WS_URL=ws://localhost:3002/ws`
+- `ten_attack_defense_easy` reuses the ten local server by default; `dev:all` does not start a separate easy server.
+- Optional local overrides:
+  - `CLASSIC_PORT`
+  - `TEN_PORT`
+  - `WEB_PORT`

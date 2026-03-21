@@ -82,6 +82,10 @@ export function GameBoard({ context, myPlayerId, children }: GameBoardProps) {
         : null;
     const isTenAttackDefense = context.ruleset !== 'classic';
     const title = isTenAttackDefense ? '2인 공방전' : '17보 마작 실전';
+    const myDiscardCount = context.discards[myPlayerId]?.length || 0;
+    const remainingLabel = isTenAttackDefense
+        ? `Stage ${context.attackDefense.stage}`
+        : `Remains: ${17 - myDiscardCount} / 17`;
 
     return (
         <div className="game-shell relative flex flex-col min-h-[100dvh] text-white sm:px-5 overflow-x-hidden sm:overflow-hidden">
@@ -170,7 +174,7 @@ export function GameBoard({ context, myPlayerId, children }: GameBoardProps) {
                             )}
                         </div>
                         <div className="text-sm font-bold text-slate-400">
-                            Remains: <span className="text-slate-200">{17 - (context.discards[myPlayerId]?.length || 0)} / 17</span>
+                            <span className="text-slate-200">{remainingLabel}</span>
                         </div>
                     </div>
 

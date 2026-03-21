@@ -13,6 +13,7 @@
     "preview:all": "./scripts/preview-all.sh",
     "test": "./scripts/test-all.sh",
     "test:e2e": "pnpm --filter server exec tsx ../../scripts/test-e2e-flows.ts",
+    "test:auth-ws:smoke": "pnpm --filter server exec tsx ../../scripts/test-auth-ws-smoke.ts",
     "test:ai:difficulty": "pnpm --filter server exec tsx ../../scripts/test-e2e-flows.ts",
     "sim:ai": "pnpm --filter server exec tsx ../../scripts/simulate-ai-vs-ai.ts",
     "build:server": "pnpm --filter server... build",

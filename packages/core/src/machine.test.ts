@@ -11,6 +11,13 @@ async function advance(ms: number): Promise<void> {
 
 async function reachTurnWithAutoSubmit(actor: ReturnType<typeof createActor<typeof gameMachine>>): Promise<void> {
     await advance(1000);
+    if (actor.getSnapshot().context.ruleset !== 'classic') {
+        expect(actor.getSnapshot().value).toEqual({ tenDeclaration: 'turn' });
+        expect(actor.getSnapshot().context.phase).toBe('TURN');
+        expect(actor.getSnapshot().context.attackDefense.pendingDrawTile).toBeTruthy();
+        return;
+    }
+
     expect(actor.getSnapshot().value).toBe('doraSelect');
 
     const doraSnapshot = actor.getSnapshot();
@@ -108,6 +115,30 @@ describe('gameMachine full cycle and edge cases', () => {
         const snapshot = actor.getSnapshot();
         expect(snapshot.context.players).toEqual(['p1']);
         expect(snapshot.context.eventLog[snapshot.context.eventLog.length - 1]).toEqual({ type: 'JOIN', playerId: 'p1' });
+    });
+
+    it('keeps the configured ruleset in idle before match start', () => {
+        const actor = createActor(createGameMachine({ ruleset: 'ten_attack_defense' }));
+        actor.start();
+
+        expect(actor.getSnapshot().value).toBe('idle');
+        expect(actor.getSnapshot().context.ruleset).toBe('ten_attack_defense');
+
+        actor.send({ type: 'JOIN', playerId: 'p1' });
+        expect(actor.getSnapshot().context.ruleset).toBe('ten_attack_defense');
+    });
+
+    it('preserves the configured ruleset after restart', () => {
+        const actor = createActor(createGameMachine({ ruleset: 'ten_attack_defense_easy' }));
+        actor.start();
+
+        actor.send({ type: 'JOIN', playerId: 'p1' });
+        actor.send({ type: 'RESTART' });
+
+        const snapshot = actor.getSnapshot();
+        expect(snapshot.value).toBe('idle');
+        expect(snapshot.context.ruleset).toBe('ten_attack_defense_easy');
+        expect(snapshot.context.players).toEqual([]);
     });
 
     it('ends the match when a player leaves during an active match', { timeout: 20000 }, async () => {
@@ -573,7 +604,8 @@ describe('ten_attack_defense ruleset', () => {
 
         const current = actor.getSnapshot().context.currentTurn!;
         actor.getSnapshot().context.hands[current] = makeTenpaiHandForFiveMan('atk');
-        actor.send({ type: 'DECLARE_TENPAI', playerId: current, withRiichi: true });
+        actor.getSnapshot().context.attackDefense.pendingDrawTile = { suit: 'sou', rank: 9, isRed: false, id: 'atk-draw' };
+        actor.send({ type: 'DECLARE_TENPAI', playerId: current, tileId: 'atk-draw', withRiichi: true });
 
         const snapshot = actor.getSnapshot();
         expect(snapshot.context.attackDefense.stage).toBe('B_GUESS');
@@ -592,7 +624,8 @@ describe('ten_attack_defense ruleset', () => {
 
         const current = actor.getSnapshot().context.currentTurn!;
         actor.getSnapshot().context.hands[current] = makeTenpaiHandForFiveMan('easy');
-        actor.send({ type: 'DECLARE_TENPAI', playerId: current, withRiichi: true });
+        actor.getSnapshot().context.attackDefense.pendingDrawTile = { suit: 'sou', rank: 9, isRed: false, id: 'easy-draw' };
+        actor.send({ type: 'DECLARE_TENPAI', playerId: current, tileId: 'easy-draw', withRiichi: true });
         expect(actor.getSnapshot().context.attackDefense.stage).toBe('A');
     });
 
@@ -607,7 +640,8 @@ describe('ten_attack_defense ruleset', () => {
 
         const attacker = actor.getSnapshot().context.currentTurn!;
         actor.getSnapshot().context.hands[attacker] = makeTenpaiHandForFiveMan('g');
-        actor.send({ type: 'DECLARE_TENPAI', playerId: attacker });
+        actor.getSnapshot().context.attackDefense.pendingDrawTile = { suit: 'sou', rank: 9, isRed: false, id: 'g-draw' };
+        actor.send({ type: 'DECLARE_TENPAI', playerId: attacker, tileId: 'g-draw' });
         const defender = actor.getSnapshot().context.attackDefense.defender!;
         actor.send({ type: 'DEFENDER_GUESS', playerId: defender, tileKey: 'man-5' });
         expect(actor.getSnapshot().value).toBe('roundEnd');

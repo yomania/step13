@@ -64,7 +64,7 @@
   - AI 대응: `apps/server/src/Bot.ts`
   - UI 패널: `apps/web/src/components/AttackDefensePanels.tsx`
 - 서버는 기존 room/sync/replay 파이프라인을 그대로 사용하고, 상태(`context.attackDefense`) 및 이벤트 로그 확장만 반영합니다.
-- easy 모드는 `DECLARE_TENPAI`의 `withRiichi`를 거부하며, UI에서 리치 CTA를 렌더링하지 않습니다.
+- easy 모드는 `DECLARE_TENPAI`의 `withRiichi`를 거부하며, 텐파이 선언 시에는 `tileId`로 선언 버림패를 함께 보냅니다.
 - 정산은 카이지 17보 점수 계산을 재사용하지 않고, Ten Battle 전용 고정 증감(+/-12000)으로 처리합니다.
 - 숨김 정보 정책:
   - 수비자는 공격자 실제 대기패를 볼 수 없음

@@ -7,6 +7,8 @@ import { DealResult, DealerSelection, GameEngine, RoundResult } from './types';
 
 type EngineConfig = {
     scoreOptions: ScoreOptions;
+    dealTilesPerPlayer?: number;
+    validateDeal?: boolean;
     dealValidationMaxAttempts?: number;
     handSearchShuffles?: number;
     dealValidationDoraSampleSize?: number;
@@ -37,6 +39,8 @@ type FallbackDealCandidate = {
 
 export function createDefaultEngine({
     scoreOptions,
+    dealTilesPerPlayer = RULES.tiles.dealTilesPerPlayer,
+    validateDeal = true,
     dealValidationMaxAttempts = 20,
     handSearchShuffles = 40,
     dealValidationDoraSampleSize = 8,
@@ -49,9 +53,12 @@ export function createDefaultEngine({
 
     return {
         buildDealResult(players: string[], seed: number): DealResult {
+            if (!validateDeal) {
+                return buildDealBySeed(players, seed, dealTilesPerPlayer);
+            }
             for (let attempt = 0; attempt < dealValidationMaxAttempts; attempt++) {
                 const attemptSeed = seed + attempt * 7919;
-                const deal = buildDealBySeed(players, attemptSeed);
+                const deal = buildDealBySeed(players, attemptSeed, dealTilesPerPlayer);
                 const failedPlayers = getFailedPlayersForManganValidation(
                     players,
                     deal.dealt,
@@ -184,6 +191,21 @@ export function createDefaultEngine({
         },
 
         canDiscard(context: GameContext, playerId: string, tileId: string): boolean {
+            if (context.ruleset !== 'classic') {
+                if (context.currentTurn !== playerId) {
+                    return false;
+                }
+                if (context.attackDefense.stage === 'A') {
+                    const tiles = [...(context.hands[playerId] ?? [])];
+                    if (context.attackDefense.pendingDrawTile) {
+                        tiles.push(context.attackDefense.pendingDrawTile);
+                    }
+                    return tiles.some((tile) => tile.id === tileId);
+                }
+                if (context.attackDefense.stage === 'B_ASSAULT') {
+                    return context.attackDefense.pendingDrawTile?.id === tileId;
+                }
+            }
             if (context.currentTurn !== playerId) {
                 return false;
             }
@@ -220,6 +242,10 @@ export function createDefaultEngine({
         },
 
         isDrawReached(context: GameContext): boolean {
+            if (context.ruleset !== 'classic') {
+                return context.attackDefense.stage === 'A' &&
+                    context.players.every((playerId) => (context.attackDefense.ownTurns[playerId] ?? 0) >= RULES.ten.maxOwnTurns);
+            }
             return context.players.every((playerId) => (context.discards[playerId] ?? []).length >= RULES.draw.afterDiscardsEach);
         },
 
@@ -325,16 +351,16 @@ function hasWinningWaitInternal(hand: Tile[]): boolean {
     return getWinningWaits(hand).length > 0;
 }
 
-function buildDealBySeed(players: string[], seed: number): DealResult {
+function buildDealBySeed(players: string[], seed: number, dealTilesPerPlayer: number = RULES.tiles.dealTilesPerPlayer): DealResult {
     const shuffled = shuffleWithSeed(generateTiles(), seed);
     const dealt: Record<string, Tile[]> = {};
     players.forEach((playerId, index) => {
         dealt[playerId] = shuffled.slice(
-            index * RULES.tiles.dealTilesPerPlayer,
-            (index + 1) * RULES.tiles.dealTilesPerPlayer
+            index * dealTilesPerPlayer,
+            (index + 1) * dealTilesPerPlayer
         );
     });
-    const wallStart = players.length * RULES.tiles.dealTilesPerPlayer;
+    const wallStart = players.length * dealTilesPerPlayer;
     const wall = shuffled.slice(wallStart);
     return { dealt, wall };
 }

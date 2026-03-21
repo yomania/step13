@@ -1,6 +1,6 @@
 meta:
-  version: "2026-03-20-ruleset-online-switching"
-  last_synced: "2026-03-20"
+  version: "2026-03-21-ruleset-step-split"
+  last_synced: "2026-03-21"
   source_of_truth:
     rules: "packages/core/src/rules.ts"
     machine: "packages/core/src/machine.ts"
@@ -81,13 +81,31 @@ ruleset:
       auto_riichi_fallback: true
     mangan_minimum_points: 8000
   draw:
-    condition: "after_17_discards_each"
+    condition: "after_18_a_turns_each_without_declaration"
     noten_bappu:
       enabled: true
       amount: 3000
       applied_when: "only_one_tenpai_player"
 
 state_machine:
+  step_field:
+    source: "context.step"
+    values:
+      classic:
+        - "classic_match_start"
+        - "classic_dora_select"
+        - "classic_hand_build"
+        - "classic_turn"
+        - "classic_round_end"
+      ten:
+        - "ten_match_start"
+        - "ten_a_turn"
+        - "ten_b_guess"
+        - "ten_b_assault"
+        - "ten_round_end"
+      shared:
+        - "idle"
+        - "match_end"
   phases:
     - "idle"
     - "matchStart"
@@ -96,6 +114,14 @@ state_machine:
     - "gameLoop.turn"
     - "gameLoop.turnOvertime"
     - "gameLoop.checkRon"
+    - "tenMatchStart"
+    - "tenDeclaration.turn"
+    - "tenDeclaration.turnOvertime"
+    - "tenDeclaration.checkProgress"
+    - "tenDefenseGuess"
+    - "tenAssault.turn"
+    - "tenAssault.turnOvertime"
+    - "tenAssault.checkProgress"
     - "roundEnd"
     - "matchEnd"
   round_end_gate:
@@ -130,6 +156,10 @@ api_contract:
     - "GUIDE_VIEW"
     - "QUERY_ANALYSIS"
     - "QUERY_PERSONAS"
+    - "DECLARE_TENPAI (requires tileId)"
+    - "DEFENDER_GUESS"
+    - "ATTACKER_KAN"
+    - "ATTACKER_KAN_PASS"
   server_to_client:
     - "UPDATE"
     - "ANALYSIS_RESULT"

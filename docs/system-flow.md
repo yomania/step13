@@ -7,14 +7,21 @@
 ```mermaid
 stateDiagram-v2
     [*] --> idle
-    idle --> matchStart: START_MATCH (players=2)
+    idle --> matchStart: START_MATCH classic
+    idle --> tenMatchStart: START_MATCH ten
     matchStart --> doraSelect: 1000ms
     doraSelect --> handBuild: dora selected + 3000ms reveal
     doraSelect --> doraSelect: 15000ms timeout -> auto select
     handBuild --> gameLoop: all SUBMIT_HAND
     handBuild --> gameLoop: 120000ms timeout -> auto submit
-    gameLoop --> roundEnd: RON or DRAW
+    gameLoop --> roundEnd: classic RON or DRAW
+    tenMatchStart --> tenDeclaration: 1000ms
+    tenDeclaration --> tenDefenseGuess: DECLARE_TENPAI
+    tenDefenseGuess --> roundEnd: correct guess
+    tenDefenseGuess --> tenAssault: guess fail x2
+    tenAssault --> roundEnd: assault end / hit / draw
     roundEnd --> matchStart: all CONFIRM_ROUND_END and hands remain
+    roundEnd --> tenMatchStart: all CONFIRM_ROUND_END and ten hands remain
     roundEnd --> matchEnd: all CONFIRM_ROUND_END and no next hand / bankrupt
     matchEnd --> [*]
 ```

@@ -459,21 +459,21 @@ const main = async () => {
             return;
         }
 
-        let identity;
-        try {
-            identity = await authService.consumeWsTicket(ticket);
-        } catch {
-            socket.send(JSON.stringify({ type: 'REJECTED_EVENT', reason: 'invalid WS ticket' }));
-            socket.close();
-            return;
-        }
-
-        const boundServerPlayerId = identity.profile.playerId;
         let joined = false;
+        let closed = false;
+        let ready = false;
+        let boundServerPlayerId: string | null = null;
+        let identity: Awaited<ReturnType<typeof authService.consumeWsTicket>> | null = null;
+        const pendingMessages: string[] = [];
 
-        socket.on('message', (rawMessage: any) => {
+        const processMessage = (rawMessage: string) => {
+            if (!ready || !identity || !boundServerPlayerId || closed) {
+                pendingMessages.push(rawMessage);
+                return;
+            }
+
             try {
-                const message = JSON.parse(rawMessage.toString()) as Record<string, unknown>;
+                const message = JSON.parse(rawMessage) as Record<string, unknown>;
                 if (!message || typeof message !== 'object' || typeof message.type !== 'string') {
                     socket.send(JSON.stringify({ type: 'REJECTED_EVENT', reason: 'invalid event payload' }));
                     return;
@@ -499,15 +499,43 @@ const main = async () => {
             } catch (e) {
                 fastify.log.error(e, 'Error parsing websocket message');
             }
+        };
+
+        socket.on('message', (rawMessage: any) => {
+            const serialized = rawMessage.toString();
+            if (!ready) {
+                pendingMessages.push(serialized);
+                return;
+            }
+            processMessage(serialized);
         });
 
         socket.on('close', () => {
+            closed = true;
             const wasJoined = joined;
             joined = false;
-            if (wasJoined) {
+            if (wasJoined && boundServerPlayerId) {
                 room.handleDisconnect(boundServerPlayerId);
             }
         });
+
+        try {
+            identity = await authService.consumeWsTicket(ticket);
+        } catch {
+            socket.send(JSON.stringify({ type: 'REJECTED_EVENT', reason: 'invalid WS ticket' }));
+            socket.close();
+            return;
+        }
+
+        if (closed) {
+            return;
+        }
+
+        boundServerPlayerId = identity.profile.playerId;
+        ready = true;
+
+        const queued = pendingMessages.splice(0);
+        queued.forEach((message) => processMessage(message));
     }
 
     try {
@@ -541,7 +569,12 @@ function normalizeIncomingEvent(
         'GUIDE_VIEW',
         'CONFIRM_ROUND_END',
         'QUERY_ANALYSIS',
-        'QUERY_PERSONAS'
+        'QUERY_PERSONAS',
+        'DECLARE_TENPAI',
+        'PASS_DECLARATION',
+        'DEFENDER_GUESS',
+        'ATTACKER_KAN',
+        'ATTACKER_KAN_PASS'
     ]);
 
     if (playerBoundEvents.has(type)) {

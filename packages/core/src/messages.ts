@@ -2,6 +2,20 @@ import { GamePhase, PlayerId, Tile } from '@step13/proto';
 import { ScoreResult } from '@step13/scoring';
 import { WindSeat } from './rules';
 
+export type GameStep =
+    | 'idle'
+    | 'classic_match_start'
+    | 'classic_dora_select'
+    | 'classic_hand_build'
+    | 'classic_turn'
+    | 'classic_round_end'
+    | 'ten_match_start'
+    | 'ten_a_turn'
+    | 'ten_b_guess'
+    | 'ten_b_assault'
+    | 'ten_round_end'
+    | 'match_end';
+
 export type GameContext = {
     players: PlayerId[];
     scores: Record<PlayerId, number>;
@@ -18,6 +32,7 @@ export type GameContext = {
 
     discards: Record<PlayerId, Tile[]>;   // Discard history
     phase: GamePhase;
+    step: GameStep;
     winner: PlayerId | null;
     dealer: PlayerId;                 // New: Dealer ID
     winResult: ScoreResult | null;    // New: Store win details
@@ -43,6 +58,7 @@ export type GameContext = {
         lockedWaitTileKeys: string[];
         lastGuessTileKey: string | null;
         lastGuessResult: 'idle' | 'pending' | 'failed' | 'succeeded';
+        pendingDrawTile: Tile | null;
         kanOption: {
             pending: boolean;
             tileKey: string | null;
@@ -65,7 +81,7 @@ export type GameEvents =
     | { type: 'MATCH_END'; winner: PlayerId | null }
     | { type: 'GUIDE_VIEW'; playerId: PlayerId; step: string }
     | { type: 'CONFIRM_ROUND_END'; playerId: PlayerId }
-    | { type: 'DECLARE_TENPAI'; playerId: PlayerId; withRiichi?: boolean }
+    | { type: 'DECLARE_TENPAI'; playerId: PlayerId; tileId: string; withRiichi?: boolean }
     | { type: 'PASS_DECLARATION'; playerId: PlayerId }
     | { type: 'DEFENDER_GUESS'; playerId: PlayerId; tileKey: string }
     | { type: 'ATTACKER_KAN'; playerId: PlayerId }

@@ -19,6 +19,7 @@ import {
 import { calculateScore, calculateShanten, type ScoreResult } from '@step13/scoring';
 import { preloadRealTileAssets } from './lib/tileAssets';
 import { resolveApiBaseUrl, resolveWsBaseUrl } from './lib/networkConfig';
+import { resolveDisplayedRoomRuleset } from './lib/roomRuleset';
 import {
     deriveRuleset,
     deriveRulesetSelection,
@@ -827,8 +828,17 @@ export default function App() {
     const doraIndicators = (context as { doraIndicators?: Tile[] }).doraIndicators ?? [];
     const selectedDoraId = doraIndicators[0]?.id ?? null;
     const isAiMatch = context.players.some((p: PlayerId) => p.startsWith('bot-'));
-    const myHand = context.hands[playerId] || [];
-    const myPool = context.pools[playerId] || [];
+    const rawMyHand = context.hands[playerId] || [];
+    const rawMyPool = context.pools[playerId] || [];
+    const tenPendingTile = context.ruleset !== 'classic' ? context.attackDefense.pendingDrawTile : null;
+    const myHand = context.ruleset !== 'classic' && context.attackDefense.stage === 'A'
+        ? []
+        : rawMyHand;
+    const myPool = context.ruleset !== 'classic' && context.attackDefense.stage === 'A'
+        ? [...rawMyHand, ...(tenPendingTile ? [tenPendingTile] : [])]
+        : context.ruleset !== 'classic' && context.attackDefense.stage === 'B_ASSAULT'
+            ? (tenPendingTile ? [tenPendingTile] : [])
+            : rawMyPool;
     const myDiscards = context.discards[playerId] || [];
     const mySeatWind = context.seatMap?.[playerId] === 'EAST'
         ? 'EAST'
@@ -837,8 +847,8 @@ export default function App() {
             : undefined;
 
     const myWaitTiles = useMemo(() => {
-        return getWinningWaits(myHand);
-    }, [myHand]);
+        return getWinningWaits(rawMyHand);
+    }, [rawMyHand]);
 
     const myWaitKeys = useMemo(() => {
         return new Set<string>(myWaitTiles.map((t: Tile) => `${t.suit}-${t.rank}`));
@@ -868,18 +878,15 @@ export default function App() {
         });
     }, [context.players, context.hands, context.seatMap, context.roundEndConfirmedBy, doraIndicators]);
 
-    // Helper to check state value
-    const matches = (value: string) => {
-        if (serverState) {
-            return serverState.value === value || (typeof serverState.value === 'object' && serverState.value[value]);
-        }
-        return localState.matches(value as any);
-    };
-    const isIdle = matches('idle');
-    const isHandBuild = matches('handBuild');
-    const isDoraSelect = matches('doraSelect');
-    const isGameLoop = matches('gameLoop');
-    const isRoundEnd = matches('roundEnd');
+    const step = context.step;
+    const isIdle = step === 'idle';
+    const isHandBuild = step === 'classic_hand_build';
+    const isDoraSelect = step === 'classic_dora_select';
+    const isClassicTurn = step === 'classic_turn';
+    const isRoundEnd = step === 'classic_round_end' || step === 'ten_round_end';
+    const isMatchEnd = step === 'match_end';
+    const isClassicMatchStart = step === 'classic_match_start';
+    const isTenMatchStart = step === 'ten_match_start';
     const isPlayerInLobby = context.players.includes(playerId);
     const isHomeMode = entryMode === 'home';
     const isSingleMiniMode = entryMode === 'single' && singleMode === 'mini';
@@ -1087,11 +1094,8 @@ export default function App() {
         if (myRoundEndConfirmed) return;
         sendEvent({ type: 'CONFIRM_ROUND_END', playerId });
     };
-    const onDeclareTenpai = (withRiichi: boolean) => {
-        sendEvent({ type: 'DECLARE_TENPAI', playerId, withRiichi });
-    };
-    const onPassDeclaration = () => {
-        sendEvent({ type: 'PASS_DECLARATION', playerId });
+    const onDeclareTenpai = (withRiichi: boolean, tileId: string) => {
+        sendEvent({ type: 'DECLARE_TENPAI', playerId, tileId, withRiichi });
     };
     const onDefenderGuess = (tileKey: string) => {
         sendEvent({ type: 'DEFENDER_GUESS', playerId, tileKey });
@@ -1115,7 +1119,7 @@ export default function App() {
     const ronQueryIdRef = useRef<string | null>(null);
 
     useEffect(() => {
-        if (!isGameLoop) {
+        if (!isClassicTurn) {
             ronQueryIdRef.current = null;
             setRonOpportunity(null);
             return;
@@ -1141,7 +1145,7 @@ export default function App() {
             wait: lastDiscard.tile,
             doraIndicators
         });
-    }, [context.lastDiscard, playerId, isGameLoop, doraIndicators, context.hands, queryAnalysisWithPlayer]);
+    }, [context.lastDiscard, playerId, isClassicTurn, doraIndicators, context.hands, queryAnalysisWithPlayer]);
 
     // Update ronOpportunity when analysisResult comes back for SCORE
     useEffect(() => {
@@ -1616,7 +1620,7 @@ export default function App() {
                  App.tsx utilized a single main container. 
               */}
 
-                {(matches('idle') || matches('matchStart') || matches('doraSelect') || matches('handBuild')) ? (
+                {(isIdle || isClassicMatchStart || isTenMatchStart || isDoraSelect || isHandBuild) ? (
                     <div className="w-full h-full min-h-screen sm:min-h-0 sm:h-auto sm:max-w-5xl glass-panel rounded-none sm:rounded-3xl p-4 sm:p-6 flex flex-col relative m-0 sm:m-4 z-10 overflow-y-auto thin-scrollbar">
                         <header className="mb-4 text-center w-full flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-end border-b border-slate-700/80 pb-4">
                             <div>
@@ -1719,7 +1723,7 @@ export default function App() {
                             )}
                         </header>
 
-                        {matches('idle') && (
+                        {isIdle && (
                             <div className="flex-1 flex flex-col items-center justify-center space-y-8">
                                 {isHomeMode && (
                                     <>
@@ -1918,7 +1922,7 @@ export default function App() {
                                                         {activeRoomSummary?.name ?? resolvedRoomId}
                                                     </div>
                                                     <span className="px-2 py-1 rounded-full border border-slate-600 bg-slate-900/80 text-[11px] font-bold text-slate-200">
-                                                        {getRulesetPresentation(activeRoomSummary?.ruleset ?? activeRuleset).onlineBadge}
+                                                        {getRulesetPresentation(resolveDisplayedRoomRuleset(activeRuleset, activeRoomSummary?.ruleset)).onlineBadge}
                                                     </span>
                                                 </div>
                                                 <div className="text-xs text-slate-400 mt-1">{resolvedRoomId}</div>
@@ -2060,7 +2064,7 @@ export default function App() {
                                                                 <div className="flex items-center gap-2">
                                                                     <span className="text-sm font-semibold text-slate-100">{room.name}</span>
                                                                     <span className="px-2 py-0.5 rounded-full border border-slate-600 bg-slate-900/80 text-[10px] font-bold text-slate-300">
-                                                                        {getRulesetPresentation(room.ruleset).onlineBadge}
+                                                                        {getRulesetPresentation(resolveDisplayedRoomRuleset(activeRuleset, room.ruleset)).onlineBadge}
                                                                     </span>
                                                                 </div>
                                                                 <span className="text-xs text-slate-400">{room.connectedCount}명 {room.hasPassword ? '• 비밀번호' : ''}</span>
@@ -2179,10 +2183,14 @@ export default function App() {
                             </div>
                         )}
 
-                        {matches('matchStart') && (
+                        {(isClassicMatchStart || isTenMatchStart) && (
                             <div className="flex-1 flex flex-col items-center justify-center animate-in fade-in zoom-in duration-500">
-                                <h2 className="text-4xl font-bold text-yellow-400 mb-4">MATCH START</h2>
-                                <div className="text-xl text-gray-300">패를 섞는 중...</div>
+                                <h2 className="text-4xl font-bold text-yellow-400 mb-4">
+                                    {displayRulesetPresentation.isTenAttackDefense ? 'TEN BATTLE START' : 'MATCH START'}
+                                </h2>
+                                <div className="text-xl text-gray-300">
+                                    {displayRulesetPresentation.isTenAttackDefense ? '공방전을 준비하는 중...' : '패를 섞는 중...'}
+                                </div>
                             </div>
                         )}
 
@@ -2259,7 +2267,7 @@ export default function App() {
                             </div>
                         )}
 
-                        {matches('handBuild') && (
+                        {isHandBuild && (
                             <div className="flex-1">
                                 <div className="mb-6 flex justify-between items-end">
                                     <div>
@@ -2310,7 +2318,6 @@ export default function App() {
                             context={context}
                             playerId={playerId}
                             onDeclareTenpai={onDeclareTenpai}
-                            onPass={onPassDeclaration}
                             onGuess={onDefenderGuess}
                             onKan={onAttackerKan}
                             onKanPass={onAttackerKanPass}
@@ -2533,7 +2540,7 @@ export default function App() {
                             );
                         })()}
 
-                        {matches('matchEnd') && (() => {
+                        {isMatchEnd && (() => {
                             const ronTile = context.winner && context.lastDiscard ? context.lastDiscard.tile : null;
                             const ronLoserId = context.winner && context.lastDiscard ? context.lastDiscard.playerId : null;
 

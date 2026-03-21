@@ -26,6 +26,12 @@ export const RULES = {
         redDora: false,
         kanDora: false
     },
+    ten: {
+        initialHandSize: 13,
+        maxOwnTurns: 18,
+        guessCount: 2,
+        assaultTurns: 5
+    },
     winConditions: {
         ronOnly: true,
         manganMinimumPoints: 8000,

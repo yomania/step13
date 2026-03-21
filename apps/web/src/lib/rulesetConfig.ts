@@ -16,17 +16,11 @@ export type RulesetPresentation = {
     isEasy: boolean;
 };
 
+type EnvValue = string | boolean | undefined | null;
+type EnvSource = Record<string, EnvValue>;
+
 function trimTrailingSlash(value: string): string {
     return value.replace(/\/+$/, '');
-}
-
-function readEnv(name: string): string | null {
-    const value = import.meta.env[name] as string | undefined;
-    if (!value) {
-        return null;
-    }
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : null;
 }
 
 function getDefaultClassicApiBase(): string {
@@ -45,6 +39,15 @@ function getDefaultClassicWsBase(): string {
         return `${protocol}//${window.location.host}/ws`;
     }
     return 'ws://localhost:3001/ws';
+}
+
+function readEnvFrom(source: EnvSource, name: string): string | null {
+    const value = source[name];
+    if (typeof value !== 'string') {
+        return null;
+    }
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
 }
 
 export function deriveRuleset(publicRuleset: PublicRuleset, tenMode: TenMode): RulesetName {
@@ -119,44 +122,62 @@ export function getRulesetPresentation(ruleset: RulesetName): RulesetPresentatio
     }
 }
 
-export function resolveRulesetApiBaseUrl(ruleset: RulesetName, explicitBase?: string): string {
-    const fallback = readEnv('VITE_API_URL') ?? getDefaultClassicApiBase();
+export function resolveRulesetApiBaseUrlFromEnv(
+    ruleset: RulesetName,
+    env: EnvSource,
+    explicitBase?: string
+): string | null {
     if (explicitBase) {
         return trimTrailingSlash(explicitBase);
     }
+
+    const classicFallback = readEnvFrom(env, 'VITE_API_URL') ?? getDefaultClassicApiBase();
     switch (ruleset) {
         case 'ten_attack_defense':
-            return trimTrailingSlash(readEnv('VITE_TEN_API_URL') ?? fallback);
+            return readEnvFrom(env, 'VITE_TEN_API_URL');
         case 'ten_attack_defense_easy':
-            return trimTrailingSlash(readEnv('VITE_TEN_EASY_API_URL') ?? readEnv('VITE_TEN_API_URL') ?? fallback);
+            return readEnvFrom(env, 'VITE_TEN_EASY_API_URL') ?? readEnvFrom(env, 'VITE_TEN_API_URL');
         case 'classic':
         default:
-            return trimTrailingSlash(readEnv('VITE_CLASSIC_API_URL') ?? fallback);
+            return trimTrailingSlash(readEnvFrom(env, 'VITE_CLASSIC_API_URL') ?? classicFallback);
     }
 }
 
-export function resolveRulesetWsBaseUrl(ruleset: RulesetName): string {
-    const fallback = readEnv('VITE_WS_URL') ?? getDefaultClassicWsBase();
+export function resolveRulesetWsBaseUrlFromEnv(ruleset: RulesetName, env: EnvSource): string | null {
+    const classicFallback = readEnvFrom(env, 'VITE_WS_URL') ?? getDefaultClassicWsBase();
     switch (ruleset) {
         case 'ten_attack_defense':
-            return readEnv('VITE_TEN_WS_URL') ?? fallback;
+            return readEnvFrom(env, 'VITE_TEN_WS_URL');
         case 'ten_attack_defense_easy':
-            return readEnv('VITE_TEN_EASY_WS_URL') ?? readEnv('VITE_TEN_WS_URL') ?? fallback;
+            return readEnvFrom(env, 'VITE_TEN_EASY_WS_URL') ?? readEnvFrom(env, 'VITE_TEN_WS_URL');
         case 'classic':
         default:
-            return readEnv('VITE_CLASSIC_WS_URL') ?? fallback;
+            return readEnvFrom(env, 'VITE_CLASSIC_WS_URL') ?? classicFallback;
     }
 }
 
-export function isRulesetConfigured(ruleset: RulesetName): boolean {
+export function isRulesetConfiguredForEnv(ruleset: RulesetName, env: EnvSource): boolean {
     if (ruleset === 'classic') {
         return true;
     }
     if (ruleset === 'ten_attack_defense') {
-        return Boolean(readEnv('VITE_TEN_API_URL') && readEnv('VITE_TEN_WS_URL'));
+        return Boolean(readEnvFrom(env, 'VITE_TEN_API_URL') && readEnvFrom(env, 'VITE_TEN_WS_URL'));
     }
     return Boolean(
-        (readEnv('VITE_TEN_EASY_API_URL') ?? readEnv('VITE_TEN_API_URL'))
-        && (readEnv('VITE_TEN_EASY_WS_URL') ?? readEnv('VITE_TEN_WS_URL'))
+        (readEnvFrom(env, 'VITE_TEN_EASY_API_URL') ?? readEnvFrom(env, 'VITE_TEN_API_URL'))
+        && (readEnvFrom(env, 'VITE_TEN_EASY_WS_URL') ?? readEnvFrom(env, 'VITE_TEN_WS_URL'))
     );
+}
+
+export function resolveRulesetApiBaseUrl(ruleset: RulesetName, explicitBase?: string): string {
+    const resolved = resolveRulesetApiBaseUrlFromEnv(ruleset, import.meta.env, explicitBase);
+    return trimTrailingSlash(resolved ?? getDefaultClassicApiBase());
+}
+
+export function resolveRulesetWsBaseUrl(ruleset: RulesetName): string {
+    return resolveRulesetWsBaseUrlFromEnv(ruleset, import.meta.env) ?? getDefaultClassicWsBase();
+}
+
+export function isRulesetConfigured(ruleset: RulesetName): boolean {
+    return isRulesetConfiguredForEnv(ruleset, import.meta.env);
 }

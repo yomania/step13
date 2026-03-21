@@ -58,9 +58,14 @@ flowchart LR
 
 - 참여자/좌석: `players`, `dealer`, `seatMap`, `dealerDice`
 - 라운드 리소스: `dealtTiles`, `wall`, `doraIndicators`
-- 진행 상태: `hands`, `pools`, `discards`, `currentTurn`, `lastDiscard`
+- 진행 상태: `step`, `hands`, `pools`, `discards`, `currentTurn`, `lastDiscard`
 - 결과/점수: `winner`, `winResult`, `scores`
 - 운영 메타: `eventLog`, `deterministicSeed`, `timeBankRemainingMs`, `roundEndConfirmedBy`
+
+`step`은 클라이언트 렌더링 기준 단계 식별자이며 ruleset별로 분리된다.
+
+- classic: `classic_match_start`, `classic_dora_select`, `classic_hand_build`, `classic_turn`, `classic_round_end`
+- ten: `ten_match_start`, `ten_a_turn`, `ten_b_guess`, `ten_b_assault`, `ten_round_end`
 
 ## 4. Server 레이어
 

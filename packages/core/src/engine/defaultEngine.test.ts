@@ -104,6 +104,7 @@ function buildRonContext(overrides?: Partial<GameContext>): GameContext {
         dealerDice: { p1: 6, p2: 3 },
         discards: { p1: [], p2: [] },
         phase: 'TURN',
+        step: 'classic_turn',
         winner: null,
         dealer: 'p1',
         winResult: null,
@@ -114,6 +115,27 @@ function buildRonContext(overrides?: Partial<GameContext>): GameContext {
         deterministicSeed: 1,
         timeBankRemainingMs: { p1: 15000, p2: 15000 },
         roundEndConfirmedBy: {},
+        ruleset: 'classic',
+        attackDefense: {
+            stage: 'A',
+            attacker: null,
+            defender: null,
+            declaredBy: null,
+            declaredWithRiichi: false,
+            declarationType: null,
+            ownTurns: { p1: 0, p2: 0 },
+            guessesRemaining: 0,
+            failedGuesses: 0,
+            assaultRemaining: 0,
+            lockedWaitTileKeys: [],
+            lastGuessTileKey: null,
+            lastGuessResult: 'idle',
+            pendingDrawTile: null,
+            kanOption: {
+                pending: false,
+                tileKey: null
+            }
+        },
         ...overrides
     };
 }

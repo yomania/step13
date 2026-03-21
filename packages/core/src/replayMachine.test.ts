@@ -192,7 +192,7 @@ describe('replayMachine', () => {
             { type: 'JOIN', playerId: 'p1' },
             { type: 'JOIN', playerId: 'p2' },
             { type: 'START_MATCH', seed: 99, ruleset: 'ten_attack_defense' },
-            { type: 'DECLARE_TENPAI', playerId: 'p1' } as any,
+            { type: 'DECLARE_TENPAI', playerId: 'p1', tileId: 'draw-1' } as any,
             { type: 'DEFENDER_GUESS', playerId: 'p2', tileKey: 'man-5' } as any
         ];
         const replayActor = createActor(replayMachine);
