@@ -10,6 +10,7 @@ export const RULES = {
         doraRevealTimeMs: 3000,
         buildTimeMs: 120000,
         turnTimeMs: 10000,
+        tenTurnTimeMs: 30000,
         timeBankMs: 3000
     },
     actions: {

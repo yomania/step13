@@ -3,6 +3,8 @@ import { PlayerId } from '@step13/proto';
 import { GameContext, RULES } from '@step13/core';
 import { DiscardPile } from './DiscardPile';
 
+const TEN_TURN_TIMER_MS = 30000;
+
 interface GameBoardProps {
     context: GameContext;
     myPlayerId: PlayerId;
@@ -13,6 +15,7 @@ interface GameBoardProps {
 export function GameBoard({ context, myPlayerId, onLeave, children }: GameBoardProps) {
     const players = context.players;
     const otherPlayerId = players.find((p: PlayerId) => p !== myPlayerId);
+    const turnTimerMs = context.ruleset === 'classic' ? RULES.timers.turnTimeMs : TEN_TURN_TIMER_MS;
     const myTimeBankMs = context.timeBankRemainingMs?.[myPlayerId] ?? 0;
     const otherTimeBankMs = otherPlayerId ? (context.timeBankRemainingMs?.[otherPlayerId] ?? 0) : 0;
     const currentTurn = context.currentTurn;
@@ -20,7 +23,7 @@ export function GameBoard({ context, myPlayerId, onLeave, children }: GameBoardP
     const previousTurnRef = useRef<PlayerId | null>(null);
     const previousTurnBankRef = useRef<number>(0);
     const [clockStartMs, setClockStartMs] = useState<number | null>(null);
-    const [clockDurationMs, setClockDurationMs] = useState<number>(RULES.timers.turnTimeMs);
+    const [clockDurationMs, setClockDurationMs] = useState<number>(turnTimerMs);
     const [isBonusClock, setIsBonusClock] = useState(false);
     const [nowMs, setNowMs] = useState(() => Date.now());
 
@@ -31,7 +34,7 @@ export function GameBoard({ context, myPlayerId, onLeave, children }: GameBoardP
             previousTurnRef.current = null;
             previousTurnBankRef.current = 0;
             setClockStartMs(null);
-            setClockDurationMs(RULES.timers.turnTimeMs);
+            setClockDurationMs(turnTimerMs);
             setIsBonusClock(false);
             return;
         }
@@ -41,7 +44,7 @@ export function GameBoard({ context, myPlayerId, onLeave, children }: GameBoardP
 
         if (previousTurn !== currentTurn) {
             setClockStartMs(Date.now());
-            setClockDurationMs(RULES.timers.turnTimeMs);
+            setClockDurationMs(turnTimerMs);
             setIsBonusClock(false);
         } else if (previousBank > currentTurnBankMs) {
             const consumedBankMs = previousBank - currentTurnBankMs;
@@ -52,7 +55,7 @@ export function GameBoard({ context, myPlayerId, onLeave, children }: GameBoardP
 
         previousTurnRef.current = currentTurn;
         previousTurnBankRef.current = currentTurnBankMs;
-    }, [currentTurn, currentTurnBankMs, context.eventLog.length]);
+    }, [currentTurn, currentTurnBankMs, context.eventLog.length, turnTimerMs]);
 
     useEffect(() => {
         if (!clockStartMs) return;
@@ -62,10 +65,10 @@ export function GameBoard({ context, myPlayerId, onLeave, children }: GameBoardP
 
     const turnTimeRemainingMs = useMemo(() => {
         if (!clockStartMs) {
-            return RULES.timers.turnTimeMs;
+            return turnTimerMs;
         }
         return Math.max(0, clockDurationMs - (nowMs - clockStartMs));
-    }, [clockStartMs, clockDurationMs, nowMs]);
+    }, [clockStartMs, clockDurationMs, nowMs, turnTimerMs]);
 
     const turnTimeRemainingSec = Math.max(0, Math.ceil(turnTimeRemainingMs / 1000));
     const isLowTurnTime = turnTimeRemainingSec <= 3;
@@ -89,7 +92,7 @@ export function GameBoard({ context, myPlayerId, onLeave, children }: GameBoardP
         : `Remains: ${17 - myDiscardCount} / 17`;
 
     return (
-        <div className="game-shell relative flex flex-col min-h-[100dvh] text-white sm:px-5 overflow-x-hidden sm:overflow-hidden">
+        <div className="game-shell relative flex flex-col min-h-[100dvh] text-white px-1 sm:px-4 lg:px-6 overflow-hidden">
             <div className="pointer-events-none absolute -top-40 -left-40 w-96 h-96 rounded-full bg-slate-800/20 blur-[100px]" />
             <div className="pointer-events-none absolute -bottom-40 -right-40 w-96 h-96 rounded-full bg-slate-800/20 blur-[100px]" />
             <header className="header-bar z-10 p-2 sm:p-4 surface-panel sm:glass-panel rounded-none sm:rounded-2xl flex flex-col gap-2 sm:flex-row sm:justify-between sm:items-center mb-2 sm:mb-4 border-b sm:border border-slate-700/50 shadow-md">
@@ -130,13 +133,13 @@ export function GameBoard({ context, myPlayerId, onLeave, children }: GameBoardP
             </header>
 
             {/* Battle Area */}
-            <div className="board-shell z-10 flex-1 min-h-0 flex flex-col items-center justify-center relative w-full h-full sm:max-w-6xl mx-auto glass-panel rounded-none sm:rounded-3xl p-1 sm:p-5 mb-2 sm:mb-8 overflow-visible sm:overflow-hidden">
-                <div className="board-scroll w-full h-full flex flex-col items-center thin-scrollbar">
+            <div className="board-shell z-10 flex-1 min-h-0 flex flex-col items-center justify-center relative w-full h-full max-w-none mx-auto glass-panel rounded-none sm:rounded-3xl p-1 sm:p-4 lg:p-5 mb-2 sm:mb-4 overflow-hidden">
+                <div className="board-scroll w-full h-full flex flex-col items-stretch thin-scrollbar">
 
                     {/* Opponent Area (Top) */}
                     {otherPlayerId && (
-                        <div className="opponent-panel w-full flex flex-col items-center opacity-90 transition-opacity border border-slate-700/80 rounded-2xl bg-slate-900/45">
-                            <div className="flex items-center gap-2 sm:gap-4 mb-1 sm:mb-2">
+                        <div className="opponent-panel w-full flex flex-col items-stretch opacity-90 transition-opacity border border-slate-700/80 rounded-2xl bg-slate-900/45 p-2 sm:p-4">
+                            <div className="flex flex-wrap items-center justify-center lg:justify-start gap-2 sm:gap-4 mb-1 sm:mb-2">
                                 <div className="w-10 h-10 bg-rose-800/90 rounded-full flex items-center justify-center font-bold border-2 border-rose-500 shadow-md">
                                     {otherPlayerId.slice(0, 1).toUpperCase()}
                                 </div>
@@ -154,7 +157,7 @@ export function GameBoard({ context, myPlayerId, onLeave, children }: GameBoardP
                             </div>
 
                             {/* Opponent Hand (Generic Backs or count) */}
-                            <div className="flex gap-1 mb-2">
+                            <div className="flex gap-1 mb-2 justify-center lg:justify-start">
                                 {/* Usually we don't show opponent hand in 17-steps except 'ready' status? */}
                                 {/* Just show simple indicator */}
                                 <div className="text-sm text-gray-400">
@@ -163,7 +166,7 @@ export function GameBoard({ context, myPlayerId, onLeave, children }: GameBoardP
                             </div>
 
                             {/* Opponent Pool/Discards */}
-                            <div className="relative">
+                            <div className="relative w-full">
                                 <h3 className="text-xs text-center text-gray-500 mb-1">DISCARDS (Pool)</h3>
                                 <DiscardPile
                                     discards={context.discards[otherPlayerId] || []}
@@ -174,7 +177,7 @@ export function GameBoard({ context, myPlayerId, onLeave, children }: GameBoardP
                     )}
 
                     {/* Center / Game Info / Turn Indicator */}
-                    <div className="my-4 text-center z-10">
+                    <div className="my-2 sm:my-3 text-center z-10">
                         <div className="text-2xl font-black mb-2 transition-all duration-300 transform scale-100 tracking-wider">
                             {context.currentTurn === myPlayerId ? (
                                 <span className="text-yellow-500 animate-pulse drop-shadow-[0_0_15px_rgba(234,179,8,0.5)]">YOUR TURN</span>
@@ -188,9 +191,9 @@ export function GameBoard({ context, myPlayerId, onLeave, children }: GameBoardP
                     </div>
 
                     {/* My Area (Bottom) */}
-                    <div className="player-panel w-full flex flex-col items-center mt-auto p-2 sm:p-6 bg-gradient-to-t from-slate-900/90 to-transparent rounded-t-3xl border-t border-slate-700/30">
+                    <div className="player-panel w-full flex flex-col items-stretch mt-auto p-2 sm:p-4 lg:p-5 bg-gradient-to-t from-slate-900/90 to-transparent rounded-t-3xl border-t border-slate-700/30">
                         {/* My Discards */}
-                        <div className="mb-2 sm:mb-6 relative group w-full max-w-2xl">
+                        <div className="mb-2 sm:mb-4 relative group w-full">
                             <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-slate-800 px-3 py-0.5 sm:px-4 sm:py-1 rounded-full text-[10px] sm:text-xs font-bold text-slate-300 border border-slate-600 shadow-md z-10">
                                 내 버림패
                             </div>
@@ -200,8 +203,8 @@ export function GameBoard({ context, myPlayerId, onLeave, children }: GameBoardP
                         </div>
 
                         {/* My Hand / Controls / Info */}
-                        <div className="flex flex-col gap-1 sm:gap-3 w-full max-w-3xl">
-                            <div className="flex flex-row items-end justify-between gap-1 sm:gap-3">
+                        <div className="flex flex-col gap-2 sm:gap-3 w-full min-w-0">
+                            <div className="flex flex-col xl:grid xl:grid-cols-[auto_minmax(0,1fr)] items-stretch xl:items-end gap-2 sm:gap-3 w-full">
                                 <div className="flex items-center gap-2 sm:gap-4 bg-slate-900/60 p-2 sm:p-3 rounded-xl sm:rounded-2xl border border-slate-700/50 shadow-md">
                                     <div className="w-10 h-10 sm:w-14 sm:h-14 bg-gradient-to-br from-slate-600 to-slate-800 rounded-full flex items-center justify-center font-bold text-xl sm:text-2xl border-2 border-slate-500 text-slate-200 shadow-[inset_0_2px_4px_rgba(255,255,255,0.1),_0_4px_10px_rgba(0,0,0,0.5)] relative overflow-hidden">
                                         {myPlayerId.slice(0, 1).toUpperCase()}
@@ -222,8 +225,8 @@ export function GameBoard({ context, myPlayerId, onLeave, children }: GameBoardP
                                     </div>
                                 </div>
 
-                                <div className="action-stack w-full sm:w-auto flex flex-col items-stretch sm:items-end">
-                                    <div className={`self-start sm:self-end px-4 py-2 rounded-xl sm:rounded-2xl border backdrop-blur-sm shadow-lg ${isLowTurnTime
+                                <div className="action-stack w-full min-w-0 flex flex-col xl:items-end">
+                                    <div className={`self-stretch xl:self-end px-4 py-2 rounded-xl sm:rounded-2xl border backdrop-blur-sm shadow-lg ${isLowTurnTime
                                         ? 'border-rose-500 bg-rose-950/80 shadow-[0_0_15px_rgba(225,29,72,0.4)]'
                                         : isBonusClock
                                             ? 'border-yellow-500/80 bg-yellow-950/60 shadow-[0_0_10px_rgba(234,179,8,0.2)]'
@@ -242,7 +245,7 @@ export function GameBoard({ context, myPlayerId, onLeave, children }: GameBoardP
                                 </div>
                             </div>
 
-                            <div className="w-full flex justify-center">
+                            <div className="w-full min-w-0 flex justify-center">
                                 {children}
                             </div>
                         </div>

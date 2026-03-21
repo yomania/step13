@@ -39,9 +39,9 @@ export function HandDisplay({
     });
 
     return (
-        <div className="w-full max-w-3xl mx-auto flex flex-col gap-1 sm:gap-3">
+        <div className="w-full max-w-none mx-auto flex flex-col gap-1 sm:gap-3 min-w-0">
             <div className="px-1 sm:px-2 text-[10px] sm:text-xs text-slate-400">내 손패 (고정 13장)</div>
-            <div className="flex flex-wrap gap-0.5 sm:gap-1 justify-center p-1 sm:p-2 bg-slate-800 rounded">
+            <div className="flex flex-wrap gap-0.5 sm:gap-1 justify-center xl:justify-start p-1 sm:p-2 bg-slate-800 rounded min-w-0">
                 {sortedHand.map((tile, i) => (
                     <Tile
                         key={`${tile.id}-${i}`}
@@ -56,7 +56,7 @@ export function HandDisplay({
                 <span>버릴 패 (Pool)</span>
                 {isFuriten && <span className="text-red-300 font-bold">후리텐 상태</span>}
             </div>
-            <div className="flex flex-wrap gap-0.5 sm:gap-1 justify-center p-1 sm:p-2 bg-slate-800 rounded min-h-[44px] sm:min-h-[72px]">
+            <div className="flex flex-wrap gap-1 sm:gap-1.5 justify-center xl:justify-start p-2 sm:p-3 bg-slate-800 rounded-xl min-h-[56px] sm:min-h-[88px] min-w-0">
                 {sortedPool.length === 0 && (
                     <span className="text-slate-400 py-2 sm:py-4 text-[10px] sm:text-sm">버릴패 없음</span>
                 )}
@@ -75,7 +75,7 @@ export function HandDisplay({
                             )}
                             <Tile
                                 tile={tile}
-                                size="md"
+                                size="board"
                                 onClick={() => canDiscard && onDiscard?.({ tile, index: i })}
                                 disabled={!canDiscard}
                             />
@@ -85,7 +85,7 @@ export function HandDisplay({
             </div>
 
             <div className="px-1 sm:px-2 text-[10px] sm:text-xs text-slate-400">내 대기패</div>
-            <div className="flex flex-wrap gap-0.5 sm:gap-1 justify-center p-1 sm:p-2 bg-slate-800 rounded min-h-[44px] sm:min-h-[56px]">
+            <div className="flex flex-wrap gap-0.5 sm:gap-1 justify-center xl:justify-start p-1 sm:p-2 bg-slate-800 rounded min-h-[44px] sm:min-h-[56px] min-w-0">
                 {sortedWaits.length === 0 && <span className="text-slate-400 py-1 sm:py-2 text-[10px] sm:text-sm">대기패 없음</span>}
                 {sortedWaits.map((tile, i) => (
                     <Tile key={`${tile.suit}-${tile.rank}-${i}`} tile={tile} size="sm" disabled={true} />

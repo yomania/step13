@@ -83,6 +83,10 @@ function getWinningWaitKeys(hand: Tile[]): string[] {
     return waits;
 }
 
+function getTurnTimerMs(ruleset: RulesetName): number {
+    return ruleset === 'classic' ? RULES.timers.turnTimeMs : RULES.timers.tenTurnTimeMs;
+}
+
 function resolveTenBattleScores(context: GameContext, winner: string | null): Record<string, number> {
     const delta = 12000;
     const next = { ...context.scores };
@@ -1102,7 +1106,7 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                 states: {
                     turn: {
                         after: {
-                            [RULES.timers.turnTimeMs]: [
+                            [getTurnTimerMs('classic')]: [
                                 {
                                     guard: 'hasTurnTimeBank',
                                     actions: 'consumeTurnTimeBank',
@@ -1211,7 +1215,7 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                             target: '#mahjong-17-step.roundEnd'
                         },
                         after: {
-                            [RULES.timers.turnTimeMs]: [
+                            [getTurnTimerMs('ten_attack_defense')]: [
                                 {
                                     guard: 'hasTurnTimeBank',
                                     actions: 'consumeTurnTimeBank',
@@ -1319,7 +1323,7 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                             target: '#mahjong-17-step.roundEnd'
                         },
                         after: {
-                            [RULES.timers.turnTimeMs]: [
+                            [getTurnTimerMs('ten_attack_defense')]: [
                                 {
                                     guard: 'hasTurnTimeBank',
                                     actions: 'consumeTurnTimeBank',

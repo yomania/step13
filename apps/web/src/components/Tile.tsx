@@ -7,7 +7,7 @@ interface TileProps {
     onClick?: () => void;
     selected?: boolean;
     disabled?: boolean;
-    size?: 'sm' | 'md' | 'lg';
+    size?: 'xs' | 'sm' | 'md' | 'board' | 'lg';
 }
 
 export type TileSkin = 'classic' | 'real';
@@ -107,8 +107,10 @@ export function Tile({ tile, onClick, selected, disabled, size = 'md' }: TilePro
     }, [currentSrc, assetAttempt]);
 
     const sizeClasses = {
+        xs: 'w-5 h-8 sm:w-6 sm:h-9 text-[9px] sm:text-[10px]',
         sm: 'w-6 h-9 sm:w-8 sm:h-12 text-[10px] sm:text-xs',
         md: 'w-7 h-10 sm:w-10 sm:h-14 text-[11px] sm:text-sm',
+        board: 'w-8 h-11 sm:w-11 sm:h-[3.9rem] lg:w-12 lg:h-[4.25rem] text-xs sm:text-sm',
         lg: 'w-9 h-12 sm:w-12 sm:h-16 text-xs sm:text-base'
     };
 

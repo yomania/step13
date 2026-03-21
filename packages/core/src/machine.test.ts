@@ -593,6 +593,29 @@ describe('gameMachine full cycle and edge cases', () => {
 });
 
 describe('ten_attack_defense ruleset', () => {
+    it('uses the longer turn timer for ten attack defense turns', { timeout: 20000 }, async () => {
+        vi.useFakeTimers();
+        const actor = createActor(createGameMachine({ ruleset: 'ten_attack_defense' }));
+        actor.start();
+        actor.send({ type: 'JOIN', playerId: 'p1' });
+        actor.send({ type: 'JOIN', playerId: 'p2' });
+        actor.send({ type: 'START_MATCH', seed: 40 });
+        await reachTurnWithAutoSubmit(actor as any);
+
+        const snapshot = actor.getSnapshot();
+        const current = snapshot.context.currentTurn!;
+        const opponent = snapshot.context.players.find((id) => id !== current)!;
+
+        await advance(RULES.timers.turnTimeMs + RULES.timers.timeBankMs + 100);
+        expect(actor.getSnapshot().value).toEqual({ tenDeclaration: 'turn' });
+        expect(actor.getSnapshot().context.currentTurn).toBe(current);
+        expect(actor.getSnapshot().context.lastDiscard).toBeNull();
+
+        await advance(RULES.timers.tenTurnTimeMs - RULES.timers.turnTimeMs);
+        expect(actor.getSnapshot().context.currentTurn).toBe(opponent);
+        expect(actor.getSnapshot().context.lastDiscard?.playerId).toBe(current);
+    });
+
     it('allows Stage A manual discard of a selected hand tile after draw', { timeout: 20000 }, async () => {
         vi.useFakeTimers();
         const actor = createActor(createGameMachine({ ruleset: 'ten_attack_defense' }));

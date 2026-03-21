@@ -148,7 +148,7 @@ export function AttackDefensePanels({ context, playerId, onDeclareTenpai, onDisc
     return (
         <>
             {/* HUD / Status Info (Top Left Corner) */}
-            <div className="absolute left-0 top-0 z-40 p-2 sm:p-4 flex flex-col gap-2 w-full max-w-sm pointer-events-none">
+            <div className="absolute left-0 top-0 z-40 p-2 sm:p-4 flex flex-col gap-2 w-full sm:max-w-sm pointer-events-none">
                 <div className="pointer-events-auto rounded-3xl border border-slate-700/50 bg-slate-950/70 backdrop-blur-md p-3 shadow-xl flex items-center justify-between">
                     <div>
                         <div className="font-black text-cyan-300 tracking-[0.18em] text-xs sm:text-sm">{modeLabel}</div>
@@ -192,20 +192,20 @@ export function AttackDefensePanels({ context, playerId, onDeclareTenpai, onDisc
 
             {/* STAGE A: Discard & Declare (Floating Bottom Panel) */}
             {stage === 'A' && isMyTurn && (
-                <div className="absolute bottom-[calc(max(10dvh,80px))] left-0 right-0 z-50 px-2 sm:px-6 pointer-events-none flex justify-center">
-                    <div className="pointer-events-auto flex flex-col w-full max-w-4xl rounded-[2.5rem] border border-cyan-500/30 bg-slate-950/85 backdrop-blur-2xl p-4 sm:p-5 shadow-[0_20px_60px_-15px_rgba(0,0,0,1)] ring-1 ring-white/5">
+                <div className="absolute bottom-[calc(max(8dvh,64px))] left-0 right-0 z-50 px-2 sm:px-4 lg:px-6 pointer-events-none flex justify-center">
+                    <div className="pointer-events-auto flex flex-col w-full max-w-[min(96vw,1440px)] rounded-[2rem] sm:rounded-[2.5rem] border border-cyan-500/30 bg-slate-950/85 backdrop-blur-2xl p-3 sm:p-5 shadow-[0_20px_60px_-15px_rgba(0,0,0,1)] ring-1 ring-white/5">
                         
                         {/* Top Action Bar */}
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
-                            <div className="flex items-center gap-3">
+                        <div className="flex flex-col xl:flex-row xl:items-start justify-between gap-3 mb-3">
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 min-w-0">
                                 <div className="rounded-full border border-cyan-500/50 bg-cyan-500/10 px-3 py-1">
                                     <span className="text-xs font-black tracking-widest text-cyan-300">STAGE A</span>
                                 </div>
-                                <div className="text-sm font-medium text-slate-300">
+                                <div className="text-sm font-medium text-slate-300 min-w-0">
                                     {selectedDeclaration ? (
-                                        <div className="flex items-center gap-2">
+                                        <div className="flex flex-wrap items-center gap-2">
                                             대기패: 
-                                            <span className="text-cyan-300 font-bold bg-cyan-950/50 px-2 py-0.5 rounded-md border border-cyan-800/50">
+                                            <span className="text-cyan-300 font-bold bg-cyan-950/50 px-2 py-0.5 rounded-md border border-cyan-800/50 break-words">
                                                 {selectedDeclaration.waits.length > 0 ? selectedDeclaration.waits.map((wait: string) => formatTileKey(wait)).join(', ') : '없음'}
                                             </span>
                                             {selectedDeclaration.declareable ? (
@@ -222,18 +222,18 @@ export function AttackDefensePanels({ context, playerId, onDeclareTenpai, onDisc
                                 </div>
                             </div>
                             
-                            <div className="flex items-center gap-2 sm:justify-end">
+                            <div className="flex flex-wrap items-center gap-2 xl:justify-end">
                                 <button
                                     onClick={() => selectedStageATileId && onDiscardSelectedTile(selectedStageATileId)}
                                     disabled={!selectedStageATileId}
-                                    className="flex-1 sm:flex-none px-5 py-2.5 rounded-2xl border border-slate-600/50 bg-slate-800/80 text-sm font-bold shadow-lg hover:bg-slate-700 transition disabled:opacity-40 disabled:cursor-not-allowed"
+                                    className="flex-1 min-w-[8.5rem] sm:flex-none px-4 sm:px-5 py-2.5 rounded-2xl border border-slate-600/50 bg-slate-800/80 text-sm font-bold shadow-lg hover:bg-slate-700 transition disabled:opacity-40 disabled:cursor-not-allowed"
                                 >
                                     선택 패 버리기
                                 </button>
                                 <button
                                     onClick={() => selectedStageATileId && onDeclareTenpai(false, selectedStageATileId)}
                                     disabled={!selectedDeclaration?.declareable}
-                                    className="flex-1 sm:flex-none px-5 py-2.5 rounded-2xl border border-cyan-500/50 bg-cyan-600/90 text-slate-50 text-sm font-bold shadow-[0_0_15px_rgba(8,145,178,0.4)] hover:bg-cyan-500 transition disabled:opacity-40 disabled:shadow-none disabled:cursor-not-allowed"
+                                    className="flex-1 min-w-[7rem] sm:flex-none px-4 sm:px-5 py-2.5 rounded-2xl border border-cyan-500/50 bg-cyan-600/90 text-slate-50 text-sm font-bold shadow-[0_0_15px_rgba(8,145,178,0.4)] hover:bg-cyan-500 transition disabled:opacity-40 disabled:shadow-none disabled:cursor-not-allowed"
                                 >
                                     텐파이
                                 </button>
@@ -241,7 +241,7 @@ export function AttackDefensePanels({ context, playerId, onDeclareTenpai, onDisc
                                     <button
                                         onClick={() => selectedStageATileId && onDeclareTenpai(true, selectedStageATileId)}
                                         disabled={!selectedDeclaration?.declareable}
-                                        className="flex-1 sm:flex-none px-6 py-2.5 rounded-2xl border border-amber-500/50 bg-gradient-to-b from-amber-400 to-amber-600 text-slate-950 text-sm font-black shadow-[0_0_20px_rgba(251,191,36,0.5)] hover:from-amber-300 hover:to-amber-500 transition disabled:opacity-40 disabled:shadow-none disabled:cursor-not-allowed"
+                                        className="flex-1 min-w-[7rem] sm:flex-none px-4 sm:px-6 py-2.5 rounded-2xl border border-amber-500/50 bg-gradient-to-b from-amber-400 to-amber-600 text-slate-950 text-sm font-black shadow-[0_0_20px_rgba(251,191,36,0.5)] hover:from-amber-300 hover:to-amber-500 transition disabled:opacity-40 disabled:shadow-none disabled:cursor-not-allowed"
                                     >
                                         리치
                                     </button>
@@ -250,7 +250,7 @@ export function AttackDefensePanels({ context, playerId, onDeclareTenpai, onDisc
                         </div>
 
                         {/* Tiles Row */}
-                        <div className="flex items-center justify-center gap-1 sm:gap-1.5 px-2 py-3 rounded-2xl bg-slate-900/60 border border-slate-700/50 overflow-x-auto thin-scrollbar">
+                        <div className="grid grid-cols-7 sm:grid-cols-10 lg:grid-cols-14 gap-1 sm:gap-1.5 px-2 py-3 rounded-2xl bg-slate-900/60 border border-slate-700/50 justify-items-center">
                             {orderedTurnTiles.map((tile) => {
                                 const selected = selectedStageATileId === tile.id;
                                 const candidate = declarationCandidates.find((entry: TenpaiDeclarationCandidate) => entry.tile.id === tile.id) ?? null;
@@ -260,20 +260,20 @@ export function AttackDefensePanels({ context, playerId, onDeclareTenpai, onDisc
                                     <button
                                         key={tile.id}
                                         onClick={() => setSelectedStageATileId(tile.id ?? null)}
-                                        className={`relative rounded-xl border-2 transition-all flex flex-col items-center flex-shrink-0 ${
+                                        className={`relative rounded-xl border-2 transition-all flex flex-col items-center w-full max-w-[3rem] sm:max-w-[3.5rem] ${
                                             selected 
-                                                ? 'border-cyan-400 bg-cyan-500/20 translate-y-[-6px] shadow-[0_10px_20px_-10px_rgba(34,211,238,0.5)]' 
+                                                ? 'border-cyan-400 bg-cyan-500/20 -translate-y-1 sm:-translate-y-1.5 shadow-[0_10px_20px_-10px_rgba(34,211,238,0.5)]' 
                                                 : declareable
                                                     ? 'border-slate-600/50 bg-slate-800 hover:-translate-y-1 hover:border-slate-500' 
                                                     : 'border-transparent bg-slate-900/80 opacity-50 hover:opacity-80'
                                         } p-1`}
                                     >
                                         {isDrawnTile && (
-                                            <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-emerald-500 border border-emerald-300 px-1.5 py-px text-[9px] font-black text-slate-950 shadow-sm whitespace-nowrap z-10">
+                                            <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full bg-emerald-500 border border-emerald-300 px-1.5 py-px text-[8px] sm:text-[9px] font-black text-slate-950 shadow-sm whitespace-nowrap z-10">
                                                 쓰모패
                                             </div>
                                         )}
-                                        <TileView tile={tile} disabled={true} />
+                                        <TileView tile={tile} size="xs" disabled={true} />
                                         {declareable && !selected && (
                                             <div className="absolute -bottom-1.5 w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_5px_rgba(34,211,238,1)]"></div>
                                         )}
@@ -330,9 +330,9 @@ export function AttackDefensePanels({ context, playerId, onDeclareTenpai, onDisc
 
             {/* STAGE B: Guess (Defender's floating dock) */}
             {stage === 'B_GUESS' && isDefender && (
-                <div className="absolute bottom-[calc(max(5dvh,40px))] left-0 right-0 z-50 px-2 sm:px-6 pointer-events-none flex justify-center">
-                    <div className="pointer-events-auto flex flex-col w-full max-w-5xl rounded-[2.5rem] border border-cyan-500/30 bg-slate-950/85 backdrop-blur-2xl p-4 sm:p-5 shadow-[0_20px_60px_-15px_rgba(0,0,0,1)] ring-1 ring-white/5">
-                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-3">
+                <div className="absolute bottom-[calc(max(4dvh,28px))] left-0 right-0 z-50 px-2 sm:px-4 lg:px-6 pointer-events-none flex justify-center">
+                    <div className="pointer-events-auto flex flex-col w-full max-w-[min(96vw,1440px)] rounded-[2rem] sm:rounded-[2.5rem] border border-cyan-500/30 bg-slate-950/85 backdrop-blur-2xl p-3 sm:p-5 shadow-[0_20px_60px_-15px_rgba(0,0,0,1)] ring-1 ring-white/5">
+                        <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-3 mb-3">
                             <div className="flex items-center gap-3">
                                 <div className="rounded-full border border-cyan-500/50 bg-cyan-500/10 px-3 py-1">
                                     <span className="text-xs font-black tracking-widest text-cyan-300">STAGE B</span>
@@ -342,14 +342,14 @@ export function AttackDefensePanels({ context, playerId, onDeclareTenpai, onDisc
                                 </div>
                             </div>
                             
-                            <div className="flex items-center gap-3 w-full sm:w-auto">
-                                <div className="flex-1 sm:flex-none flex justify-end items-center px-4 py-2 rounded-2xl bg-slate-900 border border-slate-700/50">
+                            <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto">
+                                <div className="flex-1 min-w-[12rem] sm:flex-none flex justify-end items-center px-4 py-2 rounded-2xl bg-slate-900 border border-slate-700/50">
                                     <span className="text-xs text-slate-400 mr-3">선택됨:</span>
                                     {selectedGuessEntry ? (
                                         <div className="flex items-center gap-2">
                                             <span className="font-bold text-cyan-300">{formatTileKey(selectedGuess)}</span>
                                             <div className="scale-75 origin-right">
-                                                <TileView tile={selectedGuessEntry.tile} disabled={true} />
+                                                <TileView tile={selectedGuessEntry.tile} size="xs" disabled={true} />
                                             </div>
                                         </div>
                                     ) : (
@@ -359,14 +359,14 @@ export function AttackDefensePanels({ context, playerId, onDeclareTenpai, onDisc
                                 <button
                                     onClick={() => selectedGuess && onGuess(selectedGuess)}
                                     disabled={!selectedGuess}
-                                    className="px-6 py-2.5 rounded-2xl bg-cyan-600 text-white font-bold shadow-[0_0_15px_rgba(8,145,178,0.4)] hover:bg-cyan-500 transition disabled:opacity-40 disabled:shadow-none disabled:cursor-not-allowed whitespace-nowrap"
+                                    className="flex-1 min-w-[7rem] xl:flex-none px-6 py-2.5 rounded-2xl bg-cyan-600 text-white font-bold shadow-[0_0_15px_rgba(8,145,178,0.4)] hover:bg-cyan-500 transition disabled:opacity-40 disabled:shadow-none disabled:cursor-not-allowed whitespace-nowrap"
                                 >
                                     확정
                                 </button>
                             </div>
                         </div>
 
-                        <div className="relative rounded-2xl border border-slate-700/50 bg-slate-900/60 p-3 max-h-[40vh] overflow-y-auto thin-scrollbar grid grid-cols-7 sm:grid-cols-10 md:grid-cols-17 gap-1.5 md:gap-2 justify-items-center">
+                        <div className="relative rounded-2xl border border-slate-700/50 bg-slate-900/60 p-2 sm:p-3 grid grid-cols-6 sm:grid-cols-8 md:grid-cols-11 xl:grid-cols-[repeat(17,minmax(0,1fr))] gap-1 sm:gap-1.5 justify-items-center">
                             {TILE_CATALOG.map(({ tile, key }) => {
                                 const count = remainingCounts.get(key) ?? 0;
                                 const unavailable = count <= 0;
@@ -376,12 +376,12 @@ export function AttackDefensePanels({ context, playerId, onDeclareTenpai, onDisc
                                         key={key}
                                         onClick={() => setSelectedGuess(key)}
                                         disabled={unavailable}
-                                        className={`relative group rounded-xl p-1 transition-all flex flex-col items-center
-                                            ${isSelected ? 'bg-cyan-500/20 border-2 border-cyan-400 shadow-[0_5px_15px_rgba(34,211,238,0.3)] scale-110' : 'bg-slate-800 border-2 border-transparent'}
+                                        className={`relative group rounded-xl p-1 transition-all flex flex-col items-center w-full max-w-[3rem]
+                                            ${isSelected ? 'bg-cyan-500/20 border-2 border-cyan-400 shadow-[0_5px_15px_rgba(34,211,238,0.3)] -translate-y-0.5 sm:scale-105' : 'bg-slate-800 border-2 border-transparent'}
                                             ${unavailable ? 'opacity-30 grayscale cursor-not-allowed' : 'hover:border-slate-500 hover:-translate-y-1 cursor-pointer'} 
                                         `}
                                     >
-                                        <TileView tile={tile} disabled={true} />
+                                        <TileView tile={tile} size="xs" disabled={true} />
                                         <div className={`mt-1 text-[9px] font-black ${unavailable ? 'text-rose-400' : isSelected ? 'text-cyan-300' : 'text-slate-400'}`}>
                                             {unavailable ? 'X' : count}
                                         </div>
@@ -395,12 +395,12 @@ export function AttackDefensePanels({ context, playerId, onDeclareTenpai, onDisc
 
             {/* STAGE B: Assault actions (Kan) */}
             {stage === 'B_ASSAULT' && isAttacker && context.attackDefense.kanOption.pending && (
-                <div className="absolute bottom-[calc(max(15dvh,120px))] right-4 sm:right-8 z-50 rounded-[2rem] border border-amber-500/40 bg-slate-950/90 backdrop-blur-xl p-3 flex items-center gap-3 shadow-[0_10px_30px_rgba(245,158,11,0.3)] ring-1 ring-white/5">
-                    <div className="flex flex-col items-end pr-2 pl-2">
+                <div className="absolute bottom-[calc(max(10dvh,88px))] left-1/2 -translate-x-1/2 sm:left-auto sm:translate-x-0 sm:right-8 z-50 rounded-[2rem] border border-amber-500/40 bg-slate-950/90 backdrop-blur-xl p-3 flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shadow-[0_10px_30px_rgba(245,158,11,0.3)] ring-1 ring-white/5">
+                    <div className="flex flex-col items-center sm:items-end pr-2 pl-2">
                         <span className="text-[10px] text-amber-500/70 font-black tracking-widest mb-0.5">KAN OPTION</span>
                         <div className="text-sm text-amber-200 font-bold">{formatTileKey(context.attackDefense.kanOption.tileKey)}</div>
                     </div>
-                    <div className="flex items-center gap-2 border-l border-slate-700/50 pl-3">
+                    <div className="flex items-center justify-center gap-2 sm:border-l border-slate-700/50 sm:pl-3">
                         <button onClick={onKan} className="px-6 py-2.5 rounded-2xl bg-gradient-to-b from-amber-400 to-amber-600 text-slate-950 font-black shadow-[0_0_15px_rgba(251,191,36,0.5)] hover:from-amber-300 hover:to-amber-500 transition">
                             깡
                         </button>

@@ -2321,102 +2321,103 @@ export default function App() {
                     </div>
                 ) : (
                     // Game Loop & Match End using GameBoard
-                    <GameBoard context={context} myPlayerId={playerId} onLeave={handleGiveUpAndLeave}>
-                        <AttackDefensePanels
-                            context={context}
-                            playerId={playerId}
-                            onDeclareTenpai={onDeclareTenpai}
-                            onDiscardSelectedTile={onDiscardSelectedTenTile}
-                            onGuess={onDefenderGuess}
-                            onKan={onAttackerKan}
-                            onKanPass={onAttackerKanPass}
-                        />
-                        {/* Interactive Elements passed as children */}
-                        <div className="w-full">
-                            <HandDisplay
-                                hand={myHand}
-                                pool={myPool}
-                                waits={myWaitTiles}
-                                canDiscard={context.currentTurn === playerId}
-                                furitenWaitKeys={myWaitKeys}
-                                isFuriten={isFuriten}
-                                onDiscard={({ tile }) => onDiscard(tile)}
+                    <div className="w-full self-stretch">
+                        <GameBoard context={context} myPlayerId={playerId} onLeave={handleGiveUpAndLeave}>
+                            <AttackDefensePanels
+                                context={context}
+                                playerId={playerId}
+                                onDeclareTenpai={onDeclareTenpai}
+                                onDiscardSelectedTile={onDiscardSelectedTenTile}
+                                onGuess={onDefenderGuess}
+                                onKan={onAttackerKan}
+                                onKanPass={onAttackerKanPass}
                             />
-                        </div>
-
-                        {/* Overlays */}
-                        {ronOpportunity && (
-                            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50">
-                                <button
-                                    onClick={onDeclareWin}
-                                    className="bg-red-600 border-4 border-yellow-400 text-white text-6xl font-black py-8 px-16 rounded-full shadow-2xl animate-bounce hover:scale-110 transition-transform"
-                                >
-                                    RON! ({ronOpportunity.points})
-                                </button>
-                            </div>
-                        )}
-
-                        {isRoundEnd && !showRoundEndOverlay && (
-                            <>
-                                <button
-                                    onClick={() => setShowRoundEndOverlay(true)}
-                                    className="absolute inset-0 z-40 cursor-pointer"
-                                    aria-label="결과 레이어 다시 보기"
+                            {/* Interactive Elements passed as children */}
+                            <div className="w-full">
+                                <HandDisplay
+                                    hand={myHand}
+                                    pool={myPool}
+                                    waits={myWaitTiles}
+                                    canDiscard={context.currentTurn === playerId}
+                                    furitenWaitKeys={myWaitKeys}
+                                    isFuriten={isFuriten}
+                                    onDiscard={({ tile }) => onDiscard(tile)}
                                 />
-                                <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40">
-                                    <div className="px-4 py-2 rounded-xl bg-slate-900/85 border border-cyan-400/50 text-cyan-200 text-sm font-semibold shadow-lg">
-                                        게임판 클릭 시 결과 화면이 다시 열립니다.
-                                    </div>
+                            </div>
+
+                            {/* Overlays */}
+                            {ronOpportunity && (
+                                <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50">
+                                    <button
+                                        onClick={onDeclareWin}
+                                        className="bg-red-600 border-4 border-yellow-400 text-white text-6xl font-black py-8 px-16 rounded-full shadow-2xl animate-bounce hover:scale-110 transition-transform"
+                                    >
+                                        RON! ({ronOpportunity.points})
+                                    </button>
                                 </div>
-                            </>
-                        )}
+                            )}
 
-                        {isRoundEnd && showRoundEndOverlay && (() => {
-                            // 론패 정보: 론으로 끝난 경우 lastDiscard에 버린 패 정보가 있음
-                            const ronTile = context.winner && context.lastDiscard ? context.lastDiscard.tile : null;
-                            const ronLoserId = context.winner && context.lastDiscard ? context.lastDiscard.playerId : null;
-                            // 점수 변동 계산
-                            const winResult = context.winResult as { han: number; fu: number; points: number; yaku: string[]; limit?: string } | null;
-                            const getScoreDelta = (pid: string): number => {
-                                if (!winResult) return 0;
-                                if (context.winner === pid) return winResult.points;
-                                if (context.winner && context.winner !== pid) return -winResult.points;
-                                return 0;
-                            };
+                            {isRoundEnd && !showRoundEndOverlay && (
+                                <>
+                                    <button
+                                        onClick={() => setShowRoundEndOverlay(true)}
+                                        className="absolute inset-0 z-40 cursor-pointer"
+                                        aria-label="결과 레이어 다시 보기"
+                                    />
+                                    <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40">
+                                        <div className="px-4 py-2 rounded-xl bg-slate-900/85 border border-cyan-400/50 text-cyan-200 text-sm font-semibold shadow-lg">
+                                            게임판 클릭 시 결과 화면이 다시 열립니다.
+                                        </div>
+                                    </div>
+                                </>
+                            )}
 
-                            return (
-                                <div className="absolute inset-0 z-50 bg-slate-900/95 flex flex-col items-center justify-center p-6 backdrop-blur-sm">
-                                    <div className="glass-panel p-6 rounded-3xl shadow-2xl max-w-3xl w-full">
-                                        <h2 className="text-3xl font-black text-white text-center mb-1">
-                                            {context.winner ? (context.winner === playerId ? '라운드 승리' : '라운드 패배') : '유국 (DRAW)'}
-                                        </h2>
-                                        <p className="text-center text-slate-300 mb-2">
-                                            다음 라운드로 진행하려면 양쪽 확인이 필요합니다.
-                                        </p>
+                            {isRoundEnd && showRoundEndOverlay && (() => {
+                                // 론패 정보: 론으로 끝난 경우 lastDiscard에 버린 패 정보가 있음
+                                const ronTile = context.winner && context.lastDiscard ? context.lastDiscard.tile : null;
+                                const ronLoserId = context.winner && context.lastDiscard ? context.lastDiscard.playerId : null;
+                                // 점수 변동 계산
+                                const winResult = context.winResult as { han: number; fu: number; points: number; yaku: string[]; limit?: string } | null;
+                                const getScoreDelta = (pid: string): number => {
+                                    if (!winResult) return 0;
+                                    if (context.winner === pid) return winResult.points;
+                                    if (context.winner && context.winner !== pid) return -winResult.points;
+                                    return 0;
+                                };
 
-                                        {/* 화료 점수 요약 배너 */}
-                                        {winResult && context.winner && (
-                                            <div className="mb-4 rounded-xl border border-yellow-500/50 bg-yellow-900/20 px-4 py-3 text-center">
-                                                <div className="text-xs text-yellow-400 mb-1 font-semibold tracking-wide">화료 점수</div>
-                                                <div className="flex items-center justify-center gap-3 flex-wrap">
-                                                    <span className="text-2xl font-black text-yellow-300">{winResult.points.toLocaleString()}점</span>
-                                                    <span className="text-sm text-slate-300">{winResult.han}판 {winResult.fu}부</span>
-                                                    {winResult.limit && (
-                                                        <span className="px-2 py-0.5 rounded bg-red-600 text-white text-xs font-bold">{toKoreanLimit(winResult.limit)}</span>
+                                return (
+                                    <div className="absolute inset-0 z-50 bg-slate-900/95 flex flex-col items-center justify-center p-6 backdrop-blur-sm">
+                                        <div className="glass-panel p-6 rounded-3xl shadow-2xl max-w-3xl w-full">
+                                            <h2 className="text-3xl font-black text-white text-center mb-1">
+                                                {context.winner ? (context.winner === playerId ? '라운드 승리' : '라운드 패배') : '유국 (DRAW)'}
+                                            </h2>
+                                            <p className="text-center text-slate-300 mb-2">
+                                                다음 라운드로 진행하려면 양쪽 확인이 필요합니다.
+                                            </p>
+
+                                            {/* 화료 점수 요약 배너 */}
+                                            {winResult && context.winner && (
+                                                <div className="mb-4 rounded-xl border border-yellow-500/50 bg-yellow-900/20 px-4 py-3 text-center">
+                                                    <div className="text-xs text-yellow-400 mb-1 font-semibold tracking-wide">화료 점수</div>
+                                                    <div className="flex items-center justify-center gap-3 flex-wrap">
+                                                        <span className="text-2xl font-black text-yellow-300">{winResult.points.toLocaleString()}점</span>
+                                                        <span className="text-sm text-slate-300">{winResult.han}판 {winResult.fu}부</span>
+                                                        {winResult.limit && (
+                                                            <span className="px-2 py-0.5 rounded bg-red-600 text-white text-xs font-bold">{toKoreanLimit(winResult.limit)}</span>
+                                                        )}
+                                                    </div>
+                                                    {winResult.yaku.length > 0 && (
+                                                        <div className="mt-1 flex flex-wrap gap-1 justify-center">
+                                                            {winResult.yaku.map((y: string) => (
+                                                                <span key={y} className="px-2 py-0.5 rounded-full bg-slate-700 text-slate-200 text-[11px] border border-slate-600">{toKoreanYaku(y)}</span>
+                                                            ))}
+                                                        </div>
                                                     )}
                                                 </div>
-                                                {winResult.yaku.length > 0 && (
-                                                    <div className="mt-1 flex flex-wrap gap-1 justify-center">
-                                                        {winResult.yaku.map((y: string) => (
-                                                            <span key={y} className="px-2 py-0.5 rounded-full bg-slate-700 text-slate-200 text-[11px] border border-slate-600">{toKoreanYaku(y)}</span>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
+                                            )}
 
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                            {roundEndSummaries.map((summary) => {
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                {roundEndSummaries.map((summary) => {
                                                 // 이 플레이어가 론 승자인지 여부
                                                 const isRonWinner = context.winner === summary.playerId && ronTile !== null;
                                                 // 이 플레이어가 론패를 버린 패자인지 여부
@@ -2521,33 +2522,33 @@ export default function App() {
                                                         )}
                                                     </div>
                                                 );
-                                            })}
-                                        </div>
+                                                })}
+                                            </div>
 
-                                        <div className="mt-5 flex justify-center gap-3">
-                                            <button
-                                                onClick={() => setShowRoundEndOverlay(false)}
-                                                disabled={myRoundEndConfirmed}
-                                                className={`px-6 py-2 rounded font-bold ${myRoundEndConfirmed ? 'bg-slate-600 text-slate-300 cursor-not-allowed' : 'bg-slate-700 hover:bg-slate-600 text-white'}`}
-                                            >
-                                                게임판 보기
-                                            </button>
-                                            <button
-                                                onClick={onConfirmRoundEnd}
-                                                disabled={myRoundEndConfirmed}
-                                                className={`px-6 py-2 rounded font-bold ${myRoundEndConfirmed ? 'bg-slate-600 text-slate-300 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-500 text-white'}`}
-                                            >
-                                                {myRoundEndConfirmed
-                                                    ? '확인 완료'
-                                                    : context.round < RULES.match.handsPerMatch
-                                                        ? '계속하기'
-                                                        : '게임 종료'}
-                                            </button>
+                                            <div className="mt-5 flex justify-center gap-3">
+                                                <button
+                                                    onClick={() => setShowRoundEndOverlay(false)}
+                                                    disabled={myRoundEndConfirmed}
+                                                    className={`px-6 py-2 rounded font-bold ${myRoundEndConfirmed ? 'bg-slate-600 text-slate-300 cursor-not-allowed' : 'bg-slate-700 hover:bg-slate-600 text-white'}`}
+                                                >
+                                                    게임판 보기
+                                                </button>
+                                                <button
+                                                    onClick={onConfirmRoundEnd}
+                                                    disabled={myRoundEndConfirmed}
+                                                    className={`px-6 py-2 rounded font-bold ${myRoundEndConfirmed ? 'bg-slate-600 text-slate-300 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-500 text-white'}`}
+                                                >
+                                                    {myRoundEndConfirmed
+                                                        ? '확인 완료'
+                                                        : context.round < RULES.match.handsPerMatch
+                                                            ? '계속하기'
+                                                            : '게임 종료'}
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
-                            );
-                        })()}
+                                );
+                            })()}
 
                         {isMatchEnd && (() => {
                             const ronTile = context.winner && context.lastDiscard ? context.lastDiscard.tile : null;
@@ -2672,7 +2673,8 @@ export default function App() {
                                 </div>
                             );
                         })()}
-                    </GameBoard>
+                        </GameBoard>
+                    </div>
                 )}
             </div>
         </TileSkinProvider>
