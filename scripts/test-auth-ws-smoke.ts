@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import WebSocket from 'ws';
 
-const apiBase = process.env.SMOKE_API_BASE?.trim() || 'http://127.0.0.1:3101';
-const wsBase = process.env.SMOKE_WS_BASE?.trim() || 'ws://127.0.0.1:3101/ws';
-const expectedRuleset = process.env.SMOKE_RULESET?.trim() || 'ten_attack_defense';
+const expectedRuleset = normalizeRuleset(process.env.SMOKE_RULESET?.trim() || 'classic');
+const apiBase = process.env.SMOKE_API_BASE?.trim() || defaultApiBaseForRuleset(expectedRuleset);
+const wsBase = process.env.SMOKE_WS_BASE?.trim() || defaultWsBaseForRuleset(expectedRuleset);
 const joinDelayMs = parseNumberEnv('SMOKE_JOIN_DELAY_MS', 0);
 const timeoutMs = parseNumberEnv('SMOKE_TIMEOUT_MS', 15000);
 
@@ -118,6 +118,7 @@ async function runSmokeOverWebSocket(input: {
             const value = payload.state.value;
             const context = payload.state.context;
             const players = Array.isArray(context.players) ? context.players : [];
+            const step = typeof context.step === 'string' ? context.step : null;
 
             if (!sawJoinUpdate && value === 'idle' && players.includes(input.playerId)) {
                 sawJoinUpdate = true;
@@ -130,7 +131,7 @@ async function runSmokeOverWebSocket(input: {
                 return;
             }
 
-            if (value === 'doraSelect' && context.dealer === input.playerId && !selectedDora) {
+            if (expectedRuleset === 'classic' && value === 'doraSelect' && context.dealer === input.playerId && !selectedDora) {
                 const firstWallTileId = context.wall?.[0]?.id;
                 assert.ok(firstWallTileId, 'dealer should receive masked wall tile id for dora selection');
                 selectedDora = true;
@@ -138,8 +139,20 @@ async function runSmokeOverWebSocket(input: {
                 return;
             }
 
-            if (value === 'handBuild') {
+            if (expectedRuleset === 'classic' && value === 'handBuild') {
                 assert.ok(sawJoinUpdate, 'should receive UPDATE after JOIN before reaching handBuild');
+                assert.equal(context.ruleset, expectedRuleset, 'match ruleset should match the target ruleset');
+                clearTimeout(timeout);
+                ws.close();
+                resolve();
+                return;
+            }
+
+            if (
+                expectedRuleset !== 'classic' &&
+                (step === 'ten_a_turn' || (typeof value === 'object' && value !== null && 'tenDeclaration' in value))
+            ) {
+                assert.ok(sawJoinUpdate, 'should receive UPDATE after JOIN before reaching ten declaration');
                 assert.equal(context.ruleset, expectedRuleset, 'match ruleset should match the target ruleset');
                 clearTimeout(timeout);
                 ws.close();
@@ -166,6 +179,21 @@ async function runSmokeOverWebSocket(input: {
         expectedRuleset,
         joinDelayMs
     }));
+}
+
+function normalizeRuleset(value: string): 'classic' | 'ten_attack_defense' | 'ten_attack_defense_easy' {
+    if (value === 'ten_attack_defense' || value === 'ten_attack_defense_easy') {
+        return value;
+    }
+    return 'classic';
+}
+
+function defaultApiBaseForRuleset(ruleset: 'classic' | 'ten_attack_defense' | 'ten_attack_defense_easy'): string {
+    return ruleset === 'classic' ? 'http://127.0.0.1:3001' : 'http://127.0.0.1:3002';
+}
+
+function defaultWsBaseForRuleset(ruleset: 'classic' | 'ten_attack_defense' | 'ten_attack_defense_easy'): string {
+    return ruleset === 'classic' ? 'ws://127.0.0.1:3001/ws' : 'ws://127.0.0.1:3002/ws';
 }
 
 async function requestJson<T>(url: string, init: RequestInit): Promise<T> {

@@ -77,3 +77,14 @@ Deployment defaults (PostgreSQL):
   - `CLASSIC_PORT`
   - `TEN_PORT`
   - `WEB_PORT`
+
+## Authenticated WS smoke
+
+- `pnpm test:auth-ws:smoke`
+  - Defaults to the classic local server at `http://127.0.0.1:3001`.
+- Override target ruleset without changing the script:
+  - `SMOKE_RULESET=ten_attack_defense pnpm test:auth-ws:smoke`
+  - `SMOKE_RULESET=ten_attack_defense_easy pnpm test:auth-ws:smoke`
+- Optional endpoint overrides:
+  - `SMOKE_API_BASE`
+  - `SMOKE_WS_BASE`

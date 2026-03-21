@@ -1,10 +1,11 @@
 import { assign, setup } from 'xstate';
-import { calculateScore, calculateShanten } from '@step13/scoring';
+import { calculateShanten } from '@step13/scoring';
 import { Tile } from '@step13/proto';
 import { GameContext, GameEvents } from './messages';
 import { RULES } from './rules';
 import { createEngineForRuleset, RulesetName } from './engine/rulesets';
 import { GameEngine } from './engine/types';
+import { evaluateTenpaiDeclaration } from './tenpaiDeclaration';
 
 function createInitialContext(ruleset: RulesetName = 'classic'): GameContext {
     return {
@@ -283,28 +284,14 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                 if (context.ruleset === 'ten_attack_defense_easy' && event.withRiichi) {
                     return false;
                 }
-                const { hand } = buildDeclaredTenpaiHand(context, event.playerId, event.tileId);
-                if (hand.length !== RULES.ten.initialHandSize) {
-                    return false;
-                }
-                const waits = getWinningWaitKeys(hand);
-                if (waits.length === 0) {
-                    return false;
-                }
-                const discardKeys = new Set((context.discards[event.playerId] ?? []).map((tile) => toTileKey(tile)));
-                if (waits.some((key) => discardKeys.has(key))) {
-                    return false;
-                }
-                const hasYakuWait = waits.some((key) => {
-                    const [suit, rankRaw] = key.split('-');
-                    const waitTile: Tile = { suit: suit as Tile['suit'], rank: Number(rankRaw) as Tile['rank'], isRed: false };
-                    const score = calculateScore(hand, waitTile, false, context.doraIndicators, {
-                        seatWind: context.seatMap[event.playerId] === 'EAST' ? 'EAST' : 'WEST',
-                        roundWind: 'EAST'
-                    });
-                    return score.points > 0 && score.yaku.length > 0;
-                });
-                return hasYakuWait;
+                return evaluateTenpaiDeclaration({
+                    turnTiles: getTenTurnTiles(context, event.playerId),
+                    discardedTiles: context.discards[event.playerId] ?? [],
+                    doraIndicators: context.doraIndicators,
+                    ruleset: context.ruleset,
+                    seatWind: context.seatMap[event.playerId] ?? 'WEST',
+                    tileId: event.tileId
+                }).declareable;
             },
             canDefenderGuess: ({ context, event }) => {
                 if (event.type !== 'DEFENDER_GUESS') {

@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Tile } from '@step13/proto';
-import { GameContext } from '@step13/core';
-import { calculateShanten } from '@step13/scoring';
+import {
+    GameContext,
+    listTenpaiDeclarationCandidates,
+    type TenpaiDeclarationCandidate,
+    type TenpaiDeclarationRejectReason
+} from '@step13/core';
 import { Tile as TileView } from './Tile';
 
 type Props = {
@@ -29,17 +33,6 @@ function buildTileCatalog() {
 
 const TILE_CATALOG = buildTileCatalog();
 
-function computeWaitPreview(hand: Tile[]): string[] {
-    if (hand.length !== 13) return [];
-    const waits: string[] = [];
-    TILE_CATALOG.forEach(({ tile, key }) => {
-        if (calculateShanten([...hand, tile]) === -1) {
-            waits.push(key);
-        }
-    });
-    return waits;
-}
-
 function formatTileKey(tileKey: string | null): string {
     if (!tileKey) return '-';
     const [suit, rank] = tileKey.split('-');
@@ -52,16 +45,21 @@ function findCatalogEntry(tileKey: string | null) {
     return TILE_CATALOG.find((entry) => entry.key === tileKey) ?? null;
 }
 
-function computeDeclarationCandidates(turnTiles: Tile[]) {
-    return turnTiles
-        .map((tile) => {
-            const remaining = turnTiles.filter((entry) => entry.id !== tile.id);
-            return {
-                tile,
-                waits: computeWaitPreview(remaining)
-            };
-        })
-        .filter((entry) => entry.waits.length > 0);
+function formatRejectReason(reason: TenpaiDeclarationRejectReason | null): string {
+    switch (reason) {
+        case 'furiten':
+            return '후리텐으로 선언할 수 없습니다.';
+        case 'no_yaku_wait':
+            return '유효한 역이 있는 대기만 선언할 수 있습니다.';
+        case 'not_tenpai':
+            return '선택한 패를 버리면 텐파이가 아닙니다.';
+        case 'invalid_hand':
+            return '선언에 필요한 13장 구성이 아닙니다.';
+        case 'missing_tile':
+            return '선택한 패를 찾지 못했습니다.';
+        default:
+            return '선언 가능한 패를 선택하세요.';
+    }
 }
 
 export function AttackDefensePanels({ context, playerId, onDeclareTenpai, onGuess, onKan, onKanPass }: Props) {
@@ -88,11 +86,17 @@ export function AttackDefensePanels({ context, playerId, onDeclareTenpai, onGues
         ...(context.hands[playerId] ?? []),
         ...(context.attackDefense.pendingDrawTile ? [context.attackDefense.pendingDrawTile] : [])
     ];
-    const declarationCandidates = computeDeclarationCandidates(turnTiles);
+    const declarationCandidates: TenpaiDeclarationCandidate[] = listTenpaiDeclarationCandidates({
+        turnTiles,
+        discardedTiles: context.discards[playerId] ?? [],
+        doraIndicators: context.doraIndicators ?? [],
+        ruleset: context.ruleset,
+        seatWind: context.seatMap[playerId] ?? 'WEST'
+    });
     const [selectedGuess, setSelectedGuess] = useState<string | null>(null);
     const [selectedDeclarationTileId, setSelectedDeclarationTileId] = useState<string | null>(null);
     const selectedGuessEntry = findCatalogEntry(selectedGuess);
-    const selectedDeclaration = declarationCandidates.find((entry) => entry.tile.id === selectedDeclarationTileId) ?? null;
+    const selectedDeclaration = declarationCandidates.find((entry: TenpaiDeclarationCandidate) => entry.tile.id === selectedDeclarationTileId) ?? null;
     const lastGuessEntry = findCatalogEntry(context.attackDefense.lastGuessTileKey);
     const showGuessFeedback = stage === 'B_GUESS'
         && context.attackDefense.lastGuessResult !== 'idle'
@@ -109,8 +113,9 @@ export function AttackDefensePanels({ context, playerId, onDeclareTenpai, onGues
             setSelectedDeclarationTileId(null);
             return;
         }
-        if (!declarationCandidates.some((entry) => entry.tile.id === selectedDeclarationTileId)) {
-            setSelectedDeclarationTileId(declarationCandidates[0]?.tile.id ?? null);
+        if (!declarationCandidates.some((entry: TenpaiDeclarationCandidate) => entry.tile.id === selectedDeclarationTileId)) {
+            const firstDeclareable = declarationCandidates.find((entry: TenpaiDeclarationCandidate) => entry.declareable);
+            setSelectedDeclarationTileId((firstDeclareable ?? declarationCandidates[0])?.tile.id ?? null);
         }
     }, [stage, declarationCandidates, selectedDeclarationTileId]);
 
@@ -151,20 +156,25 @@ export function AttackDefensePanels({ context, playerId, onDeclareTenpai, onGues
             </div>
 
             {stage === 'A' && isMyTurn && (
-                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-40 w-[min(960px,calc(100%-1.5rem))] rounded-3xl border border-cyan-500/30 bg-slate-950/92 p-4 shadow-2xl">
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-50 w-[min(960px,calc(100%-1.5rem))] max-h-[75vh] flex flex-col rounded-3xl border border-cyan-500/40 bg-slate-950/98 backdrop-blur-xl p-4 shadow-[0_0_50px_rgba(0,0,0,0.8)] overflow-y-auto thin-scrollbar">
                     <div className="flex flex-col gap-4">
                         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                             <div>
                                 <div className="text-xs font-bold tracking-[0.2em] text-cyan-200">STAGE A</div>
                                 <div className="mt-1 text-sm text-slate-300">쯔모 후 버릴 패를 골라 선언 여부를 정합니다.</div>
                                 <div className="mt-2 text-xs text-cyan-200">
-                                    선택 대기패: {selectedDeclaration ? selectedDeclaration.waits.map((wait) => formatTileKey(wait)).join(', ') : '-'}
+                                    선택 대기패: {selectedDeclaration ? selectedDeclaration.waits.map((wait: string) => formatTileKey(wait)).join(', ') : '-'}
+                                </div>
+                                <div className="mt-2 text-xs text-slate-400">
+                                    {selectedDeclaration?.declareable
+                                        ? '현재 선택한 패는 서버 규칙 기준으로 선언 가능합니다.'
+                                        : formatRejectReason(selectedDeclaration?.rejectReason ?? null)}
                                 </div>
                             </div>
                             <div className="flex flex-wrap items-center gap-2 lg:justify-end">
                                 <button
                                     onClick={() => selectedDeclarationTileId && onDeclareTenpai(false, selectedDeclarationTileId)}
-                                    disabled={!selectedDeclarationTileId}
+                                    disabled={!selectedDeclaration?.declareable}
                                     className="px-4 py-2 rounded-2xl bg-cyan-600 font-semibold shadow-lg disabled:opacity-50"
                                 >
                                     텐파이 선언
@@ -172,7 +182,7 @@ export function AttackDefensePanels({ context, playerId, onDeclareTenpai, onGues
                                 {!isEasy && (
                                     <button
                                         onClick={() => selectedDeclarationTileId && onDeclareTenpai(true, selectedDeclarationTileId)}
-                                        disabled={!selectedDeclarationTileId}
+                                        disabled={!selectedDeclaration?.declareable}
                                         className="px-4 py-2 rounded-2xl bg-amber-500 text-slate-950 font-black shadow-lg disabled:opacity-50"
                                     >
                                         리치
@@ -180,26 +190,31 @@ export function AttackDefensePanels({ context, playerId, onDeclareTenpai, onGues
                                 )}
                             </div>
                         </div>
-                        <div className="grid grid-cols-7 gap-2 rounded-3xl border border-cyan-400/20 bg-cyan-500/10 p-3 md:grid-cols-10 lg:grid-cols-14">
+                        <div className="flex flex-wrap justify-center gap-2 rounded-3xl border border-cyan-400/20 bg-slate-900/60 p-4">
                             {turnTiles.map((tile) => {
                                 const selected = selectedDeclarationTileId === tile.id;
-                                const declareable = declarationCandidates.some((entry) => entry.tile.id === tile.id);
+                                const candidate = declarationCandidates.find((entry: TenpaiDeclarationCandidate) => entry.tile.id === tile.id) ?? null;
+                                const declareable = Boolean(candidate?.declareable);
                                 return (
                                     <button
                                         key={tile.id}
-                                        onClick={() => declareable && setSelectedDeclarationTileId(tile.id ?? null)}
-                                        className={`rounded-2xl border p-1.5 transition ${selected ? 'ring-2 ring-amber-300 border-amber-300 bg-amber-500/10' : ''} ${declareable ? 'border-cyan-500/50 bg-slate-900/90 hover:bg-slate-800' : 'border-slate-700 opacity-40 bg-slate-900/80'}`}
+                                        onClick={() => setSelectedDeclarationTileId(tile.id ?? null)}
+                                        className={`relative rounded-2xl border p-1.5 transition-all transform hover:scale-105 active:scale-95 flex flex-col items-center flex-shrink-0 ${
+                                            selected ? 'ring-2 ring-amber-300 border-amber-300 bg-amber-500/20 translate-y-[-2px]' : ''
+                                        } ${
+                                            declareable ? 'border-cyan-500/50 bg-slate-800' : 'border-slate-700 bg-slate-800/50 opacity-60'
+                                        }`}
                                     >
                                         <TileView tile={tile} disabled={true} />
-                                        <div className={`mt-1 text-[10px] font-bold ${declareable ? 'text-cyan-100' : 'text-slate-500'}`}>
-                                            {declareable ? '선언 가능' : '기리 전용'}
+                                        <div className={`mt-2 text-[10px] font-bold tracking-tight px-1 ${declareable ? 'text-cyan-200' : 'text-slate-400'}`}>
+                                            {declareable ? '선언 가능' : '선언 불가'}
                                         </div>
                                     </button>
                                 );
                             })}
                         </div>
                         <div className="text-xs text-slate-300">
-                            선언 버튼은 선택한 패를 버린 뒤 13장이 텐파이가 되는 경우에만 활성 상태로 유지됩니다.
+                            선언 버튼은 텐파이, 후리텐, 유효 역 여부까지 서버 규칙과 동일한 기준으로 활성화됩니다.
                         </div>
                     </div>
                 </div>

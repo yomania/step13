@@ -4,7 +4,8 @@ import { createActor } from 'xstate';
 import {
     createEngineForRuleset,
     createGameMachine,
-    gameMachine
+    gameMachine,
+    RULES
 } from '@step13/core';
 import { calculateScore } from '@step13/scoring';
 import { GameRoom } from '../apps/server/src/GameRoom';
@@ -74,6 +75,24 @@ function roomSnapshot(room: GameRoom) {
     return (room as any).machine.getSnapshot();
 }
 
+function makeTenpaiHandForFiveMan(prefix: string): Tile[] {
+    return [
+        { suit: 'man', rank: 1, isRed: false, id: `${prefix}-m1a` },
+        { suit: 'man', rank: 1, isRed: false, id: `${prefix}-m1b` },
+        { suit: 'man', rank: 1, isRed: false, id: `${prefix}-m1c` },
+        { suit: 'man', rank: 2, isRed: false, id: `${prefix}-m2a` },
+        { suit: 'man', rank: 2, isRed: false, id: `${prefix}-m2b` },
+        { suit: 'man', rank: 2, isRed: false, id: `${prefix}-m2c` },
+        { suit: 'man', rank: 3, isRed: false, id: `${prefix}-m3a` },
+        { suit: 'man', rank: 3, isRed: false, id: `${prefix}-m3b` },
+        { suit: 'man', rank: 3, isRed: false, id: `${prefix}-m3c` },
+        { suit: 'man', rank: 4, isRed: false, id: `${prefix}-m4a` },
+        { suit: 'man', rank: 4, isRed: false, id: `${prefix}-m4b` },
+        { suit: 'man', rank: 4, isRed: false, id: `${prefix}-m4c` },
+        { suit: 'man', rank: 5, isRed: false, id: `${prefix}-m5w` }
+    ];
+}
+
 function withSeededRandom<T>(seed: number, fn: () => T): T {
     const originalRandom = Math.random;
     let state = seed >>> 0;
@@ -130,6 +149,13 @@ async function advanceToHandBuildWithSelectedDora(actor: any) {
     assert.ok(dealer && tileId, 'dealer and dora tile should exist');
     actor.send({ type: 'SELECT_DORA', playerId: dealer, tileId });
     await waitUntil('handBuild', () => actor.getSnapshot().value === 'handBuild', 5000);
+}
+
+async function advanceToTenTurn(actor: any) {
+    await waitUntil('ten declaration turn', () => {
+        const value = actor.getSnapshot().value;
+        return typeof value === 'object' && value.tenDeclaration === 'turn';
+    }, 5000);
 }
 
 async function advanceToRoundEndByDiscards(actor: any, maxSteps = 120) {
@@ -807,6 +833,83 @@ async function testRoomRegistryRulesetMetadata() {
     assert.equal(roomMeta.ruleset, 'ten_attack_defense_easy', 'room meta should expose ruleset');
 }
 
+async function testTenCorrectGuessWin() {
+    const actor = createActor(createGameMachine({ ruleset: 'ten_attack_defense' }));
+    actor.start();
+    actor.send({ type: 'JOIN', playerId: 'p1' });
+    actor.send({ type: 'JOIN', playerId: 'p2' });
+    actor.send({ type: 'START_MATCH', seed: 42 });
+    await advanceToTenTurn(actor as any);
+
+    const attacker = actor.getSnapshot().context.currentTurn!;
+    actor.getSnapshot().context.hands[attacker] = makeTenpaiHandForFiveMan('ten-correct');
+    actor.getSnapshot().context.attackDefense.pendingDrawTile = { suit: 'sou', rank: 9, isRed: false, id: 'ten-correct-draw' };
+    actor.send({ type: 'DECLARE_TENPAI', playerId: attacker, tileId: 'ten-correct-draw', withRiichi: true });
+
+    const defender = actor.getSnapshot().context.attackDefense.defender!;
+    actor.send({ type: 'DEFENDER_GUESS', playerId: defender, tileKey: 'man-5' });
+
+    const snapshot = actor.getSnapshot();
+    assert.equal(snapshot.value, 'roundEnd');
+    assert.equal(snapshot.context.winner, defender);
+    assert.equal(snapshot.context.step, 'ten_round_end');
+}
+
+async function testTenFailedGuessesEnterAssault() {
+    const actor = createActor(createGameMachine({ ruleset: 'ten_attack_defense' }));
+    actor.start();
+    actor.send({ type: 'JOIN', playerId: 'p1' });
+    actor.send({ type: 'JOIN', playerId: 'p2' });
+    actor.send({ type: 'START_MATCH', seed: 77 });
+    await advanceToTenTurn(actor as any);
+
+    const attacker = actor.getSnapshot().context.currentTurn!;
+    actor.getSnapshot().context.hands[attacker] = makeTenpaiHandForFiveMan('ten-assault');
+    actor.getSnapshot().context.attackDefense.pendingDrawTile = { suit: 'sou', rank: 9, isRed: false, id: 'ten-assault-draw' };
+    actor.send({ type: 'DECLARE_TENPAI', playerId: attacker, tileId: 'ten-assault-draw', withRiichi: true });
+
+    const defender = actor.getSnapshot().context.attackDefense.defender!;
+    actor.send({ type: 'DEFENDER_GUESS', playerId: defender, tileKey: 'pin-9' });
+    actor.send({ type: 'DEFENDER_GUESS', playerId: defender, tileKey: 'sou-8' });
+
+    let snapshot = actor.getSnapshot();
+    assert.deepEqual(snapshot.value, { tenAssault: 'turn' });
+    assert.equal(snapshot.context.attackDefense.stage, 'B_ASSAULT');
+    assert.equal(snapshot.context.attackDefense.assaultRemaining, RULES.ten.assaultTurns);
+    assert.ok(snapshot.context.attackDefense.pendingDrawTile, 'attacker should draw into assault turn');
+
+    const assaultTileId = snapshot.context.attackDefense.pendingDrawTile?.id;
+    assert.ok(assaultTileId, 'assault draw tile should exist');
+    actor.send({ type: 'DISCARD', playerId: attacker, tileId: assaultTileId });
+    snapshot = actor.getSnapshot();
+    assert.equal(snapshot.context.attackDefense.assaultRemaining, RULES.ten.assaultTurns - 1);
+    assert.ok(snapshot.context.attackDefense.pendingDrawTile, 'next assault draw should be ready immediately');
+    assert.notEqual(snapshot.context.attackDefense.pendingDrawTile?.id, assaultTileId);
+}
+
+async function testTenEasyRiichiRejectAndTimeout() {
+    const actor = createActor(createGameMachine({ ruleset: 'ten_attack_defense_easy' }));
+    actor.start();
+    actor.send({ type: 'JOIN', playerId: 'p1' });
+    actor.send({ type: 'JOIN', playerId: 'p2' });
+    actor.send({ type: 'START_MATCH', seed: 91 });
+    await advanceToTenTurn(actor as any);
+
+    const current = actor.getSnapshot().context.currentTurn!;
+    actor.getSnapshot().context.hands[current] = makeTenpaiHandForFiveMan('ten-easy');
+    actor.getSnapshot().context.attackDefense.pendingDrawTile = { suit: 'sou', rank: 9, isRed: false, id: 'ten-easy-draw' };
+    actor.send({ type: 'DECLARE_TENPAI', playerId: current, tileId: 'ten-easy-draw', withRiichi: true });
+
+    let snapshot = actor.getSnapshot();
+    assert.deepEqual(snapshot.value, { tenDeclaration: 'turn' });
+    assert.equal(snapshot.context.attackDefense.stage, 'A');
+
+    await tick(RULES.timers.turnTimeMs + RULES.timers.timeBankMs + 10);
+    snapshot = actor.getSnapshot();
+    assert.equal(snapshot.context.discards[current]?.length, 1, 'timeout should force a discard in easy mode');
+    assert.notEqual(snapshot.context.currentTurn, current, 'turn should advance after timeout discard');
+}
+
 async function run() {
     // 사용자 요청 순서에 맞춘 체크리스트
     const tests: Array<[string, () => Promise<void>]> = [
@@ -823,7 +926,10 @@ async function run() {
         ['같은 시드 난이도 비교 (EASY/MEDIUM/HARD)', testSameSeedDifficultyComparison],
         ['분석 API(queryId) 격리 및 응답 필드 검증', testAnalysisQueryIsolation],
         ['LEAVE 후 재JOIN 시 QUERY_PERSONAS 정상 응답', testPersonaQueryAfterLeaveAndRejoin],
-        ['룸 메타데이터 ruleset 유지', testRoomRegistryRulesetMetadata]
+        ['룸 메타데이터 ruleset 유지', testRoomRegistryRulesetMetadata],
+        ['ten normal: 선언 후 정답 추측 시 수비 승리', testTenCorrectGuessWin],
+        ['ten normal: 오답 2회 후 assault 진입', testTenFailedGuessesEnterAssault],
+        ['ten easy: 리치 거부 및 timeout 강제 기리', testTenEasyRiichiRejectAndTimeout]
     ];
 
     for (const [name, test] of tests) {

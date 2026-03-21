@@ -461,7 +461,7 @@ export class GameRoom {
 
     private handleSnapshotLifecycle(snapshot: SnapshotFrom<MachineLogic>) {
         const currentValue = snapshot.value;
-        if (isStateValue(currentValue, 'matchStart') && !isStateValue(this.previousSnapshotValue, 'matchStart')) {
+        if (isMatchStartValue(currentValue) && !isMatchStartValue(this.previousSnapshotValue)) {
             if (this.baselineScoresByPlayer.size === 0) {
                 const scores = snapshot.context.scores ?? {};
                 Object.keys(scores).forEach((playerId) => {
@@ -548,4 +548,8 @@ function isStateValue(value: unknown, expected: string): boolean {
         return Object.prototype.hasOwnProperty.call(value, expected);
     }
     return false;
+}
+
+function isMatchStartValue(value: unknown): boolean {
+    return isStateValue(value, 'matchStart') || isStateValue(value, 'tenMatchStart');
 }

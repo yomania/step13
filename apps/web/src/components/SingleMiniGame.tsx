@@ -1,6 +1,7 @@
 import { Tile } from '@step13/proto';
 import { HandBuilder } from './HandBuilder';
 import { Tile as TileView } from './Tile';
+import { appendBoundedHistory, extractMatchedMiniGameResult, isMiniGamePrefetchReady } from '../lib/miniGameState';
 
 type MiniRound = {
     dealtTiles: Tile[];
@@ -409,22 +410,18 @@ export function SingleMiniGame({ onExit, queryAnalysis, analysisResult, debugMod
     useEffect(() => {
         if (!analysisResult) return;
 
-        if (analysisResult.type === 'ANALYSIS_RESULT' && analysisResult.candidates && !result) {
+        if (isMiniGamePrefetchReady(analysisResult, Boolean(result))) {
             setIsPreloading(false);
             setAiPrefetchDone(true);
         }
 
-        if (
-            analysisResult.type === 'ANALYSIS_RESULT' &&
-            analysisResult.miniResult &&
-            analysisResult.queryId === pendingQueryId
-        ) {
-            const miniResult = analysisResult.miniResult;
+        const miniResult = extractMatchedMiniGameResult<MiniResult>(analysisResult, pendingQueryId);
+        if (miniResult) {
 
             // Re-generate description if needed, or use the one from server
             const description = miniResult.description || buildDescription(
-                miniResult.player,
-                miniResult.ai,
+                { han: miniResult.player.han, waits: miniResult.player.waits.length, points: miniResult.player.points },
+                { han: miniResult.ai.han, waits: miniResult.ai.waits.length, points: miniResult.ai.points },
                 miniResult.rate
             );
 
@@ -439,7 +436,7 @@ export function SingleMiniGame({ onExit, queryAnalysis, analysisResult, debugMod
                 result: updatedResult
             };
             setHistory((prev) => {
-                const next = [entry, ...prev].slice(0, 30);
+                const next = appendBoundedHistory(prev, entry, 30);
                 writeMiniHistory(next);
                 return next;
             });

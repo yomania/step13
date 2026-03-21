@@ -5,3 +5,4 @@ export * from './rules';
 export * from './engine/defaultEngine';
 export * from './engine/types';
 export * from './engine/rulesets';
+export * from './tenpaiDeclaration';
