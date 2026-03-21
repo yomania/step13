@@ -6,10 +6,11 @@ import { DiscardPile } from './DiscardPile';
 interface GameBoardProps {
     context: GameContext;
     myPlayerId: PlayerId;
+    onLeave?: () => void;
     children?: ReactNode;
 }
 
-export function GameBoard({ context, myPlayerId, children }: GameBoardProps) {
+export function GameBoard({ context, myPlayerId, onLeave, children }: GameBoardProps) {
     const players = context.players;
     const otherPlayerId = players.find((p: PlayerId) => p !== myPlayerId);
     const myTimeBankMs = context.timeBankRemainingMs?.[myPlayerId] ?? 0;
@@ -103,6 +104,14 @@ export function GameBoard({ context, myPlayerId, children }: GameBoardProps) {
                             }`}>
                             {context.ruleset === 'ten_attack_defense_easy' ? 'EASY' : 'TEN'}
                         </span>
+                    )}
+                    {onLeave && (
+                        <button
+                            onClick={onLeave}
+                            className="ml-2 px-3 py-1 bg-rose-600 hover:bg-rose-500 rounded-lg text-xs font-bold text-white shadow-md transition-colors"
+                        >
+                            포기/나가기
+                        </button>
                     )}
                 </div>
                 <div className="flex flex-wrap gap-1 sm:gap-2 items-center text-xs sm:text-base">

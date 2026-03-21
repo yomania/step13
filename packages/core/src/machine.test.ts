@@ -593,6 +593,37 @@ describe('gameMachine full cycle and edge cases', () => {
 });
 
 describe('ten_attack_defense ruleset', () => {
+    it('allows Stage A manual discard of a selected hand tile after draw', { timeout: 20000 }, async () => {
+        vi.useFakeTimers();
+        const actor = createActor(createGameMachine({ ruleset: 'ten_attack_defense' }));
+        actor.start();
+        actor.send({ type: 'JOIN', playerId: 'p1' });
+        actor.send({ type: 'JOIN', playerId: 'p2' });
+        actor.send({ type: 'START_MATCH', seed: 41 });
+        await reachTurnWithAutoSubmit(actor as any);
+
+        const current = actor.getSnapshot().context.currentTurn!;
+        const opponent = actor.getSnapshot().context.players.find((id) => id !== current)!;
+        const originalHand = makeTenpaiHandForFiveMan('stage-a');
+        const selectedDiscardId = originalHand[0].id!;
+        const drawnTile: Tile = { suit: 'sou', rank: 9, isRed: false, id: 'stage-a-draw' };
+        actor.getSnapshot().context.hands[current] = originalHand;
+        actor.getSnapshot().context.attackDefense.pendingDrawTile = drawnTile;
+
+        actor.send({ type: 'DISCARD', playerId: current, tileId: selectedDiscardId });
+
+        const snapshot = actor.getSnapshot();
+        expect(snapshot.value).toEqual({ tenDeclaration: 'turn' });
+        expect(snapshot.context.currentTurn).toBe(opponent);
+        expect(snapshot.context.lastDiscard?.playerId).toBe(current);
+        expect(snapshot.context.lastDiscard?.tile.id).toBe(selectedDiscardId);
+        expect(snapshot.context.discards[current]?.at(-1)?.id).toBe(selectedDiscardId);
+        expect(snapshot.context.hands[current]).toHaveLength(RULES.ten.initialHandSize);
+        expect(snapshot.context.hands[current]?.some((tile) => tile.id === selectedDiscardId)).toBe(false);
+        expect(snapshot.context.hands[current]?.some((tile) => tile.id === drawnTile.id)).toBe(true);
+        expect(snapshot.context.attackDefense.pendingDrawTile?.id).not.toBe(drawnTile.id);
+    });
+
     it('transitions to Stage B guess after valid declaration', { timeout: 20000 }, async () => {
         vi.useFakeTimers();
         const actor = createActor(createGameMachine({ ruleset: 'ten_attack_defense' }));

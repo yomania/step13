@@ -1097,15 +1097,23 @@ export default function App() {
     const onDeclareTenpai = (withRiichi: boolean, tileId: string) => {
         sendEvent({ type: 'DECLARE_TENPAI', playerId, tileId, withRiichi });
     };
+    const onDiscardSelectedTenTile = (tileId: string) => {
+        sendEvent({ type: 'DISCARD', playerId, tileId });
+    };
     const onDefenderGuess = (tileKey: string) => {
         sendEvent({ type: 'DEFENDER_GUESS', playerId, tileKey });
     };
-    const onAttackerKan = () => {
-        sendEvent({ type: 'ATTACKER_KAN', playerId });
+    const onAttackerKan = () => sendEvent({ type: 'ATTACKER_KAN', playerId });
+    const onAttackerKanPass = () => sendEvent({ type: 'ATTACKER_KAN_PASS', playerId });
+
+    const handleGiveUpAndLeave = () => {
+        if (window.confirm('정말로 게임을 포기하고 나가시겠습니까? 기권 패배로 처리됩니다.')) {
+            sendEvent({ type: 'LEAVE', playerId });
+            handleGoHome();
+        }
     };
-    const onAttackerKanPass = () => {
-        sendEvent({ type: 'ATTACKER_KAN_PASS', playerId });
-    };
+
+
 
     const onRestart = () => {
         sendEvent({ type: 'RESTART' });
@@ -2313,11 +2321,12 @@ export default function App() {
                     </div>
                 ) : (
                     // Game Loop & Match End using GameBoard
-                    <GameBoard context={context} myPlayerId={playerId}>
+                    <GameBoard context={context} myPlayerId={playerId} onLeave={handleGiveUpAndLeave}>
                         <AttackDefensePanels
                             context={context}
                             playerId={playerId}
                             onDeclareTenpai={onDeclareTenpai}
+                            onDiscardSelectedTile={onDiscardSelectedTenTile}
                             onGuess={onDefenderGuess}
                             onKan={onAttackerKan}
                             onKanPass={onAttackerKanPass}
