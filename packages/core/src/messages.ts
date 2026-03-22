@@ -1,5 +1,6 @@
 import { GamePhase, PlayerId, Tile } from '@step13/proto';
 import { ScoreResult } from '@step13/scoring';
+import type { TenGuessCandidate } from './ten-attack-defense';
 import { WindSeat } from './rules';
 
 export type GameStep =
@@ -55,6 +56,7 @@ export type GameContext = {
         guessesRemaining: number;
         failedGuesses: number;
         assaultRemaining: number;
+        guessCandidates?: TenGuessCandidate[];
         lockedWaitTileKeys: string[];
         lastGuessTileKey: string | null;
         lastGuessResult: 'idle' | 'pending' | 'failed' | 'succeeded';

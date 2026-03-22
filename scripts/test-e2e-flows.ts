@@ -887,6 +887,46 @@ async function testTenFailedGuessesEnterAssault() {
     assert.notEqual(snapshot.context.attackDefense.pendingDrawTile?.id, assaultTileId);
 }
 
+async function testTenMaskedGuessCandidatesStaySelectable() {
+    const room = new GameRoom('test-ten-guess-candidates', 'ten_attack_defense');
+    const socket1 = new MockSocket();
+    const socket2 = new MockSocket();
+    room.join('p1', socket1 as any);
+    room.join('p2', socket2 as any);
+    room.handleMessage('p1', { type: 'START_MATCH', seed: 91 });
+
+    await waitUntil('ten declaration turn in room', () => {
+        const value = roomSnapshot(room).value;
+        return typeof value === 'object' && value.tenDeclaration === 'turn';
+    }, 5000);
+
+    const attacker = roomSnapshot(room).context.currentTurn!;
+    roomSnapshot(room).context.hands[attacker] = makeTenpaiHandForFiveMan('masked-guess');
+    roomSnapshot(room).context.attackDefense.pendingDrawTile = { suit: 'sou', rank: 9, isRed: false, id: 'masked-guess-draw' };
+    room.handleMessage(attacker, { type: 'DECLARE_TENPAI', playerId: attacker, tileId: 'masked-guess-draw', withRiichi: true });
+
+    const snapshot = roomSnapshot(room);
+    const defender = snapshot.context.attackDefense.defender!;
+    const sanitized = (room as any).sanitizeState(snapshot, defender);
+    const guessCandidates = sanitized.context.attackDefense.guessCandidates;
+    const attackDiscard = snapshot.context.discards[attacker]?.at(-1);
+    const revealedIds = new Set((snapshot.context.doraIndicators ?? []).map((tile: any) => tile.id));
+
+    assert.ok(Array.isArray(guessCandidates), 'defender should receive server-derived guess candidates');
+    assert.ok(guessCandidates.some((candidate: any) => candidate.state === 'selectable'), 'at least one remaining tile should stay selectable');
+    assert.ok(
+        sanitized.context.wall.every((tile: any) => (tile.id && revealedIds.has(tile.id)) || tile.id?.startsWith('wall-')),
+        'wall should remain masked except for already revealed dora indicators'
+    );
+    assert.ok(attackDiscard, 'attacker declaration discard should exist');
+
+    const blockedCandidate = guessCandidates.find(
+        (candidate: any) => candidate.tileKey === `${attackDiscard.suit}-${attackDiscard.rank}`
+    );
+    assert.equal(blockedCandidate?.state, 'blocked_by_opponent_discard');
+    (room as any).machine.stop();
+}
+
 async function testTenEasyRiichiRejectAndTimeout() {
     const actor = createActor(createGameMachine({ ruleset: 'ten_attack_defense_easy' }));
     actor.start();
@@ -929,6 +969,7 @@ async function run() {
         ['룸 메타데이터 ruleset 유지', testRoomRegistryRulesetMetadata],
         ['ten normal: 선언 후 정답 추측 시 수비 승리', testTenCorrectGuessWin],
         ['ten normal: 오답 2회 후 assault 진입', testTenFailedGuessesEnterAssault],
+        ['ten normal: 마스킹된 wall에서도 수비 추측 후보 selectable 유지', testTenMaskedGuessCandidatesStaySelectable],
         ['ten easy: 리치 거부 및 timeout 강제 기리', testTenEasyRiichiRejectAndTimeout]
     ];
 

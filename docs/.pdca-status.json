@@ -1,16 +1,100 @@
 {
   "version": "2.0",
-  "lastUpdated": "2026-03-22T05:19:46.412Z",
+  "lastUpdated": "2026-03-22T07:47:16.172Z",
   "activeFeatures": [
-    "apps"
+    "apps",
+    "release-gate-ui-ux-qa",
+    "ten-attack-defense-rules-validation"
   ],
   "primaryFeature": "apps",
   "features": {
     "apps": {
-      "phase": "check",
+      "phase": "report",
       "matchRate": null,
       "iterationCount": 0,
       "documents": {}
+    },
+    "release-gate-ui-ux-qa": {
+      "phase": "report",
+      "matchRate": null,
+      "iterationCount": 3,
+      "documents": {},
+      "taskChain": [
+        {
+          "phase": "plan",
+          "status": "completed",
+          "createdAt": "2026-03-22T05:58:02.104Z",
+          "completedAt": "2026-03-22T06:02:21.379Z"
+        },
+        {
+          "phase": "design",
+          "status": "completed",
+          "createdAt": "2026-03-22T05:58:02.104Z",
+          "completedAt": "2026-03-22T06:09:46.160Z"
+        },
+        {
+          "phase": "do",
+          "status": "active",
+          "createdAt": "2026-03-22T05:58:02.104Z"
+        },
+        {
+          "phase": "check",
+          "status": "pending",
+          "createdAt": "2026-03-22T05:58:02.104Z"
+        },
+        {
+          "phase": "report",
+          "status": "pending",
+          "createdAt": "2026-03-22T05:58:02.104Z"
+        }
+      ],
+      "timestamps": {
+        "started": "2026-03-22T05:58:02.106Z",
+        "lastUpdated": "2026-03-22T06:47:14.546Z"
+      }
+    },
+    "ten-attack-defense-rules-validation": {
+      "phase": "completed",
+      "matchRate": null,
+      "iterationCount": 2,
+      "documents": {},
+      "taskChain": [
+        {
+          "phase": "plan",
+          "status": "completed",
+          "createdAt": "2026-03-22T07:11:25.977Z",
+          "completedAt": "2026-03-22T07:13:09.372Z"
+        },
+        {
+          "phase": "design",
+          "status": "completed",
+          "createdAt": "2026-03-22T07:11:25.977Z",
+          "completedAt": "2026-03-22T07:23:36.385Z"
+        },
+        {
+          "phase": "do",
+          "status": "completed",
+          "createdAt": "2026-03-22T07:11:25.977Z",
+          "completedAt": "2026-03-22T07:31:51.016Z"
+        },
+        {
+          "phase": "check",
+          "status": "completed",
+          "createdAt": "2026-03-22T07:11:25.977Z",
+          "completedAt": "2026-03-22T07:33:55.889Z"
+        },
+        {
+          "phase": "report",
+          "status": "completed",
+          "createdAt": "2026-03-22T07:11:25.977Z",
+          "completedAt": "2026-03-22T07:47:16.172Z"
+        }
+      ],
+      "timestamps": {
+        "started": "2026-03-22T07:11:25.978Z",
+        "lastUpdated": "2026-03-22T07:47:16.172Z"
+      },
+      "completedAt": "2026-03-22T07:47:16.168Z"
     }
   },
   "pipeline": {
@@ -21,7 +105,7 @@
   "session": {
     "startedAt": "2026-03-22T05:19:46.408Z",
     "onboardingCompleted": false,
-    "lastActivity": "2026-03-22T05:19:46.412Z"
+    "lastActivity": "2026-03-22T07:47:16.172Z"
   },
   "history": [
     {
@@ -36,6 +120,181 @@
       "phase": "do",
       "nextPhase": "check",
       "timestamp": "2026-03-22T05:19:46.412Z"
+    },
+    {
+      "feature": "apps",
+      "from": "check",
+      "to": "act",
+      "timestamp": "2026-03-22T05:36:05.722Z"
+    },
+    {
+      "feature": "apps",
+      "action": "phase_complete",
+      "phase": "check",
+      "nextPhase": "act",
+      "timestamp": "2026-03-22T05:36:05.723Z"
+    },
+    {
+      "feature": "release-gate-ui-ux-qa",
+      "from": "plan",
+      "to": "design",
+      "timestamp": "2026-03-22T06:02:21.376Z"
+    },
+    {
+      "feature": "release-gate-ui-ux-qa",
+      "action": "phase_complete",
+      "phase": "plan",
+      "nextPhase": "design",
+      "timestamp": "2026-03-22T06:02:21.378Z"
+    },
+    {
+      "feature": "release-gate-ui-ux-qa",
+      "from": "design",
+      "to": "design",
+      "timestamp": "2026-03-22T06:02:30.551Z"
+    },
+    {
+      "feature": "release-gate-ui-ux-qa",
+      "from": "design",
+      "to": "do",
+      "timestamp": "2026-03-22T06:09:46.156Z"
+    },
+    {
+      "feature": "release-gate-ui-ux-qa",
+      "action": "phase_complete",
+      "phase": "design",
+      "nextPhase": "do",
+      "timestamp": "2026-03-22T06:09:46.157Z"
+    },
+    {
+      "feature": "release-gate-ui-ux-qa",
+      "from": "check",
+      "to": "act",
+      "timestamp": "2026-03-22T06:32:59.634Z"
+    },
+    {
+      "feature": "release-gate-ui-ux-qa",
+      "action": "phase_complete",
+      "phase": "check",
+      "nextPhase": "act",
+      "timestamp": "2026-03-22T06:32:59.635Z"
+    },
+    {
+      "feature": "release-gate-ui-ux-qa",
+      "from": "check",
+      "to": "act",
+      "timestamp": "2026-03-22T06:44:49.373Z"
+    },
+    {
+      "feature": "release-gate-ui-ux-qa",
+      "action": "phase_complete",
+      "phase": "check",
+      "nextPhase": "act",
+      "timestamp": "2026-03-22T06:44:49.374Z"
+    },
+    {
+      "feature": "release-gate-ui-ux-qa",
+      "from": "check",
+      "to": "report",
+      "timestamp": "2026-03-22T06:47:14.542Z"
+    },
+    {
+      "feature": "release-gate-ui-ux-qa",
+      "action": "phase_complete",
+      "phase": "act",
+      "nextPhase": "report",
+      "timestamp": "2026-03-22T06:47:14.543Z"
+    },
+    {
+      "feature": "apps",
+      "from": "act",
+      "to": "report",
+      "timestamp": "2026-03-22T07:04:23.201Z"
+    },
+    {
+      "feature": "apps",
+      "action": "phase_complete",
+      "phase": "act",
+      "nextPhase": "report",
+      "timestamp": "2026-03-22T07:04:23.203Z"
+    },
+    {
+      "feature": "ten-attack-defense-rules-validation",
+      "from": "plan",
+      "to": "design",
+      "timestamp": "2026-03-22T07:13:09.369Z"
+    },
+    {
+      "feature": "ten-attack-defense-rules-validation",
+      "action": "phase_complete",
+      "phase": "plan",
+      "nextPhase": "design",
+      "timestamp": "2026-03-22T07:13:09.370Z"
+    },
+    {
+      "feature": "ten-attack-defense-rules-validation",
+      "from": "design",
+      "to": "design",
+      "timestamp": "2026-03-22T07:22:01.410Z"
+    },
+    {
+      "feature": "ten-attack-defense-rules-validation",
+      "from": "design",
+      "to": "do",
+      "timestamp": "2026-03-22T07:23:36.382Z"
+    },
+    {
+      "feature": "ten-attack-defense-rules-validation",
+      "action": "phase_complete",
+      "phase": "design",
+      "nextPhase": "do",
+      "timestamp": "2026-03-22T07:23:36.382Z"
+    },
+    {
+      "feature": "ten-attack-defense-rules-validation",
+      "from": "do",
+      "to": "check",
+      "timestamp": "2026-03-22T07:31:51.013Z"
+    },
+    {
+      "feature": "ten-attack-defense-rules-validation",
+      "action": "phase_complete",
+      "phase": "do",
+      "nextPhase": "check",
+      "timestamp": "2026-03-22T07:31:51.014Z"
+    },
+    {
+      "feature": "ten-attack-defense-rules-validation",
+      "from": "check",
+      "to": "act",
+      "timestamp": "2026-03-22T07:33:55.886Z"
+    },
+    {
+      "feature": "ten-attack-defense-rules-validation",
+      "action": "phase_complete",
+      "phase": "check",
+      "nextPhase": "act",
+      "timestamp": "2026-03-22T07:33:55.887Z"
+    },
+    {
+      "feature": "ten-attack-defense-rules-validation",
+      "from": "act",
+      "to": "report",
+      "timestamp": "2026-03-22T07:43:21.423Z"
+    },
+    {
+      "feature": "ten-attack-defense-rules-validation",
+      "action": "phase_complete",
+      "phase": "act",
+      "nextPhase": "report",
+      "timestamp": "2026-03-22T07:43:21.424Z"
+    },
+    {
+      "feature": "ten-attack-defense-rules-validation",
+      "action": "phase_complete",
+      "phase": "report",
+      "nextPhase": "completed",
+      "timestamp": "2026-03-22T07:47:16.169Z"
     }
   ]
 }

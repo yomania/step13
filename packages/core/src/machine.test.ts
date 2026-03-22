@@ -4,6 +4,7 @@ import { Tile } from '@step13/proto';
 import { gameMachine, createGameMachine } from './machine';
 import { RULES } from './rules';
 import { GameEngine } from './engine/types';
+import { getGuessCandidateStates } from './ten-attack-defense';
 
 async function advance(ms: number): Promise<void> {
     await vi.advanceTimersByTimeAsync(ms);
@@ -701,5 +702,130 @@ describe('ten_attack_defense ruleset', () => {
         expect(actor.getSnapshot().value).toBe('roundEnd');
         expect(actor.getSnapshot().context.winner).toBe(defender);
         expect(actor.getSnapshot().context.winResult).toBeNull();
+    });
+
+    it('blocks attacker discards from defender guess candidates', { timeout: 20000 }, async () => {
+        vi.useFakeTimers();
+        const actor = createActor(createGameMachine({ ruleset: 'ten_attack_defense' }));
+        actor.start();
+        actor.send({ type: 'JOIN', playerId: 'p1' });
+        actor.send({ type: 'JOIN', playerId: 'p2' });
+        actor.send({ type: 'START_MATCH', seed: 91 });
+        await reachTurnWithAutoSubmit(actor as any);
+
+        const attacker = actor.getSnapshot().context.currentTurn!;
+        actor.getSnapshot().context.hands[attacker] = makeTenpaiHandForFiveMan('blocked');
+        actor.getSnapshot().context.attackDefense.pendingDrawTile = { suit: 'sou', rank: 9, isRed: false, id: 'blocked-draw' };
+        actor.send({ type: 'DECLARE_TENPAI', playerId: attacker, tileId: 'blocked-draw' });
+
+        const snapshot = actor.getSnapshot();
+        const defender = snapshot.context.attackDefense.defender!;
+        const attackDiscard = snapshot.context.discards[attacker]?.at(-1);
+        expect(attackDiscard).toBeTruthy();
+
+        const blockedCandidate = getGuessCandidateStates(snapshot.context, defender).find(
+            (candidate) => candidate.tileKey === `${attackDiscard!.suit}-${attackDiscard!.rank}`
+        );
+
+        expect(blockedCandidate?.state).toBe('blocked_by_opponent_discard');
+        expect(blockedCandidate?.blockedReason).toBe('opponent_discard');
+    });
+
+    it('enters assault after the second failed guess', { timeout: 20000 }, async () => {
+        vi.useFakeTimers();
+        const actor = createActor(createGameMachine({ ruleset: 'ten_attack_defense' }));
+        actor.start();
+        actor.send({ type: 'JOIN', playerId: 'p1' });
+        actor.send({ type: 'JOIN', playerId: 'p2' });
+        actor.send({ type: 'START_MATCH', seed: 92 });
+        await reachTurnWithAutoSubmit(actor as any);
+
+        const attacker = actor.getSnapshot().context.currentTurn!;
+        actor.getSnapshot().context.hands[attacker] = makeTenpaiHandForFiveMan('assault');
+        actor.getSnapshot().context.attackDefense.pendingDrawTile = { suit: 'sou', rank: 9, isRed: false, id: 'assault-draw' };
+        actor.send({ type: 'DECLARE_TENPAI', playerId: attacker, tileId: 'assault-draw' });
+
+        const defender = actor.getSnapshot().context.attackDefense.defender!;
+        actor.send({ type: 'DEFENDER_GUESS', playerId: defender, tileKey: 'pin-1' });
+        actor.send({ type: 'DEFENDER_GUESS', playerId: defender, tileKey: 'pin-2' });
+
+        const snapshot = actor.getSnapshot();
+        expect(snapshot.context.attackDefense.stage).toBe('B_ASSAULT');
+        expect(snapshot.context.attackDefense.guessesRemaining).toBe(0);
+        expect(snapshot.context.attackDefense.assaultRemaining).toBe(RULES.ten.assaultTurns);
+        expect(snapshot.context.currentTurn).toBe(attacker);
+        expect(snapshot.context.step).toBe('ten_b_assault');
+    });
+
+    it('ends the round as draw after five assault discards without a hit', { timeout: 20000 }, async () => {
+        vi.useFakeTimers();
+        const actor = createActor(createGameMachine({ ruleset: 'ten_attack_defense' }));
+        actor.start();
+        actor.send({ type: 'JOIN', playerId: 'p1' });
+        actor.send({ type: 'JOIN', playerId: 'p2' });
+        actor.send({ type: 'START_MATCH', seed: 93 });
+        await reachTurnWithAutoSubmit(actor as any);
+
+        const attacker = actor.getSnapshot().context.currentTurn!;
+        actor.getSnapshot().context.hands[attacker] = makeTenpaiHandForFiveMan('loop');
+        actor.getSnapshot().context.attackDefense.pendingDrawTile = { suit: 'sou', rank: 9, isRed: false, id: 'loop-draw' };
+        actor.send({ type: 'DECLARE_TENPAI', playerId: attacker, tileId: 'loop-draw' });
+
+        const defender = actor.getSnapshot().context.attackDefense.defender!;
+        actor.send({ type: 'DEFENDER_GUESS', playerId: defender, tileKey: 'pin-1' });
+        actor.getSnapshot().context.wall = [
+            { suit: 'sou', rank: 1, isRed: false, id: 'assault-1' },
+            { suit: 'sou', rank: 2, isRed: false, id: 'assault-2' },
+            { suit: 'sou', rank: 3, isRed: false, id: 'assault-3' },
+            { suit: 'sou', rank: 4, isRed: false, id: 'assault-4' },
+            { suit: 'sou', rank: 6, isRed: false, id: 'assault-5' }
+        ];
+        actor.send({ type: 'DEFENDER_GUESS', playerId: defender, tileKey: 'pin-2' });
+
+        for (let index = 0; index < RULES.ten.assaultTurns; index += 1) {
+            const snapshot = actor.getSnapshot();
+            if (snapshot.value === 'roundEnd') {
+                break;
+            }
+            const pendingTile = snapshot.context.attackDefense.pendingDrawTile;
+            expect(pendingTile?.id).toBe(`assault-${index + 1}`);
+            actor.send({ type: 'DISCARD', playerId: attacker, tileId: pendingTile!.id! });
+            await advance(1);
+        }
+
+        const roundEndSnapshot = actor.getSnapshot();
+        expect(roundEndSnapshot.value).toBe('roundEnd');
+        expect(roundEndSnapshot.context.winner).toBeNull();
+        expect(roundEndSnapshot.context.attackDefense.assaultRemaining).toBe(0);
+        expect(roundEndSnapshot.context.eventLog.at(-1)).toEqual({ type: 'ROUND_END', reason: 'DRAW' });
+    });
+
+    it('ends the round immediately when the assault draw hits the locked wait', { timeout: 20000 }, async () => {
+        vi.useFakeTimers();
+        const actor = createActor(createGameMachine({ ruleset: 'ten_attack_defense' }));
+        actor.start();
+        actor.send({ type: 'JOIN', playerId: 'p1' });
+        actor.send({ type: 'JOIN', playerId: 'p2' });
+        actor.send({ type: 'START_MATCH', seed: 94 });
+        await reachTurnWithAutoSubmit(actor as any);
+
+        const attacker = actor.getSnapshot().context.currentTurn!;
+        actor.getSnapshot().context.hands[attacker] = makeTenpaiHandForFiveMan('hit');
+        actor.getSnapshot().context.attackDefense.pendingDrawTile = { suit: 'sou', rank: 9, isRed: false, id: 'hit-draw' };
+        actor.send({ type: 'DECLARE_TENPAI', playerId: attacker, tileId: 'hit-draw' });
+
+        const defender = actor.getSnapshot().context.attackDefense.defender!;
+        actor.send({ type: 'DEFENDER_GUESS', playerId: defender, tileKey: 'pin-1' });
+        actor.getSnapshot().context.wall = [
+            { suit: 'man', rank: 5, isRed: false, id: 'assault-hit' }
+        ];
+        actor.send({ type: 'DEFENDER_GUESS', playerId: defender, tileKey: 'pin-2' });
+        await advance(1);
+
+        const snapshot = actor.getSnapshot();
+        expect(snapshot.value).toBe('roundEnd');
+        expect(snapshot.context.winner).toBe(attacker);
+        expect(snapshot.context.attackDefense.pendingDrawTile).toBeNull();
+        expect(snapshot.context.eventLog.at(-1)).toEqual({ type: 'ROUND_END', reason: 'RON' });
     });
 });

@@ -6,6 +6,7 @@ import { RULES } from './rules';
 import { createEngineForRuleset, RulesetName } from './engine/rulesets';
 import { GameEngine } from './engine/types';
 import { evaluateTenpaiDeclaration } from './tenpaiDeclaration';
+import { shouldEnterAssault } from './ten-attack-defense';
 
 function createInitialContext(ruleset: RulesetName = 'classic'): GameContext {
     return {
@@ -695,7 +696,7 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                         eventLog: [...context.eventLog, event, { type: 'ROUND_END', reason: 'RON' }]
                     };
                 }
-                if (guessesRemaining === 0) {
+                if (shouldEnterAssault(guessesRemaining)) {
                     return {
                         attackDefense: {
                             ...context.attackDefense,

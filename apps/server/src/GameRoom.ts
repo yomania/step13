@@ -1,6 +1,6 @@
 
 import { createActor, SnapshotFrom } from 'xstate';
-import { createGameMachine, RulesetName } from '@step13/core';
+import { createGameMachine, getGuessCandidateStates, RulesetName } from '@step13/core';
 import { PlayerId, Tile } from '@step13/proto';
 import { WebSocket } from 'ws';
 import { Bot } from './Bot';
@@ -309,6 +309,18 @@ export class GameRoom {
         // Deep copy context to ensure we don't mutate the original state or shared references
         const context = JSON.parse(JSON.stringify(snapshot.context));
         const isRoundEnd = context.phase === 'ROUND_END' || context.phase === 'MATCH_END';
+        const attackerId = context.attackDefense?.attacker ?? null;
+        const defenderId = context.attackDefense?.defender ?? null;
+        const isAttackerView = attackerId === playerId;
+        const isDefenderView = defenderId === playerId;
+
+        if (context.attackDefense) {
+            if (context.attackDefense.stage === 'B_GUESS' && isDefenderView) {
+                context.attackDefense.guessCandidates = getGuessCandidateStates(snapshot.context, playerId);
+            } else {
+                delete context.attackDefense.guessCandidates;
+            }
+        }
 
         // 1. Mask Wall (Fog of War)
         // Reveal only tiles that are already public (in doraIndicators)
@@ -415,10 +427,6 @@ export class GameRoom {
             context.deterministicSeed = null;
         }
         if (context.attackDefense) {
-            const attackerId = context.attackDefense.attacker;
-            const defenderId = context.attackDefense.defender;
-            const isAttackerView = attackerId === playerId;
-            const isDefenderView = defenderId === playerId;
             if (!isAttackerView) {
                 context.attackDefense.lockedWaitTileKeys = [];
             }

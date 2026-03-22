@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useMachine } from '@xstate/react';
-import { gameMachine, RULES, RulesetName } from '@step13/core';
+import { gameMachine, listTenpaiDeclarationCandidates, RULES, RulesetName, type TenpaiDeclarationCandidate } from '@step13/core';
 import { useGameSocket } from './hooks/useGameSocket';
 import { HandBuilder } from './components/HandBuilder';
 import { HandDisplay } from './components/HandDisplay';
@@ -270,6 +270,7 @@ export default function App() {
     const [entryMode, setEntryMode] = useState<EntryMode>('home');
     const [singleMode, setSingleMode] = useState<SingleMode>('menu');
     const [botPersonaId, setBotPersonaId] = useState<string>('');
+    const [selectedStageATileId, setSelectedStageATileId] = useState<string | null>(null);
     const activeRuleset = useMemo(() => deriveRuleset(publicRuleset, tenMode), [publicRuleset, tenMode]);
     const isActiveRulesetConfigured = isRulesetConfigured(activeRuleset);
     const activeRulesetPresentation = useMemo(() => getRulesetPresentation(activeRuleset), [activeRuleset]);
@@ -830,7 +831,40 @@ export default function App() {
     const isAiMatch = context.players.some((p: PlayerId) => p.startsWith('bot-'));
     const rawMyHand = context.hands[playerId] || [];
     const rawMyPool = context.pools[playerId] || [];
-    const tenPendingTile = context.ruleset !== 'classic' ? context.attackDefense.pendingDrawTile : null;
+    const myDiscards = context.discards[playerId] || [];
+    const isMyTenTurn = context.ruleset !== 'classic' && context.currentTurn === playerId;
+    const tenPendingTile = context.ruleset !== 'classic' && isMyTenTurn
+        ? context.attackDefense.pendingDrawTile
+        : null;
+    const isTenStageAInteractive = context.ruleset !== 'classic'
+        && context.attackDefense.stage === 'A'
+        && isMyTenTurn;
+    const tenStageATurnTiles = useMemo(() => {
+        if (!isTenStageAInteractive) {
+            return [];
+        }
+        return tenPendingTile ? [...rawMyHand, tenPendingTile] : [...rawMyHand];
+    }, [isTenStageAInteractive, rawMyHand, tenPendingTile]);
+    const tenStageACandidates = useMemo(() => {
+        if (!isTenStageAInteractive) {
+            return [];
+        }
+        return listTenpaiDeclarationCandidates({
+            turnTiles: tenStageATurnTiles,
+            discardedTiles: myDiscards,
+            doraIndicators,
+            ruleset: context.ruleset,
+            seatWind: context.seatMap[playerId] ?? 'WEST'
+        });
+    }, [context.ruleset, context.seatMap, doraIndicators, isTenStageAInteractive, myDiscards, playerId, tenStageATurnTiles]);
+    const tenStageACandidateByTileId = useMemo<Record<string, TenpaiDeclarationCandidate>>(() => {
+        return tenStageACandidates.reduce<Record<string, TenpaiDeclarationCandidate>>((accumulator, candidate) => {
+            if (candidate.tile.id) {
+                accumulator[candidate.tile.id] = candidate;
+            }
+            return accumulator;
+        }, {});
+    }, [tenStageACandidates]);
     const myHand = context.ruleset !== 'classic' && context.attackDefense.stage === 'A'
         ? []
         : rawMyHand;
@@ -839,12 +873,12 @@ export default function App() {
         : context.ruleset !== 'classic' && context.attackDefense.stage === 'B_ASSAULT'
             ? (tenPendingTile ? [tenPendingTile] : [])
             : rawMyPool;
-    const myDiscards = context.discards[playerId] || [];
     const mySeatWind = context.seatMap?.[playerId] === 'EAST'
         ? 'EAST'
         : context.seatMap?.[playerId] === 'WEST'
             ? 'WEST'
             : undefined;
+    const selectedStageACandidate = selectedStageATileId ? tenStageACandidateByTileId[selectedStageATileId] ?? null : null;
 
     const myWaitTiles = useMemo(() => {
         return getWinningWaits(rawMyHand);
@@ -1207,6 +1241,20 @@ export default function App() {
                 return '준비 완료. 버튼을 눌러 AI 대전을 시작하세요.';
         }
     }, [aiRematchStep]);
+
+    useEffect(() => {
+        if (!isTenStageAInteractive) {
+            setSelectedStageATileId(null);
+            return;
+        }
+
+        if (selectedStageATileId && tenStageACandidateByTileId[selectedStageATileId]) {
+            return;
+        }
+
+        const firstDeclareable = tenStageACandidates.find((candidate) => candidate.declareable);
+        setSelectedStageATileId((firstDeclareable ?? tenStageACandidates[0])?.tile.id ?? null);
+    }, [isTenStageAInteractive, selectedStageATileId, tenStageACandidateByTileId, tenStageACandidates]);
 
     useEffect(() => {
         if (showReplay) {
@@ -2339,8 +2387,6 @@ export default function App() {
                             <AttackDefensePanels
                                 context={context}
                                 playerId={playerId}
-                                onDeclareTenpai={onDeclareTenpai}
-                                onDiscardSelectedTile={onDiscardSelectedTenTile}
                                 onGuess={onDefenderGuess}
                                 onKan={onAttackerKan}
                                 onKanPass={onAttackerKanPass}
@@ -2355,6 +2401,25 @@ export default function App() {
                                     furitenWaitKeys={myWaitKeys}
                                     isFuriten={isFuriten}
                                     onDiscard={({ tile }) => onDiscard(tile)}
+                                    tenStageA={{
+                                        enabled: isTenStageAInteractive,
+                                        selectedTileId: selectedStageATileId,
+                                        selectedCandidate: selectedStageACandidate,
+                                        candidateByTileId: tenStageACandidateByTileId,
+                                        drawnTileId: tenPendingTile?.id ?? null,
+                                        showRiichi: context.ruleset === 'ten_attack_defense',
+                                        onSelectTile: (tileId) => setSelectedStageATileId(tileId),
+                                        onDiscardSelected: () => {
+                                            if (selectedStageATileId) {
+                                                onDiscardSelectedTenTile(selectedStageATileId);
+                                            }
+                                        },
+                                        onDeclareTenpai: (withRiichi) => {
+                                            if (selectedStageATileId) {
+                                                onDeclareTenpai(withRiichi, selectedStageATileId);
+                                            }
+                                        }
+                                    }}
                                 />
                             </div>
 
