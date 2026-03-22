@@ -335,11 +335,11 @@ export default function App() {
         accessToken: effectiveAccessToken,
         apiBaseUrl: activeGameApiBaseUrl,
         wsBaseUrl: activeGameWsBaseUrl,
-        roomId: activeRoomId,
-        roomPassword: activeRoomPassword,
+        roomId: entryMode === 'online' ? activeRoomId : null,
+        roomPassword: entryMode === 'online' ? activeRoomPassword : null,
         onAuthExpired: handleSocketAuthExpired,
         onRejectedEvent: handleSocketRejectedEvent
-    }), [activeGameApiBaseUrl, activeGameWsBaseUrl, activeRoomId, activeRoomPassword, effectiveAccessToken, handleSocketAuthExpired, handleSocketRejectedEvent]);
+    }), [activeGameApiBaseUrl, activeGameWsBaseUrl, activeRoomId, activeRoomPassword, effectiveAccessToken, entryMode, handleSocketAuthExpired, handleSocketRejectedEvent]);
 
     const { sendEvent, queryAnalysis, queryPersonas } = useGameSocket(
         actor,
@@ -994,10 +994,19 @@ export default function App() {
         sendEvent({ type: 'START_MATCH' });
     };
 
+    const clearActiveRoomSelection = () => {
+        setActiveRoomId(null);
+        setActiveRoomPassword(null);
+        setRoomSelectionId('lobby');
+        setRoomSelectionPasswordInput('');
+        setRoomSelectionError(null);
+    };
+
     const handleGoHome = () => {
         if (isIdle && isPlayerInLobby) {
             sendEvent({ type: 'LEAVE', playerId });
         }
+        clearActiveRoomSelection();
         setShowAiExitMenu(false);
         setAiRematchStep('none');
         setEntryMode('home');
@@ -1008,6 +1017,7 @@ export default function App() {
         if (isIdle && isPlayerInLobby) {
             sendEvent({ type: 'LEAVE', playerId });
         }
+        clearActiveRoomSelection();
         setShowAiExitMenu(false);
         setAiRematchStep('none');
         setEntryMode('single');
@@ -1018,6 +1028,7 @@ export default function App() {
         if (isIdle && isPlayerInLobby) {
             sendEvent({ type: 'LEAVE', playerId });
         }
+        clearActiveRoomSelection();
         setShowAiExitMenu(false);
         setAiRematchStep('none');
         setEntryMode('online');
@@ -1042,6 +1053,7 @@ export default function App() {
         if (isIdle && isPlayerInLobby) {
             sendEvent({ type: 'LEAVE', playerId });
         }
+        clearActiveRoomSelection();
         setEntryMode('single');
         setSingleMode('mini');
     };
@@ -1050,6 +1062,7 @@ export default function App() {
         if (isIdle && isPlayerInLobby) {
             sendEvent({ type: 'LEAVE', playerId });
         }
+        clearActiveRoomSelection();
         setSingleMode('menu');
     };
 

@@ -1,0 +1,41 @@
+{
+  "version": "2.0",
+  "lastUpdated": "2026-03-22T05:19:46.412Z",
+  "activeFeatures": [
+    "apps"
+  ],
+  "primaryFeature": "apps",
+  "features": {
+    "apps": {
+      "phase": "check",
+      "matchRate": null,
+      "iterationCount": 0,
+      "documents": {}
+    }
+  },
+  "pipeline": {
+    "currentPhase": 1,
+    "level": "Starter",
+    "phaseHistory": []
+  },
+  "session": {
+    "startedAt": "2026-03-22T05:19:46.408Z",
+    "onboardingCompleted": false,
+    "lastActivity": "2026-03-22T05:19:46.412Z"
+  },
+  "history": [
+    {
+      "feature": "apps",
+      "from": "do",
+      "to": "check",
+      "timestamp": "2026-03-22T05:19:46.410Z"
+    },
+    {
+      "feature": "apps",
+      "action": "phase_complete",
+      "phase": "do",
+      "nextPhase": "check",
+      "timestamp": "2026-03-22T05:19:46.412Z"
+    }
+  ]
+}
