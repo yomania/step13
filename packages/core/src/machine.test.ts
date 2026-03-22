@@ -4,7 +4,7 @@ import { Tile } from '@step13/proto';
 import { gameMachine, createGameMachine } from './machine';
 import { RULES } from './rules';
 import { GameEngine } from './engine/types';
-import { getGuessCandidateStates } from './ten-attack-defense';
+import { getGuessCandidateStates, listTenCallCandidates } from './ten-attack-defense';
 
 async function advance(ms: number): Promise<void> {
     await vi.advanceTimersByTimeAsync(ms);
@@ -729,6 +729,80 @@ describe('ten_attack_defense ruleset', () => {
 
         expect(blockedCandidate?.state).toBe('blocked_by_opponent_discard');
         expect(blockedCandidate?.blockedReason).toBe('opponent_discard');
+    });
+
+    it('lists chi and pon call candidates in Stage A from the latest discard', { timeout: 20000 }, async () => {
+        vi.useFakeTimers();
+        const actor = createActor(createGameMachine({ ruleset: 'ten_attack_defense' }));
+        actor.start();
+        actor.send({ type: 'JOIN', playerId: 'p1' });
+        actor.send({ type: 'JOIN', playerId: 'p2' });
+        actor.send({ type: 'START_MATCH', seed: 99 });
+        await reachTurnWithAutoSubmit(actor as any);
+
+        const attacker = actor.getSnapshot().context.currentTurn!;
+        const defender = actor.getSnapshot().context.players.find((id) => id !== attacker)!;
+        actor.getSnapshot().context.hands[attacker] = [
+            { suit: 'man', rank: 1, isRed: false, id: 'chi-1' },
+            { suit: 'man', rank: 2, isRed: false, id: 'chi-2' },
+            { suit: 'man', rank: 3, isRed: false, id: 'pon-a' },
+            { suit: 'man', rank: 3, isRed: false, id: 'pon-b' },
+            ...makeTiles(9, 'fill')
+        ];
+        actor.getSnapshot().context.attackDefense.pendingDrawTile = { suit: 'sou', rank: 9, isRed: false, id: 'call-draw' };
+        actor.getSnapshot().context.lastDiscard = {
+            playerId: defender,
+            tile: { suit: 'man', rank: 3, isRed: false, id: 'discard-3' }
+        };
+
+        const candidates = listTenCallCandidates(actor.getSnapshot().context, attacker);
+        expect(candidates.some((candidate) => candidate.type === 'CHI')).toBe(true);
+        expect(candidates.some((candidate) => candidate.type === 'PON')).toBe(true);
+    });
+
+    it('applies chi as an open meld and forces a follow-up discard', { timeout: 20000 }, async () => {
+        vi.useFakeTimers();
+        const actor = createActor(createGameMachine({ ruleset: 'ten_attack_defense' }));
+        actor.start();
+        actor.send({ type: 'JOIN', playerId: 'p1' });
+        actor.send({ type: 'JOIN', playerId: 'p2' });
+        actor.send({ type: 'START_MATCH', seed: 100 });
+        await reachTurnWithAutoSubmit(actor as any);
+
+        const attacker = actor.getSnapshot().context.currentTurn!;
+        const defender = actor.getSnapshot().context.players.find((id) => id !== attacker)!;
+        actor.getSnapshot().context.hands[attacker] = [
+            { suit: 'man', rank: 1, isRed: false, id: 'chi-a' },
+            { suit: 'man', rank: 2, isRed: false, id: 'chi-b' },
+            ...makeTiles(11, 'open-fill')
+        ];
+        actor.getSnapshot().context.attackDefense.pendingDrawTile = { suit: 'sou', rank: 9, isRed: false, id: 'open-draw' };
+        actor.getSnapshot().context.lastDiscard = {
+            playerId: defender,
+            tile: { suit: 'man', rank: 3, isRed: false, id: 'open-discard' }
+        };
+
+        actor.send({ type: 'CALL_CHI', playerId: attacker, discardTileId: 'open-discard', useTileIds: ['chi-a', 'chi-b'] });
+
+        let snapshot = actor.getSnapshot();
+        expect(snapshot.context.attackDefense.mustDiscardAfterClaim).toBe(true);
+        expect(snapshot.context.attackDefense.pendingClaim?.type).toBe('CHI');
+        expect(snapshot.context.openMelds[attacker]).toHaveLength(1);
+        expect(snapshot.context.openMelds[attacker][0]?.type).toBe('CHI');
+        expect(snapshot.context.attackDefense.pendingDrawTile).toBeNull();
+        expect(snapshot.context.currentTurn).toBe(attacker);
+
+        actor.send({ type: 'DECLARE_TENPAI', playerId: attacker, tileId: snapshot.context.hands[attacker][0].id! });
+        expect(actor.getSnapshot().context.attackDefense.stage).toBe('A');
+
+        const discardTileId = actor.getSnapshot().context.hands[attacker][0].id!;
+        actor.send({ type: 'DISCARD', playerId: attacker, tileId: discardTileId });
+
+        snapshot = actor.getSnapshot();
+        expect(snapshot.context.attackDefense.mustDiscardAfterClaim).toBe(false);
+        expect(snapshot.context.attackDefense.pendingClaim).toBeNull();
+        expect(snapshot.context.currentTurn).toBe(defender);
+        expect(snapshot.context.discards[attacker]?.at(-1)?.id).toBe(discardTileId);
     });
 
     it('enters assault after the second failed guess', { timeout: 20000 }, async () => {

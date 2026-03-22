@@ -969,8 +969,8 @@ async function run() {
         ['룸 메타데이터 ruleset 유지', testRoomRegistryRulesetMetadata],
         ['ten normal: 선언 후 정답 추측 시 수비 승리', testTenCorrectGuessWin],
         ['ten normal: 오답 2회 후 assault 진입', testTenFailedGuessesEnterAssault],
-        ['ten normal: 마스킹된 wall에서도 수비 추측 후보 selectable 유지', testTenMaskedGuessCandidatesStaySelectable],
-        ['ten easy: 리치 거부 및 timeout 강제 기리', testTenEasyRiichiRejectAndTimeout]
+        ['ten easy: 리치 거부 및 timeout 강제 기리', testTenEasyRiichiRejectAndTimeout],
+        ['ten normal: 마스킹된 wall에서도 수비 추측 후보 selectable 유지', testTenMaskedGuessCandidatesStaySelectable]
     ];
 
     for (const [name, test] of tests) {

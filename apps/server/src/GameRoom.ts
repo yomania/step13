@@ -31,7 +31,7 @@ type GameRoomOptions = {
 };
 
 const CLASSIC_ONLY_EVENTS = new Set(['SELECT_DORA', 'SUBMIT_HAND', 'DECLARE_WIN']);
-const TEN_ONLY_EVENTS = new Set(['DECLARE_TENPAI', 'PASS_DECLARATION', 'DEFENDER_GUESS', 'ATTACKER_KAN', 'ATTACKER_KAN_PASS']);
+const TEN_ONLY_EVENTS = new Set(['DECLARE_TENPAI', 'CALL_CHI', 'CALL_PON', 'PASS_DECLARATION', 'DEFENDER_GUESS', 'ATTACKER_KAN', 'ATTACKER_KAN_PASS']);
 
 export class GameRoom {
     private machineLogic: MachineLogic;

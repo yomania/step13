@@ -6,7 +6,14 @@ import { RULES } from './rules';
 import { createEngineForRuleset, RulesetName } from './engine/rulesets';
 import { GameEngine } from './engine/types';
 import { evaluateTenpaiDeclaration } from './tenpaiDeclaration';
-import { shouldEnterAssault } from './ten-attack-defense';
+import {
+    applyTenCall,
+    canApplyTenCall,
+    getOpenMeldTiles,
+    getTenDeclarationTiles,
+    getTenTurnTiles,
+    shouldEnterAssault
+} from './ten-attack-defense';
 
 function createInitialContext(ruleset: RulesetName = 'classic'): GameContext {
     return {
@@ -17,6 +24,7 @@ function createInitialContext(ruleset: RulesetName = 'classic'): GameContext {
         dealtTiles: {},
         hands: {},
         pools: {},
+        openMelds: {},
         wall: [],
         doraIndicators: [],
         dealerDice: {},
@@ -48,6 +56,8 @@ function createInitialContext(ruleset: RulesetName = 'classic'): GameContext {
             lockedWaitTileKeys: [],
             lastGuessTileKey: null,
             lastGuessResult: 'idle',
+            pendingClaim: null,
+            mustDiscardAfterClaim: false,
             pendingDrawTile: null,
             kanOption: {
                 pending: false,
@@ -134,6 +144,8 @@ function createAttackDefenseState(players: string[]): GameContext['attackDefense
         lockedWaitTileKeys: [],
         lastGuessTileKey: null,
         lastGuessResult: 'idle',
+        pendingClaim: null,
+        mustDiscardAfterClaim: false,
         pendingDrawTile: null,
         kanOption: {
             pending: false,
@@ -144,18 +156,12 @@ function createAttackDefenseState(players: string[]): GameContext['attackDefense
 
 function prepareTenHands(players: string[], dealtTiles: Record<string, Tile[]>) {
     const hands: Record<string, Tile[]> = {};
+    const openMelds: Record<string, GameContext['openMelds'][string]> = {};
     players.forEach((playerId) => {
         hands[playerId] = dealtTiles[playerId] ?? [];
+        openMelds[playerId] = [];
     });
-    return { hands, pools: {} as Record<string, Tile[]> };
-}
-
-function getTenTurnTiles(context: GameContext, playerId: string): Tile[] {
-    const tiles = [...(context.hands[playerId] ?? [])];
-    if (context.attackDefense.pendingDrawTile) {
-        tiles.push(context.attackDefense.pendingDrawTile);
-    }
-    return tiles;
+    return { hands, pools: {} as Record<string, Tile[]>, openMelds };
 }
 
 function extractTileById(tiles: Tile[], tileId: string): { removed: Tile | null; remaining: Tile[] } {
@@ -172,7 +178,7 @@ function extractTileById(tiles: Tile[], tileId: string): { removed: Tile | null;
 
 function applyTenStageADiscard(context: GameContext, playerId: string, tileId: string): GameContext {
     const { removed, remaining } = extractTileById(getTenTurnTiles(context, playerId), tileId);
-    if (!removed || remaining.length !== RULES.ten.initialHandSize) {
+    if (!removed) {
         return context;
     }
     const currentDiscards = context.discards[playerId] ?? [];
@@ -193,6 +199,10 @@ function applyTenStageADiscard(context: GameContext, playerId: string, tileId: s
         eventLog: [...context.eventLog, discardEvent],
         attackDefense: {
             ...context.attackDefense,
+            attacker: null,
+            defender: null,
+            pendingClaim: null,
+            mustDiscardAfterClaim: false,
             pendingDrawTile: null
         }
     };
@@ -200,7 +210,7 @@ function applyTenStageADiscard(context: GameContext, playerId: string, tileId: s
 
 function buildDeclaredTenpaiHand(context: GameContext, playerId: string, tileId: string): { hand: Tile[]; discard: Tile | null } {
     const { removed, remaining } = extractTileById(getTenTurnTiles(context, playerId), tileId);
-    if (!removed || remaining.length !== RULES.ten.initialHandSize) {
+    if (!removed) {
         return { hand: [], discard: null };
     }
     return { hand: remaining, discard: removed };
@@ -283,20 +293,26 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                 if (context.currentTurn !== event.playerId) {
                     return false;
                 }
-                if (!context.attackDefense.pendingDrawTile) {
+                if (context.attackDefense.mustDiscardAfterClaim) {
                     return false;
                 }
                 if (context.ruleset === 'ten_attack_defense_easy' && event.withRiichi) {
                     return false;
                 }
                 return evaluateTenpaiDeclaration({
-                    turnTiles: getTenTurnTiles(context, event.playerId),
+                    turnTiles: getTenDeclarationTiles(context, event.playerId),
                     discardedTiles: context.discards[event.playerId] ?? [],
                     doraIndicators: context.doraIndicators,
                     ruleset: context.ruleset,
                     seatWind: context.seatMap[event.playerId] ?? 'WEST',
                     tileId: event.tileId
                 }).declareable;
+            },
+            canApplyTenCall: ({ context, event }) => {
+                if (event.type !== 'CALL_CHI' && event.type !== 'CALL_PON') {
+                    return false;
+                }
+                return canApplyTenCall(context, event);
             },
             canDefenderGuess: ({ context, event }) => {
                 if (event.type !== 'DEFENDER_GUESS') {
@@ -362,7 +378,7 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                     ? []
                     : [dealResult.wall[0]];
                 const tenRoundSetup = configuredRuleset === 'classic'
-                    ? { hands: {}, pools: {} }
+                    ? { hands: {}, pools: {}, openMelds: {} }
                     : prepareTenHands(context.players, dealResult.dealt);
 
                 return {
@@ -377,6 +393,7 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                     dealtTiles: dealResult.dealt,
                     hands: tenRoundSetup.hands,
                     pools: tenRoundSetup.pools,
+                    openMelds: tenRoundSetup.openMelds,
                     wall: dealResult.wall,
                     doraIndicators,
                     discards: {},
@@ -401,7 +418,7 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                     ? []
                     : [dealResult.wall[0]];
                 const tenRoundSetup = configuredRuleset === 'classic'
-                    ? { hands: {}, pools: {} }
+                    ? { hands: {}, pools: {}, openMelds: {} }
                     : prepareTenHands(context.players, dealResult.dealt);
 
                 return {
@@ -412,6 +429,7 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                     dealtTiles: dealResult.dealt,
                     hands: tenRoundSetup.hands,
                     pools: tenRoundSetup.pools,
+                    openMelds: tenRoundSetup.openMelds,
                     wall: dealResult.wall,
                     doraIndicators,
                     discards: {},
@@ -628,7 +646,8 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                 const attacker = event.playerId;
                 const defender = context.players.find((id) => id !== attacker) ?? null;
                 const { hand, discard } = buildDeclaredTenpaiHand(context, attacker, event.tileId);
-                if (!discard || hand.length !== RULES.ten.initialHandSize) {
+                const effectiveDeclaredTiles = [...hand, ...getOpenMeldTiles(context, attacker)];
+                if (!discard || effectiveDeclaredTiles.length !== RULES.ten.initialHandSize) {
                     return {};
                 }
                 return {
@@ -652,9 +671,11 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                         guessesRemaining: RULES.ten.guessCount,
                         failedGuesses: 0,
                         assaultRemaining: 0,
-                        lockedWaitTileKeys: getWinningWaitKeys(hand),
+                        lockedWaitTileKeys: getWinningWaitKeys(effectiveDeclaredTiles),
                         lastGuessTileKey: null,
                         lastGuessResult: 'pending',
+                        pendingClaim: null,
+                        mustDiscardAfterClaim: false,
                         pendingDrawTile: null,
                         kanOption: {
                             pending: false,
@@ -665,6 +686,12 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                     step: 'ten_b_guess',
                     eventLog: [...context.eventLog, event]
                 };
+            }),
+            applyTenCall: assign(({ context, event }) => {
+                if (event.type !== 'CALL_CHI' && event.type !== 'CALL_PON') {
+                    return {};
+                }
+                return applyTenCall(context, event);
             }),
             passDeclaration: assign(({ context, event }) => {
                 if (event.type !== 'PASS_DECLARATION') {
@@ -706,6 +733,8 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                             assaultRemaining: RULES.ten.assaultTurns,
                             lastGuessTileKey: event.tileKey,
                             lastGuessResult: 'failed',
+                            pendingClaim: null,
+                            mustDiscardAfterClaim: false,
                             pendingDrawTile: null,
                             kanOption: {
                                 pending: false,
@@ -790,7 +819,8 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                 const playerId = context.currentTurn;
                 if (context.ruleset !== 'classic') {
                     const pendingTile = context.attackDefense.pendingDrawTile;
-                    if (!pendingTile?.id) {
+                    const fallbackTileId = pendingTile?.id ?? context.hands[playerId]?.[0]?.id ?? null;
+                    if (!fallbackTileId) {
                         const timeoutEvent: GameEvents = { type: 'TIMEOUT', playerId, phase: 'TURN' };
                         return {
                             eventLog: [...context.eventLog, timeoutEvent]
@@ -803,7 +833,7 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                         eventLog: [...context.eventLog, timeoutEvent]
                     };
                     if (context.attackDefense.stage === 'A') {
-                        return applyTenStageADiscard(timedOutContext, playerId, pendingTile.id);
+                        return applyTenStageADiscard(timedOutContext, playerId, fallbackTileId);
                     }
                     if (context.attackDefense.stage === 'B_ASSAULT') {
                         const nextAssault = Math.max(0, context.attackDefense.assaultRemaining - 1);
@@ -1280,6 +1310,14 @@ export function createGameMachine(options: GameMachineOptions = {}) {
                         guard: 'canDeclareTenpai',
                         actions: 'declareTenpai',
                         target: 'tenDefenseGuess'
+                    },
+                    CALL_CHI: {
+                        guard: 'canApplyTenCall',
+                        actions: 'applyTenCall'
+                    },
+                    CALL_PON: {
+                        guard: 'canApplyTenCall',
+                        actions: 'applyTenCall'
                     },
                     PASS_DECLARATION: {
                         actions: 'passDeclaration'

@@ -831,6 +831,7 @@ export default function App() {
     const isAiMatch = context.players.some((p: PlayerId) => p.startsWith('bot-'));
     const rawMyHand = context.hands[playerId] || [];
     const rawMyPool = context.pools[playerId] || [];
+    const myOpenMeldTiles = ((context.openMelds?.[playerId] ?? []) as Array<{ tiles: Tile[] }>).flatMap((meld) => meld.tiles);
     const myDiscards = context.discards[playerId] || [];
     const isMyTenTurn = context.ruleset !== 'classic' && context.currentTurn === playerId;
     const tenPendingTile = context.ruleset !== 'classic' && isMyTenTurn
@@ -849,14 +850,15 @@ export default function App() {
         if (!isTenStageAInteractive) {
             return [];
         }
+        const discardableTileIds = new Set(tenStageATurnTiles.map((tile) => tile.id).filter(Boolean));
         return listTenpaiDeclarationCandidates({
-            turnTiles: tenStageATurnTiles,
+            turnTiles: [...tenStageATurnTiles, ...myOpenMeldTiles],
             discardedTiles: myDiscards,
             doraIndicators,
             ruleset: context.ruleset,
             seatWind: context.seatMap[playerId] ?? 'WEST'
-        });
-    }, [context.ruleset, context.seatMap, doraIndicators, isTenStageAInteractive, myDiscards, playerId, tenStageATurnTiles]);
+        }).filter((candidate) => candidate.tile.id && discardableTileIds.has(candidate.tile.id));
+    }, [context.ruleset, context.seatMap, doraIndicators, isTenStageAInteractive, myDiscards, myOpenMeldTiles, playerId, tenStageATurnTiles]);
     const tenStageACandidateByTileId = useMemo<Record<string, TenpaiDeclarationCandidate>>(() => {
         return tenStageACandidates.reduce<Record<string, TenpaiDeclarationCandidate>>((accumulator, candidate) => {
             if (candidate.tile.id) {
@@ -1143,6 +1145,14 @@ export default function App() {
     };
     const onDeclareTenpai = (withRiichi: boolean, tileId: string) => {
         sendEvent({ type: 'DECLARE_TENPAI', playerId, tileId, withRiichi });
+    };
+    const onTenCall = (type: 'CHI' | 'PON', discardTileId: string, useTileIds: [string, string]) => {
+        sendEvent({
+            type: type === 'CHI' ? 'CALL_CHI' : 'CALL_PON',
+            playerId,
+            discardTileId,
+            useTileIds
+        });
     };
     const onDiscardSelectedTenTile = (tileId: string) => {
         sendEvent({ type: 'DISCARD', playerId, tileId });
@@ -2387,6 +2397,7 @@ export default function App() {
                             <AttackDefensePanels
                                 context={context}
                                 playerId={playerId}
+                                onCall={onTenCall}
                                 onGuess={onDefenderGuess}
                                 onKan={onAttackerKan}
                                 onKanPass={onAttackerKanPass}
@@ -2408,6 +2419,7 @@ export default function App() {
                                         candidateByTileId: tenStageACandidateByTileId,
                                         drawnTileId: tenPendingTile?.id ?? null,
                                         showRiichi: context.ruleset === 'ten_attack_defense',
+                                        mustDiscardAfterClaim: context.attackDefense.mustDiscardAfterClaim,
                                         onSelectTile: (tileId) => setSelectedStageATileId(tileId),
                                         onDiscardSelected: () => {
                                             if (selectedStageATileId) {

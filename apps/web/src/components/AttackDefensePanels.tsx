@@ -2,15 +2,18 @@ import { useEffect, useState } from 'react';
 import { GameContext } from '@step13/core';
 import { Tile as TileView } from './Tile';
 import {
+    TenCallCandidate,
     TenGuessCandidate,
     buildTenGuessTileCatalog,
     getGuessCandidateStates,
-    getTenAttackDefenseStageSummary
+    getTenAttackDefenseStageSummary,
+    listTenCallCandidates
 } from '../lib/ten-attack-defense';
 
 type Props = {
     context: GameContext;
     playerId: string;
+    onCall: (type: 'CHI' | 'PON', discardTileId: string, useTileIds: [string, string]) => void;
     onGuess: (tileKey: string) => void;
     onKan: () => void;
     onKanPass: () => void;
@@ -30,28 +33,54 @@ function findCatalogEntry(tileKey: string | null) {
     return TILE_CATALOG.find((entry: TenGuessCandidate) => entry.tileKey === tileKey) ?? null;
 }
 
-export function AttackDefensePanels({ context, playerId, onGuess, onKan, onKanPass }: Props) {
+function formatCallLabel(candidate: TenCallCandidate): string {
+    return candidate.type === 'CHI' ? '치' : '펑';
+}
+
+export function AttackDefensePanels({ context, playerId, onCall, onGuess, onKan, onKanPass }: Props) {
     if (context.ruleset === 'classic') return null;
 
+    const attackDefense = context.attackDefense as typeof context.attackDefense & {
+        mustDiscardAfterClaim?: boolean;
+        pendingClaim?: { type: 'CHI' | 'PON' } | null;
+    };
     const stage = context.attackDefense.stage;
     const stageSummary = getTenAttackDefenseStageSummary(context, playerId);
     const isDefender = stageSummary.isDefenderView;
     const isAttacker = stageSummary.isAttackerView;
 
     const guessCandidates = getGuessCandidateStates(context, playerId);
+    const availableCalls = listTenCallCandidates(context, playerId);
 
     const [selectedGuess, setSelectedGuess] = useState<string | null>(null);
+    const [selectedCallKey, setSelectedCallKey] = useState<string | null>(null);
     const selectedGuessEntry = findCatalogEntry(selectedGuess);
     const lastGuessEntry = findCatalogEntry(context.attackDefense.lastGuessTileKey);
     const showGuessFeedback = stage === 'B_GUESS'
         && context.attackDefense.lastGuessResult !== 'idle'
         && context.attackDefense.lastGuessResult !== 'pending';
+    const selectedCall = availableCalls.find((candidate) =>
+        `${candidate.type}:${candidate.discardTileId}:${candidate.useTileIds.join(',')}` === selectedCallKey
+    ) ?? availableCalls[0] ?? null;
 
     useEffect(() => {
         if (stage !== 'B_GUESS') {
             setSelectedGuess(null);
         }
     }, [stage, context.attackDefense.guessesRemaining]);
+
+    useEffect(() => {
+        if (stage !== 'A' || availableCalls.length === 0) {
+            setSelectedCallKey(null);
+            return;
+        }
+        const nextKey = `${availableCalls[0].type}:${availableCalls[0].discardTileId}:${availableCalls[0].useTileIds.join(',')}`;
+        setSelectedCallKey((current) => (
+            current && availableCalls.some((candidate) => `${candidate.type}:${candidate.discardTileId}:${candidate.useTileIds.join(',')}` === current)
+                ? current
+                : nextKey
+        ));
+    }, [stage, availableCalls]);
 
     return (
         <>
@@ -87,6 +116,59 @@ export function AttackDefensePanels({ context, playerId, onGuess, onKan, onKanPa
                         </span>
                         {context.attackDefense.declaredBy && (
                             <span className="font-semibold text-slate-200">{context.attackDefense.declaredBy}</span>
+                        )}
+                    </div>
+                )}
+                {stage === 'A' && isAttacker && (availableCalls.length > 0 || attackDefense.mustDiscardAfterClaim) && (
+                    <div className="pointer-events-auto rounded-3xl border border-emerald-500/30 bg-slate-950/85 backdrop-blur-md p-3 shadow-xl">
+                        <div className="flex items-start justify-between gap-3">
+                            <div>
+                                <div className="text-[10px] font-black tracking-[0.22em] text-emerald-300">CALL FLOW</div>
+                                <div className="mt-1 text-sm font-semibold text-slate-100">
+                                    {attackDefense.mustDiscardAfterClaim
+                                        ? `${attackDefense.pendingClaim?.type === 'CHI' ? '치' : '펑'} 후 버릴 패를 선택하세요.`
+                                        : '직전 버림패에 반응해 치/펑을 선택할 수 있습니다.'}
+                                </div>
+                                <div className="mt-1 text-[11px] text-slate-400">
+                                    {context.lastDiscard
+                                        ? `대상 버림패 ${formatTileKey(`${context.lastDiscard.tile.suit}-${context.lastDiscard.tile.rank}`)}`
+                                        : '대상 버림패 없음'}
+                                </div>
+                            </div>
+                            {!attackDefense.mustDiscardAfterClaim && selectedCall && (
+                                <button
+                                    onClick={() => onCall(selectedCall.type, selectedCall.discardTileId, selectedCall.useTileIds)}
+                                    className="rounded-2xl border border-emerald-500/40 bg-emerald-600 px-4 py-2 text-sm font-black text-white transition hover:bg-emerald-500"
+                                >
+                                    {formatCallLabel(selectedCall)} 실행
+                                </button>
+                            )}
+                        </div>
+                        {!attackDefense.mustDiscardAfterClaim && availableCalls.length > 0 && (
+                            <div className="mt-3 flex flex-wrap gap-2">
+                                {availableCalls.map((candidate) => {
+                                    const callKey = `${candidate.type}:${candidate.discardTileId}:${candidate.useTileIds.join(',')}`;
+                                    const isSelected = selectedCallKey === callKey;
+                                    return (
+                                        <button
+                                            key={callKey}
+                                            onClick={() => setSelectedCallKey(callKey)}
+                                            className={`rounded-2xl border px-3 py-2 text-left transition ${
+                                                isSelected
+                                                    ? 'border-emerald-400 bg-emerald-500/15 shadow-[0_8px_20px_rgba(16,185,129,0.2)]'
+                                                    : 'border-slate-700/60 bg-slate-900/80 hover:border-slate-500'
+                                            }`}
+                                        >
+                                            <div className="text-[10px] font-black tracking-[0.18em] text-emerald-300">{formatCallLabel(candidate)}</div>
+                                            <div className="mt-1 flex items-center gap-1">
+                                                {candidate.meldTiles.map((tile: TenCallCandidate['meldTiles'][number], index: number) => (
+                                                    <TileView key={`${callKey}-${tile.id ?? index}`} tile={tile} size="xs" disabled={true} />
+                                                ))}
+                                            </div>
+                                        </button>
+                                    );
+                                })}
+                            </div>
                         )}
                     </div>
                 )}

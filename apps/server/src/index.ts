@@ -571,6 +571,8 @@ function normalizeIncomingEvent(
         'QUERY_ANALYSIS',
         'QUERY_PERSONAS',
         'DECLARE_TENPAI',
+        'CALL_CHI',
+        'CALL_PON',
         'PASS_DECLARATION',
         'DEFENDER_GUESS',
         'ATTACKER_KAN',

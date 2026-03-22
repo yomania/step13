@@ -1,6 +1,6 @@
 import { GamePhase, PlayerId, Tile } from '@step13/proto';
 import { ScoreResult } from '@step13/scoring';
-import type { TenGuessCandidate } from './ten-attack-defense';
+import type { TenCallCandidate, TenClaimSnapshot, TenGuessCandidate, TenOpenMeld } from './ten-attack-defense';
 import { WindSeat } from './rules';
 
 export type GameStep =
@@ -27,6 +27,7 @@ export type GameContext = {
     dealtTiles: Record<PlayerId, Tile[]>; // Initial 34 tiles
     hands: Record<PlayerId, Tile[]>;      // Chosen 13 tiles (Locked)
     pools: Record<PlayerId, Tile[]>;      // Remaining 21 tiles (To discard)
+    openMelds: Record<PlayerId, TenOpenMeld[]>;
     wall: Tile[];                         // Remaining wall after deal (for dora selection)
     doraIndicators: Tile[];               // Open dora indicators selected before hand build
     dealerDice: Record<PlayerId, number>; // Dice results for dealer selection display
@@ -57,9 +58,12 @@ export type GameContext = {
         failedGuesses: number;
         assaultRemaining: number;
         guessCandidates?: TenGuessCandidate[];
+        availableCalls?: TenCallCandidate[];
         lockedWaitTileKeys: string[];
         lastGuessTileKey: string | null;
         lastGuessResult: 'idle' | 'pending' | 'failed' | 'succeeded';
+        pendingClaim: TenClaimSnapshot | null;
+        mustDiscardAfterClaim: boolean;
         pendingDrawTile: Tile | null;
         kanOption: {
             pending: boolean;
@@ -84,6 +88,8 @@ export type GameEvents =
     | { type: 'GUIDE_VIEW'; playerId: PlayerId; step: string }
     | { type: 'CONFIRM_ROUND_END'; playerId: PlayerId }
     | { type: 'DECLARE_TENPAI'; playerId: PlayerId; tileId: string; withRiichi?: boolean }
+    | { type: 'CALL_CHI'; playerId: PlayerId; discardTileId: string; useTileIds: [string, string] }
+    | { type: 'CALL_PON'; playerId: PlayerId; discardTileId: string; useTileIds: [string, string] }
     | { type: 'PASS_DECLARATION'; playerId: PlayerId }
     | { type: 'DEFENDER_GUESS'; playerId: PlayerId; tileKey: string }
     | { type: 'ATTACKER_KAN'; playerId: PlayerId }

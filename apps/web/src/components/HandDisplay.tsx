@@ -9,6 +9,7 @@ type TenStageAConfig = {
     candidateByTileId: Record<string, TenpaiDeclarationCandidate>;
     drawnTileId: string | null;
     showRiichi: boolean;
+    mustDiscardAfterClaim: boolean;
     onSelectTile: (tileId: string) => void;
     onDiscardSelected: () => void;
     onDeclareTenpai: (withRiichi: boolean) => void;
@@ -93,6 +94,7 @@ export function HandDisplay({
     tenStageA
 }: HandDisplayProps) {
     const stageAEnabled = Boolean(tenStageA?.enabled);
+    const mustDiscardAfterClaim = Boolean(tenStageA?.mustDiscardAfterClaim);
     const selectedTileId = tenStageA?.selectedTileId ?? null;
     const selectedCandidate = tenStageA?.selectedCandidate ?? null;
     const sortedHand = sortTiles(hand);
@@ -135,7 +137,9 @@ export function HandDisplay({
                                     <span className="rounded-full border border-cyan-500/50 bg-cyan-500/10 px-3 py-1 text-[10px] sm:text-xs font-black tracking-[0.2em] text-cyan-300">
                                         STAGE A
                                     </span>
-                                    <span className="text-[11px] sm:text-xs text-slate-400">패를 먼저 고른 뒤 행동합니다.</span>
+                                    <span className="text-[11px] sm:text-xs text-slate-400">
+                                        {mustDiscardAfterClaim ? '치/펑 이후 버릴 패를 선택해야 합니다.' : '패를 먼저 고른 뒤 행동합니다.'}
+                                    </span>
                                 </div>
                                 {selectedCandidate ? (
                                     <div className="flex flex-col gap-2 text-sm text-slate-200">
@@ -174,7 +178,7 @@ export function HandDisplay({
                                 </button>
                                 <button
                                     onClick={() => tenStageA?.onDeclareTenpai(false)}
-                                    disabled={!selectedCandidate?.declareable}
+                                    disabled={mustDiscardAfterClaim || !selectedCandidate?.declareable}
                                     className="min-w-[6.5rem] rounded-2xl border border-cyan-500/50 bg-cyan-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-40"
                                 >
                                     텐파이
@@ -182,7 +186,7 @@ export function HandDisplay({
                                 {tenStageA?.showRiichi && (
                                     <button
                                         onClick={() => tenStageA?.onDeclareTenpai(true)}
-                                        disabled={!selectedCandidate?.declareable}
+                                        disabled={mustDiscardAfterClaim || !selectedCandidate?.declareable}
                                         className="min-w-[6.5rem] rounded-2xl border border-amber-500/50 bg-gradient-to-b from-amber-400 to-amber-600 px-4 py-2.5 text-sm font-black text-slate-950 transition hover:from-amber-300 hover:to-amber-500 disabled:cursor-not-allowed disabled:opacity-40"
                                     >
                                         리치
