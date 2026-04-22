@@ -913,6 +913,9 @@ export default function App() {
             };
         });
     }, [context.players, context.hands, context.seatMap, context.roundEndConfirmedBy, doraIndicators]);
+    const remainingRoundEndConfirmations = useMemo(() => {
+        return roundEndSummaries.filter((summary) => !summary.confirmed && !summary.isBot).length;
+    }, [roundEndSummaries]);
 
     const step = context.step;
     const isIdle = step === 'idle';
@@ -2484,6 +2487,32 @@ export default function App() {
                                             <p className="text-center text-slate-300 mb-2">
                                                 다음 라운드로 진행하려면 양쪽 확인이 필요합니다.
                                             </p>
+                                            <div className="mb-4 grid gap-2 md:grid-cols-3">
+                                                <div className="rounded-2xl border border-slate-700/60 bg-slate-900/70 px-4 py-3">
+                                                    <div className="text-[10px] font-black tracking-[0.22em] text-slate-500">RESULT</div>
+                                                    <div className="mt-1 text-sm font-semibold text-white">
+                                                        {context.winner
+                                                            ? context.winner === playerId
+                                                                ? '이번 국 승리'
+                                                                : `${getPlayerName(context.winner)} 화료`
+                                                            : '양측 유국'}
+                                                    </div>
+                                                </div>
+                                                <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3">
+                                                    <div className="text-[10px] font-black tracking-[0.22em] text-amber-200/80">NEXT ACTION</div>
+                                                    <div className="mt-1 text-sm font-semibold text-amber-100">
+                                                        {myRoundEndConfirmed
+                                                            ? '상대 확인을 기다리는 중입니다.'
+                                                            : '결과를 확인한 뒤 계속하기를 눌러 다음 국으로 넘기세요.'}
+                                                    </div>
+                                                </div>
+                                                <div className="rounded-2xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-3">
+                                                    <div className="text-[10px] font-black tracking-[0.22em] text-cyan-200/80">REPLAY</div>
+                                                    <div className="mt-1 text-sm font-semibold text-cyan-100">
+                                                        리플레이로 방금 국의 discard, 추측, round-end 흐름을 바로 복기할 수 있습니다.
+                                                    </div>
+                                                </div>
+                                            </div>
 
                                             {/* 화료 점수 요약 배너 */}
                                             {winResult && context.winner && (
@@ -2615,25 +2644,38 @@ export default function App() {
                                                 })}
                                             </div>
 
-                                            <div className="mt-5 flex justify-center gap-3">
-                                                <button
-                                                    onClick={() => setShowRoundEndOverlay(false)}
-                                                    disabled={myRoundEndConfirmed}
-                                                    className={`px-6 py-2 rounded font-bold ${myRoundEndConfirmed ? 'bg-slate-600 text-slate-300 cursor-not-allowed' : 'bg-slate-700 hover:bg-slate-600 text-white'}`}
-                                                >
-                                                    게임판 보기
-                                                </button>
-                                                <button
-                                                    onClick={onConfirmRoundEnd}
-                                                    disabled={myRoundEndConfirmed}
-                                                    className={`px-6 py-2 rounded font-bold ${myRoundEndConfirmed ? 'bg-slate-600 text-slate-300 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-500 text-white'}`}
-                                                >
-                                                    {myRoundEndConfirmed
-                                                        ? '확인 완료'
-                                                        : context.round < RULES.match.handsPerMatch
-                                                            ? '계속하기'
-                                                            : '게임 종료'}
-                                                </button>
+                                            <div className="mt-5 flex flex-col items-center gap-3">
+                                                <div className="rounded-2xl border border-slate-700/60 bg-slate-900/70 px-4 py-2 text-sm text-slate-300">
+                                                    {remainingRoundEndConfirmations > 0
+                                                        ? `남은 플레이어 확인 ${remainingRoundEndConfirmations}명`
+                                                        : '모든 플레이어 확인이 완료되었습니다.'}
+                                                </div>
+                                                <div className="flex flex-wrap justify-center gap-3">
+                                                    <button
+                                                        onClick={() => setShowReplay(true)}
+                                                        className="px-6 py-2 rounded font-bold border border-cyan-400/40 bg-cyan-600/15 text-cyan-100 hover:bg-cyan-500/25"
+                                                    >
+                                                        리플레이 보기
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setShowRoundEndOverlay(false)}
+                                                        disabled={myRoundEndConfirmed}
+                                                        className={`px-6 py-2 rounded font-bold ${myRoundEndConfirmed ? 'bg-slate-600 text-slate-300 cursor-not-allowed' : 'bg-slate-700 hover:bg-slate-600 text-white'}`}
+                                                    >
+                                                        게임판 보기
+                                                    </button>
+                                                    <button
+                                                        onClick={onConfirmRoundEnd}
+                                                        disabled={myRoundEndConfirmed}
+                                                        className={`px-6 py-2 rounded font-bold ${myRoundEndConfirmed ? 'bg-slate-600 text-slate-300 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-500 text-white'}`}
+                                                    >
+                                                        {myRoundEndConfirmed
+                                                            ? '확인 완료'
+                                                            : context.round < RULES.match.handsPerMatch
+                                                                ? '계속하기'
+                                                                : '게임 종료'}
+                                                    </button>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>

@@ -1,11 +1,12 @@
 {
   "version": "2.0",
-  "lastUpdated": "2026-03-22T08:35:44.237Z",
+  "lastUpdated": "2026-03-26T14:36:00.930Z",
   "activeFeatures": [
     "apps",
     "release-gate-ui-ux-qa",
     "ten-attack-defense-rules-validation",
-    "tenhou-a-step-chi-pon"
+    "tenhou-a-step-chi-pon",
+    "riichi-city-juunana-ten-validation"
   ],
   "primaryFeature": "apps",
   "features": {
@@ -136,6 +137,49 @@
         "started": "2026-03-22T08:13:55.718Z",
         "lastUpdated": "2026-03-22T08:35:44.237Z"
       }
+    },
+    "riichi-city-juunana-ten-validation": {
+      "phase": "report",
+      "matchRate": null,
+      "iterationCount": 12,
+      "documents": {},
+      "taskChain": [
+        {
+          "phase": "plan",
+          "status": "completed",
+          "createdAt": "2026-03-24T14:32:30.396Z",
+          "completedAt": "2026-03-24T14:34:18.066Z"
+        },
+        {
+          "phase": "design",
+          "status": "completed",
+          "createdAt": "2026-03-24T14:32:30.396Z",
+          "completedAt": "2026-03-24T14:46:18.378Z"
+        },
+        {
+          "phase": "do",
+          "status": "completed",
+          "createdAt": "2026-03-24T14:32:30.396Z",
+          "completedAt": "2026-03-24T14:59:32.658Z"
+        },
+        {
+          "phase": "check",
+          "status": "completed",
+          "createdAt": "2026-03-24T14:32:30.396Z",
+          "completedAt": "2026-03-24T15:03:03.878Z"
+        },
+        {
+          "phase": "report",
+          "status": "completed",
+          "createdAt": "2026-03-24T14:32:30.396Z",
+          "completedAt": "2026-03-26T13:37:40.832Z"
+        }
+      ],
+      "timestamps": {
+        "started": "2026-03-24T14:32:30.397Z",
+        "lastUpdated": "2026-03-26T14:36:00.930Z"
+      },
+      "completedAt": "2026-03-26T14:23:52.855Z"
     }
   },
   "pipeline": {
@@ -146,7 +190,7 @@
   "session": {
     "startedAt": "2026-03-22T05:19:46.408Z",
     "onboardingCompleted": false,
-    "lastActivity": "2026-03-22T08:35:44.237Z"
+    "lastActivity": "2026-03-26T14:36:00.930Z"
   },
   "history": [
     {
@@ -381,6 +425,245 @@
       "phase": "do",
       "nextPhase": "check",
       "timestamp": "2026-03-22T08:35:44.236Z"
+    },
+    {
+      "feature": "riichi-city-juunana-ten-validation",
+      "from": "plan",
+      "to": "design",
+      "timestamp": "2026-03-24T14:34:18.063Z"
+    },
+    {
+      "feature": "riichi-city-juunana-ten-validation",
+      "action": "phase_complete",
+      "phase": "plan",
+      "nextPhase": "design",
+      "timestamp": "2026-03-24T14:34:18.063Z"
+    },
+    {
+      "feature": "riichi-city-juunana-ten-validation",
+      "from": "design",
+      "to": "design",
+      "timestamp": "2026-03-24T14:36:37.672Z"
+    },
+    {
+      "feature": "riichi-city-juunana-ten-validation",
+      "from": "design",
+      "to": "design",
+      "timestamp": "2026-03-24T14:42:48.735Z"
+    },
+    {
+      "feature": "riichi-city-juunana-ten-validation",
+      "from": "design",
+      "to": "design",
+      "timestamp": "2026-03-24T14:43:37.043Z"
+    },
+    {
+      "feature": "riichi-city-juunana-ten-validation",
+      "from": "design",
+      "to": "do",
+      "timestamp": "2026-03-24T14:46:18.376Z"
+    },
+    {
+      "feature": "riichi-city-juunana-ten-validation",
+      "action": "phase_complete",
+      "phase": "design",
+      "nextPhase": "do",
+      "timestamp": "2026-03-24T14:46:18.377Z"
+    },
+    {
+      "feature": "riichi-city-juunana-ten-validation",
+      "from": "do",
+      "to": "check",
+      "timestamp": "2026-03-24T14:59:32.655Z"
+    },
+    {
+      "feature": "riichi-city-juunana-ten-validation",
+      "action": "phase_complete",
+      "phase": "do",
+      "nextPhase": "check",
+      "timestamp": "2026-03-24T14:59:32.656Z"
+    },
+    {
+      "feature": "riichi-city-juunana-ten-validation",
+      "from": "check",
+      "to": "act",
+      "timestamp": "2026-03-24T15:03:03.876Z"
+    },
+    {
+      "feature": "riichi-city-juunana-ten-validation",
+      "action": "phase_complete",
+      "phase": "check",
+      "nextPhase": "act",
+      "timestamp": "2026-03-24T15:03:03.877Z"
+    },
+    {
+      "feature": "riichi-city-juunana-ten-validation",
+      "from": "check",
+      "to": "act",
+      "timestamp": "2026-03-24T15:14:12.315Z"
+    },
+    {
+      "feature": "riichi-city-juunana-ten-validation",
+      "action": "phase_complete",
+      "phase": "check",
+      "nextPhase": "act",
+      "timestamp": "2026-03-24T15:14:12.316Z"
+    },
+    {
+      "feature": "riichi-city-juunana-ten-validation",
+      "from": "act",
+      "to": "design",
+      "timestamp": "2026-03-24T15:24:19.521Z"
+    },
+    {
+      "feature": "riichi-city-juunana-ten-validation",
+      "from": "design",
+      "to": "do",
+      "timestamp": "2026-03-24T15:25:53.350Z"
+    },
+    {
+      "feature": "riichi-city-juunana-ten-validation",
+      "action": "phase_complete",
+      "phase": "design",
+      "nextPhase": "do",
+      "timestamp": "2026-03-24T15:25:53.351Z"
+    },
+    {
+      "feature": "riichi-city-juunana-ten-validation",
+      "from": "check",
+      "to": "act",
+      "timestamp": "2026-03-24T15:41:50.512Z"
+    },
+    {
+      "feature": "riichi-city-juunana-ten-validation",
+      "action": "phase_complete",
+      "phase": "check",
+      "nextPhase": "act",
+      "timestamp": "2026-03-24T15:41:50.513Z"
+    },
+    {
+      "feature": "riichi-city-juunana-ten-validation",
+      "from": "check",
+      "to": "report",
+      "timestamp": "2026-03-24T15:55:24.224Z"
+    },
+    {
+      "feature": "riichi-city-juunana-ten-validation",
+      "action": "phase_complete",
+      "phase": "act",
+      "nextPhase": "report",
+      "timestamp": "2026-03-24T15:55:24.224Z"
+    },
+    {
+      "feature": "riichi-city-juunana-ten-validation",
+      "from": "check",
+      "to": "act",
+      "timestamp": "2026-03-26T13:37:16.203Z"
+    },
+    {
+      "feature": "riichi-city-juunana-ten-validation",
+      "action": "phase_complete",
+      "phase": "check",
+      "nextPhase": "act",
+      "timestamp": "2026-03-26T13:37:16.204Z"
+    },
+    {
+      "feature": "riichi-city-juunana-ten-validation",
+      "action": "phase_complete",
+      "phase": "report",
+      "nextPhase": "completed",
+      "timestamp": "2026-03-26T13:37:40.829Z"
+    },
+    {
+      "feature": "riichi-city-juunana-ten-validation",
+      "from": "check",
+      "to": "design",
+      "timestamp": "2026-03-26T13:45:05.277Z"
+    },
+    {
+      "feature": "riichi-city-juunana-ten-validation",
+      "from": "design",
+      "to": "do",
+      "timestamp": "2026-03-26T13:48:12.342Z"
+    },
+    {
+      "feature": "riichi-city-juunana-ten-validation",
+      "action": "phase_complete",
+      "phase": "design",
+      "nextPhase": "do",
+      "timestamp": "2026-03-26T13:48:12.343Z"
+    },
+    {
+      "feature": "riichi-city-juunana-ten-validation",
+      "from": "check",
+      "to": "report",
+      "timestamp": "2026-03-26T14:08:56.967Z"
+    },
+    {
+      "feature": "riichi-city-juunana-ten-validation",
+      "action": "phase_complete",
+      "phase": "act",
+      "nextPhase": "report",
+      "timestamp": "2026-03-26T14:08:56.968Z"
+    },
+    {
+      "feature": "riichi-city-juunana-ten-validation",
+      "from": "check",
+      "to": "act",
+      "timestamp": "2026-03-26T14:14:13.457Z"
+    },
+    {
+      "feature": "riichi-city-juunana-ten-validation",
+      "action": "phase_complete",
+      "phase": "check",
+      "nextPhase": "act",
+      "timestamp": "2026-03-26T14:14:13.458Z"
+    },
+    {
+      "feature": "riichi-city-juunana-ten-validation",
+      "from": "act",
+      "to": "report",
+      "timestamp": "2026-03-26T14:19:18.134Z"
+    },
+    {
+      "feature": "riichi-city-juunana-ten-validation",
+      "action": "phase_complete",
+      "phase": "act",
+      "nextPhase": "report",
+      "timestamp": "2026-03-26T14:19:18.135Z"
+    },
+    {
+      "feature": "riichi-city-juunana-ten-validation",
+      "action": "phase_complete",
+      "phase": "report",
+      "nextPhase": "completed",
+      "timestamp": "2026-03-26T14:23:52.856Z"
+    },
+    {
+      "feature": "riichi-city-juunana-ten-validation",
+      "from": "check",
+      "to": "act",
+      "timestamp": "2026-03-26T14:34:34.487Z"
+    },
+    {
+      "feature": "riichi-city-juunana-ten-validation",
+      "action": "phase_complete",
+      "phase": "check",
+      "nextPhase": "act",
+      "timestamp": "2026-03-26T14:34:34.488Z"
+    },
+    {
+      "feature": "riichi-city-juunana-ten-validation",
+      "from": "act",
+      "to": "report",
+      "timestamp": "2026-03-26T14:36:00.927Z"
+    },
+    {
+      "feature": "riichi-city-juunana-ten-validation",
+      "action": "phase_complete",
+      "phase": "act",
+      "nextPhase": "report",
+      "timestamp": "2026-03-26T14:36:00.928Z"
     }
   ]
 }

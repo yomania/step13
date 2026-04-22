@@ -56,6 +56,7 @@ export function AttackDefensePanels({ context, playerId, onCall, onGuess, onKan,
     const [selectedCallKey, setSelectedCallKey] = useState<string | null>(null);
     const selectedGuessEntry = findCatalogEntry(selectedGuess);
     const lastGuessEntry = findCatalogEntry(context.attackDefense.lastGuessTileKey);
+    const failedGuessCount = context.attackDefense.failedGuesses ?? 0;
     const showGuessFeedback = stage === 'B_GUESS'
         && context.attackDefense.lastGuessResult !== 'idle'
         && context.attackDefense.lastGuessResult !== 'pending';
@@ -108,6 +109,17 @@ export function AttackDefensePanels({ context, playerId, onCall, onGuess, onKan,
                         <span className="text-base font-black text-amber-200 leading-none">{stageSummary.assaultRemaining}</span>
                     </div>
                 </div>
+                {stage === 'B_GUESS' && isDefender && (
+                    <div className="pointer-events-auto rounded-2xl border border-rose-500/20 bg-rose-500/8 px-3 py-2 text-xs text-rose-100 shadow-lg">
+                        <span className="font-black tracking-[0.18em] text-rose-200/80">FAILED LOG</span>
+                        <span className="ml-2">
+                            실패 {failedGuessCount}회
+                            {context.attackDefense.lastGuessResult === 'failed' && context.attackDefense.lastGuessTileKey
+                                ? ` · 최근 ${formatTileKey(context.attackDefense.lastGuessTileKey)}`
+                                : ''}
+                        </span>
+                    </div>
+                )}
 
                 {context.attackDefense.declarationType && (
                     <div className="pointer-events-auto rounded-2xl border border-rose-900/50 bg-slate-950/80 backdrop-blur-md px-3 py-2 text-xs text-slate-300 shadow-lg flex items-center gap-2">
@@ -202,6 +214,26 @@ export function AttackDefensePanels({ context, playerId, onCall, onGuess, onKan,
                                 style={{ width: `${stageSummary.assaultProgressValue * 20}%` }}
                             />
                         </div>
+                        <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                            <div className="rounded-2xl border border-slate-700/60 bg-slate-900/80 px-3 py-2">
+                                <div className="text-[9px] font-black tracking-[0.18em] text-slate-500">지금 할 일</div>
+                                <div className="mt-1 text-xs font-semibold text-slate-100">
+                                    {stageSummary.hasPendingDraw ? 'draw를 확인한 뒤 버림 또는 깡 판단' : '다음 공격 draw와 결과 피드백 대기'}
+                                </div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-700/60 bg-slate-900/80 px-3 py-2">
+                                <div className="text-[9px] font-black tracking-[0.18em] text-slate-500">판정 기준</div>
+                                <div className="mt-1 text-xs font-semibold text-slate-100">
+                                    {stageSummary.hasPendingDraw ? '현재 패를 즉시 소비해 tempo를 잃지 않기' : '상대 공개 정보와 남은 기회 함께 읽기'}
+                                </div>
+                            </div>
+                            <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+                                <div className="text-[9px] font-black tracking-[0.18em] text-amber-200/80">NEXT</div>
+                                <div className="mt-1 text-xs font-semibold text-amber-100">
+                                    {context.attackDefense.kanOption.pending ? '깡 여부를 먼저 결정한 뒤 버림으로 연결' : 'draw 공개 후 바로 버림 흐름으로 연결'}
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 )}
             </div>
@@ -280,8 +312,30 @@ export function AttackDefensePanels({ context, playerId, onCall, onGuess, onKan,
                                     disabled={!selectedGuess}
                                     className="flex-1 min-w-[7rem] xl:flex-none px-6 py-2.5 rounded-2xl bg-cyan-600 text-white font-bold shadow-[0_0_15px_rgba(8,145,178,0.4)] hover:bg-cyan-500 transition disabled:opacity-40 disabled:shadow-none disabled:cursor-not-allowed whitespace-nowrap"
                                 >
-                                    확정
+                                    {selectedGuess ? `${formatTileKey(selectedGuess)} 확정` : '선택 후 확정'}
                                 </button>
+                            </div>
+                        </div>
+
+                        <div className="mb-3 grid gap-2 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)]">
+                            <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/8 px-3 py-2">
+                                <div className="text-[9px] font-black tracking-[0.18em] text-cyan-200/80">FLOW</div>
+                                <div className="mt-1 text-xs text-slate-200">1. 후보를 고르고 2. 실패 기록을 확인한 뒤 3. 확정으로 Stage B를 넘깁니다.</div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-700/60 bg-slate-900/80 px-3 py-2">
+                                <div className="text-[9px] font-black tracking-[0.18em] text-slate-500">실패 히스토리</div>
+                                <div className="mt-1 text-xs font-semibold text-slate-100">
+                                    실패 {failedGuessCount}회
+                                    {context.attackDefense.lastGuessResult === 'failed' && context.attackDefense.lastGuessTileKey
+                                        ? ` · 최근 ${formatTileKey(context.attackDefense.lastGuessTileKey)}`
+                                        : ' · 최근 실패 없음'}
+                                </div>
+                            </div>
+                            <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/8 px-3 py-2">
+                                <div className="text-[9px] font-black tracking-[0.18em] text-emerald-200/80">CONFIRM READY</div>
+                                <div className="mt-1 text-xs font-semibold text-slate-100">
+                                    {selectedGuessEntry ? `${formatTileKey(selectedGuess)} 선택됨. 바로 확정 가능` : '후보를 먼저 선택해야 확정 버튼이 활성화됩니다.'}
+                                </div>
                             </div>
                         </div>
 
