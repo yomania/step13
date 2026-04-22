@@ -944,7 +944,7 @@ async function testTenEasyRiichiRejectAndTimeout() {
     assert.deepEqual(snapshot.value, { tenDeclaration: 'turn' });
     assert.equal(snapshot.context.attackDefense.stage, 'A');
 
-    await tick(RULES.timers.turnTimeMs + RULES.timers.timeBankMs + 10);
+    await tick(RULES.timers.tenTurnTimeMs + RULES.timers.timeBankMs + 10);
     snapshot = actor.getSnapshot();
     assert.equal(snapshot.context.discards[current]?.length, 1, 'timeout should force a discard in easy mode');
     assert.notEqual(snapshot.context.currentTurn, current, 'turn should advance after timeout discard');
